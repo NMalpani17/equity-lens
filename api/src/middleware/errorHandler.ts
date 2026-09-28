@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 
 import { logger } from "../logger.js";
+import { HttpError } from "../errors.js";
 
 export function notFoundHandler(_req: Request, res: Response): void {
   res.status(404).json({ error: "not_found" });
@@ -21,6 +22,12 @@ export function errorHandler(
   if (err instanceof ZodError) {
     logger.warn({ err: err.flatten() }, "validation error");
     res.status(422).json({ error: "validation_error", detail: err.flatten() });
+    return;
+  }
+
+  if (err instanceof HttpError) {
+    logger.warn({ err: { code: err.code, message: err.message } }, err.code);
+    res.status(err.status).json({ error: err.code, message: err.message });
     return;
   }
 
