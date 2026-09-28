@@ -11,12 +11,20 @@ vi.mock("../src/services/holdings.service.js", () => ({
   deleteHolding: vi.fn(),
 }));
 
+// The controller validates the ticker against the market-data service; mock it
+// so route tests don't perform real network calls.
+vi.mock("../src/services/quotes.service.js", () => ({
+  verifyTicker: vi.fn(),
+}));
+
 import { createApp } from "../src/app.js";
 import * as holdingsService from "../src/services/holdings.service.js";
+import { verifyTicker } from "../src/services/quotes.service.js";
 import { NotFoundError } from "../src/errors.js";
 
 const app = createApp();
 const service = vi.mocked(holdingsService);
+const verifyTickerMock = vi.mocked(verifyTicker);
 
 const sample = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -29,6 +37,8 @@ const sample = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default to a recognized ticker; individual tests override as needed.
+  verifyTickerMock.mockResolvedValue("ok");
 });
 
 afterEach(() => {
@@ -71,6 +81,32 @@ describe("POST /api/holdings", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("validation_error");
     expect(service.createHolding).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 and does not persist when the ticker is unknown", async () => {
+    verifyTickerMock.mockResolvedValue("not_found");
+
+    const res = await request(app)
+      .post("/api/holdings")
+      .send({ ticker: "ASDASD", shares: 10, buyPrice: 150 });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("invalid_ticker");
+    expect(res.body.message).toContain("ASDASD");
+    expect(service.createHolding).not.toHaveBeenCalled();
+  });
+
+  it("creates the holding when the market service can't verify the ticker", async () => {
+    // A transient market-data outage should not block the user.
+    verifyTickerMock.mockResolvedValue("unavailable");
+    service.createHolding.mockResolvedValue(sample);
+
+    const res = await request(app)
+      .post("/api/holdings")
+      .send({ ticker: "AAPL", shares: 10, buyPrice: 150.25 });
+
+    expect(res.status).toBe(201);
+    expect(service.createHolding).toHaveBeenCalled();
   });
 });
 

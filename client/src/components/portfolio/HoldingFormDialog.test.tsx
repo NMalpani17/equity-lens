@@ -72,4 +72,32 @@ describe("HoldingFormDialog", () => {
       buyPrice: 150,
     });
   });
+
+  it("surfaces the API's error message when the ticker is rejected", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "invalid_ticker",
+          message: "'ASDASD' is not a recognized ticker symbol.",
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    renderAdd();
+
+    fireEvent.change(screen.getByLabelText("Ticker"), {
+      target: { value: "ASDASD" },
+    });
+    fireEvent.change(screen.getByLabelText("Shares"), {
+      target: { value: "10" },
+    });
+    fireEvent.change(screen.getByLabelText("Buy price (USD)"), {
+      target: { value: "150" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add holding" }));
+
+    expect(
+      await screen.findByText("'ASDASD' is not a recognized ticker symbol."),
+    ).toBeInTheDocument();
+  });
 });

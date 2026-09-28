@@ -25,3 +25,10 @@ export class UpstreamError extends HttpError {
     super(502, "upstream_error", message);
   }
 }
+
+/** 422 — a submitted ticker is not recognized by the market-data service. */
+export class InvalidTickerError extends HttpError {
+  constructor(message = "unrecognized ticker symbol") {
+    super(422, "invalid_ticker", message);
+  }
+}
