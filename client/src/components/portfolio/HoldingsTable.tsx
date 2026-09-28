@@ -24,6 +24,7 @@ interface HoldingsTableProps {
   positions: PortfolioPosition[];
   onEdit: (lot: PortfolioLot) => void;
   onDelete: (lot: PortfolioLot) => void;
+  onDeletePosition: (position: PortfolioPosition) => void;
 }
 
 const PRICE_STATUS_LABEL: Record<PriceStatus, string> = {
@@ -32,7 +33,12 @@ const PRICE_STATUS_LABEL: Record<PriceStatus, string> = {
   unavailable: "price unavailable",
 };
 
-export function HoldingsTable({ positions, onEdit, onDelete }: HoldingsTableProps) {
+export function HoldingsTable({
+  positions,
+  onEdit,
+  onDelete,
+  onDeletePosition,
+}: HoldingsTableProps) {
   // Positions with more than one lot start collapsed; the set holds the tickers
   // the user has expanded.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -126,7 +132,21 @@ export function HoldingsTable({ positions, onEdit, onDelete }: HoldingsTableProp
                 <TableCell className="text-right tabular-nums">
                   <DailyChange dailyChange={position.dailyChange} />
                 </TableCell>
-                <TableCell />
+                <TableCell className="text-right">
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete all ${position.ticker} lots`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeletePosition(position);
+                      }}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
 
               {isOpen &&

@@ -9,6 +9,7 @@ vi.mock("../src/db/prisma.js", () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
@@ -126,5 +127,16 @@ describe("holdings.service", () => {
     await expect(service.deleteHolding("missing")).rejects.toBeInstanceOf(
       NotFoundError,
     );
+  });
+
+  it("deletes all lots for a ticker and returns the removed count", async () => {
+    mockPrisma.holding.deleteMany.mockResolvedValue({ count: 3 });
+
+    const count = await service.deleteHoldingsByTicker("AAPL");
+
+    expect(count).toBe(3);
+    expect(mockPrisma.holding.deleteMany).toHaveBeenCalledWith({
+      where: { ticker: "AAPL" },
+    });
   });
 });

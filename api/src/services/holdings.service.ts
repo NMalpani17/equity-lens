@@ -110,3 +110,9 @@ export async function deleteHolding(id: string): Promise<void> {
     throw error;
   }
 }
+
+/** Delete every lot for a ticker; returns how many rows were removed. */
+export async function deleteHoldingsByTicker(ticker: string): Promise<number> {
+  const { count } = await prisma.holding.deleteMany({ where: { ticker } });
+  return count;
+}

@@ -119,6 +119,13 @@ export function deleteHolding(id: string): Promise<void> {
   return request<void>(`/api/holdings/${id}`, { method: "DELETE" });
 }
 
+/** Delete every lot for a ticker (a whole position). */
+export function deleteHoldingsByTicker(ticker: string): Promise<void> {
+  return request<void>(`/api/holdings?ticker=${encodeURIComponent(ticker)}`, {
+    method: "DELETE",
+  });
+}
+
 // --- Portfolio summary ----------------------------------------------------
 
 export type PriceStatus = "ok" | "not_found" | "unavailable";

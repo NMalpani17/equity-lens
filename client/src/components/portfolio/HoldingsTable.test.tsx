@@ -49,7 +49,12 @@ afterEach(() => {
 describe("HoldingsTable", () => {
   it("shows one aggregated row per ticker with a lot count", () => {
     render(
-      <HoldingsTable positions={[position]} onEdit={vi.fn()} onDelete={vi.fn()} />,
+      <HoldingsTable
+        positions={[position]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onDeletePosition={vi.fn()}
+      />,
     );
 
     expect(screen.getByText("AAPL")).toBeInTheDocument();
@@ -65,7 +70,12 @@ describe("HoldingsTable", () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();
     render(
-      <HoldingsTable positions={[position]} onEdit={onEdit} onDelete={onDelete} />,
+      <HoldingsTable
+        positions={[position]}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onDeletePosition={vi.fn()}
+      />,
     );
 
     fireEvent.click(screen.getByText("AAPL"));
@@ -80,6 +90,21 @@ describe("HoldingsTable", () => {
 
     fireEvent.click(deleteButtons[0]!);
     expect(onDelete).toHaveBeenCalledWith(position.lots[0]);
+  });
+
+  it("deletes a whole position from the grouped row", () => {
+    const onDeletePosition = vi.fn();
+    render(
+      <HoldingsTable
+        positions={[position]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onDeletePosition={onDeletePosition}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Delete all AAPL lots"));
+    expect(onDeletePosition).toHaveBeenCalledWith(position);
   });
 
   it("renders an unavailable badge when a position has no price", () => {
@@ -102,7 +127,12 @@ describe("HoldingsTable", () => {
       ],
     };
     render(
-      <HoldingsTable positions={[unpriced]} onEdit={vi.fn()} onDelete={vi.fn()} />,
+      <HoldingsTable
+        positions={[unpriced]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onDeletePosition={vi.fn()}
+      />,
     );
 
     const rows = screen.getAllByRole("row");

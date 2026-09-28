@@ -3,10 +3,11 @@ import type { Request, Response } from "express";
 
 import * as holdingsService from "../services/holdings.service.js";
 import { verifyTicker } from "../services/quotes.service.js";
-import { InvalidTickerError } from "../errors.js";
+import { InvalidTickerError, NotFoundError } from "../errors.js";
 import {
   createHoldingSchema,
   holdingIdSchema,
+  tickerSchema,
   updateHoldingSchema,
 } from "../schemas/holding.schema.js";
 
@@ -58,5 +59,18 @@ export async function updateHolding(req: Request, res: Response): Promise<void> 
 export async function deleteHolding(req: Request, res: Response): Promise<void> {
   const id = holdingIdSchema.parse(req.params.id);
   await holdingsService.deleteHolding(id);
+  res.status(204).send();
+}
+
+/** Delete every lot for a ticker (a whole position), e.g. ?ticker=AAPL. */
+export async function deleteHoldingsByTicker(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const ticker = tickerSchema.parse(req.query.ticker);
+  const deleted = await holdingsService.deleteHoldingsByTicker(ticker);
+  if (deleted === 0) {
+    throw new NotFoundError(`no holdings found for ${ticker}`);
+  }
   res.status(204).send();
 }

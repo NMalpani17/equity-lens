@@ -9,6 +9,7 @@ vi.mock("../src/services/holdings.service.js", () => ({
   createHolding: vi.fn(),
   updateHolding: vi.fn(),
   deleteHolding: vi.fn(),
+  deleteHoldingsByTicker: vi.fn(),
 }));
 
 // The controller validates the ticker against the market-data service; mock it
@@ -193,5 +194,40 @@ describe("DELETE /api/holdings/:id", () => {
     );
 
     expect(res.status).toBe(204);
+  });
+});
+
+describe("DELETE /api/holdings?ticker=", () => {
+  it("deletes all lots for a ticker and returns 204", async () => {
+    service.deleteHoldingsByTicker.mockResolvedValue(2);
+
+    const res = await request(app).delete("/api/holdings").query({ ticker: "aapl" });
+
+    expect(res.status).toBe(204);
+    // Ticker is normalized to uppercase before hitting the service.
+    expect(service.deleteHoldingsByTicker).toHaveBeenCalledWith("AAPL");
+  });
+
+  it("returns 404 when the ticker has no lots", async () => {
+    service.deleteHoldingsByTicker.mockResolvedValue(0);
+
+    const res = await request(app).delete("/api/holdings").query({ ticker: "AAPL" });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("not_found");
+  });
+
+  it("returns 422 when the ticker query is missing", async () => {
+    const res = await request(app).delete("/api/holdings");
+
+    expect(res.status).toBe(422);
+    expect(service.deleteHoldingsByTicker).not.toHaveBeenCalled();
+  });
+
+  it("returns 422 for a malformed ticker", async () => {
+    const res = await request(app).delete("/api/holdings").query({ ticker: "!!!" });
+
+    expect(res.status).toBe(422);
+    expect(service.deleteHoldingsByTicker).not.toHaveBeenCalled();
   });
 });

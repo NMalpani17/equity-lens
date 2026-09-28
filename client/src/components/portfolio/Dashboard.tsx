@@ -4,17 +4,21 @@ import { AlertTriangle, Loader2, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePortfolio } from "@/hooks/usePortfolio";
-import type { PortfolioLot } from "@/lib/api";
+import type { PortfolioLot, PortfolioPosition } from "@/lib/api";
 import { SummaryCards } from "./SummaryCards";
 import { HoldingsTable } from "./HoldingsTable";
 import { HoldingFormDialog } from "./HoldingFormDialog";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
+import { ConfirmDeletePositionDialog } from "./ConfirmDeletePositionDialog";
 
 export function Dashboard() {
   const { state, refresh, refreshing } = usePortfolio();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PortfolioLot | null>(null);
   const [deleting, setDeleting] = useState<PortfolioLot | null>(null);
+  const [deletingPosition, setDeletingPosition] = useState<PortfolioPosition | null>(
+    null,
+  );
 
   const loading = state.kind === "loading";
   const data = state.kind === "loaded" ? state.data : null;
@@ -110,6 +114,7 @@ export function Dashboard() {
               positions={data.positions}
               onEdit={openEdit}
               onDelete={setDeleting}
+              onDeletePosition={setDeletingPosition}
             />
           </CardContent>
         </Card>
@@ -124,6 +129,11 @@ export function Dashboard() {
       <ConfirmDeleteDialog
         lot={deleting}
         onOpenChange={(open) => !open && setDeleting(null)}
+        onDeleted={() => void refresh()}
+      />
+      <ConfirmDeletePositionDialog
+        position={deletingPosition}
+        onOpenChange={(open) => !open && setDeletingPosition(null)}
         onDeleted={() => void refresh()}
       />
     </div>
