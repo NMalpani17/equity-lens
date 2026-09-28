@@ -15,6 +15,11 @@ const envSchema = z.object({
   AI_SERVICE_URL: z.string().url().default("http://localhost:8000"),
   // Comma-separated list of origins allowed by CORS (the client dev server).
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
+  // Supabase PostgreSQL connection strings.
+  // DATABASE_URL is the pooled (PgBouncer) URL used by the running app;
+  // DIRECT_URL is the direct connection Prisma uses for migrations.
+  DATABASE_URL: z.string().url(),
+  DIRECT_URL: z.string().url(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -34,6 +39,8 @@ export const config = {
   logLevel: parsed.data.LOG_LEVEL,
   aiServiceUrl: parsed.data.AI_SERVICE_URL,
   clientOrigin: parsed.data.CLIENT_ORIGIN,
+  databaseUrl: parsed.data.DATABASE_URL,
+  directUrl: parsed.data.DIRECT_URL,
 } as const;
 
 export type Config = typeof config;
