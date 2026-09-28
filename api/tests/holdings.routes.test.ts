@@ -87,14 +87,12 @@ describe("POST /api/holdings", () => {
   it("passes an optional purchase date through to the service", async () => {
     service.createHolding.mockResolvedValue(sample);
 
-    const res = await request(app)
-      .post("/api/holdings")
-      .send({
-        ticker: "AAPL",
-        shares: 10,
-        buyPrice: 150.25,
-        purchaseDate: "2026-01-15",
-      });
+    const res = await request(app).post("/api/holdings").send({
+      ticker: "AAPL",
+      shares: 10,
+      buyPrice: 150.25,
+      purchaseDate: "2026-01-15",
+    });
 
     expect(res.status).toBe(201);
     expect(service.createHolding).toHaveBeenCalledWith(
@@ -156,6 +154,33 @@ describe("PATCH /api/holdings/:id", () => {
       .send({ shares: 5 });
 
     expect(res.status).toBe(422);
+  });
+
+  it("does not re-verify the ticker when it is unchanged", async () => {
+    service.getHolding.mockResolvedValue(sample); // stored ticker is AAPL
+    service.updateHolding.mockResolvedValue(sample);
+
+    const res = await request(app)
+      .patch(`/api/holdings/${sample.id}`)
+      .send({ ticker: "AAPL", shares: 5 });
+
+    expect(res.status).toBe(200);
+    expect(verifyTickerMock).not.toHaveBeenCalled();
+    expect(service.updateHolding).toHaveBeenCalled();
+  });
+
+  it("verifies the ticker only when it changes, rejecting unknown ones", async () => {
+    service.getHolding.mockResolvedValue(sample); // stored ticker is AAPL
+    verifyTickerMock.mockResolvedValue("not_found");
+
+    const res = await request(app)
+      .patch(`/api/holdings/${sample.id}`)
+      .send({ ticker: "ASDASD" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("invalid_ticker");
+    expect(verifyTickerMock).toHaveBeenCalledWith("ASDASD");
+    expect(service.updateHolding).not.toHaveBeenCalled();
   });
 });
 

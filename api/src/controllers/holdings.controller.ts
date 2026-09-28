@@ -42,8 +42,14 @@ export async function createHolding(req: Request, res: Response): Promise<void> 
 export async function updateHolding(req: Request, res: Response): Promise<void> {
   const id = holdingIdSchema.parse(req.params.id);
   const input = updateHoldingSchema.parse(req.body);
+  // Only verify the ticker when it actually changes: the client may resend the
+  // unchanged ticker, and re-checking it against the market data service on
+  // every edit is wasteful (and would fail if the service is momentarily down).
   if (input.ticker !== undefined) {
-    await assertTickerExists(input.ticker);
+    const existing = await holdingsService.getHolding(id);
+    if (input.ticker !== existing.ticker) {
+      await assertTickerExists(input.ticker);
+    }
   }
   const holding = await holdingsService.updateHolding(id, input);
   res.status(200).json(holding);
