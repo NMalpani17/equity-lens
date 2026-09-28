@@ -62,7 +62,47 @@ Then fill in the required secrets in your new `.env` files:
   (**Project Settings → Database → Connection string**). Keep
   `?pgbouncer=true` on the pooled URL.
 
-Start the services **bottom-up** (ai-service → api → client).
+First-time setup (install dependencies once per service):
+
+```bash
+npm install                                   # repo root — Husky + concurrently
+
+cd ai-service && python -m venv .venv         # create the Python virtualenv
+.venv\Scripts\activate                        # Windows (PowerShell/cmd)
+# source .venv/bin/activate                    # macOS/Linux
+pip install -r requirements-dev.txt
+deactivate && cd ..
+
+npm --prefix api install                      # also runs `prisma generate`
+npm --prefix api run prisma:migrate           # creates the holdings table (first run)
+npm --prefix client install
+```
+
+### Run everything with one command
+
+From the repo root, start all three services together:
+
+```bash
+npm run dev
+```
+
+This uses [`concurrently`](https://www.npmjs.com/package/concurrently) to run the
+**ai-service** (via its own `.venv`), **api**, and **client** in a single
+terminal with color-coded, prefixed output (`ai`, `api`, `client`). Press
+`Ctrl+C` once to stop all three.
+
+> The `dev:ai` script invokes `ai-service\.venv\Scripts\uvicorn` directly, so the
+> virtualenv is used automatically — no manual `activate` needed. On macOS/Linux
+> the venv binary lives at `.venv/bin/uvicorn`; adjust the `dev:ai` script in the
+> root `package.json` accordingly.
+
+You can also run a single service: `npm run dev:ai`, `npm run dev:api`, or
+`npm run dev:client`.
+
+### Running services individually
+
+If you prefer separate terminals, start them **bottom-up**
+(ai-service → api → client).
 
 ### 1. ai-service (FastAPI) — port 8000
 
