@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.logging_config import configure_logging
-from app.routers import health
+from app.routers import health, market
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(market.router)
     _register_error_handlers(app)
 
     logger.info("ai-service started in %s environment", settings.environment)

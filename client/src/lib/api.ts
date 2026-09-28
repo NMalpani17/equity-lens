@@ -2,6 +2,51 @@
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
+/** Error thrown for non-OK API responses, carrying the HTTP status. */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch {
+    throw new ApiError(0, "Could not reach the API. Is it running?");
+  }
+
+  if (!response.ok) {
+    // Prefer the API's human-readable error message (e.g. an invalid ticker)
+    // so callers can surface it directly; fall back to a generic message.
+    let message = `Request failed (${response.status})`;
+    try {
+      const body = (await response.json()) as { message?: unknown };
+      if (typeof body?.message === "string" && body.message.length > 0) {
+        message = body.message;
+      }
+    } catch {
+      // Non-JSON or empty body: keep the generic message.
+    }
+    throw new ApiError(response.status, message);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
+}
+
+// --- Health ---------------------------------------------------------------
+
 export interface ServiceHealth {
   status: string;
   service: string;
@@ -31,4 +76,110 @@ export async function getApiHealth(): Promise<HealthResponse> {
     throw new Error(`API health request failed: ${response.status}`);
   }
   return (await response.json()) as HealthResponse;
+}
+
+// --- Holdings -------------------------------------------------------------
+
+export interface Holding {
+  id: string;
+  ticker: string;
+  shares: number;
+  buyPrice: number;
+  purchaseDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HoldingInput {
+  ticker: string;
+  shares: number;
+  buyPrice: number;
+  /** Optional ISO date (YYYY-MM-DD); null clears an existing date. */
+  purchaseDate?: string | null;
+}
+
+export function createHolding(input: HoldingInput): Promise<Holding> {
+  return request<Holding>("/api/holdings", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateHolding(
+  id: string,
+  input: Partial<HoldingInput>,
+): Promise<Holding> {
+  return request<Holding>(`/api/holdings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteHolding(id: string): Promise<void> {
+  return request<void>(`/api/holdings/${id}`, { method: "DELETE" });
+}
+
+/** Delete every lot for a ticker (a whole position). */
+export function deleteHoldingsByTicker(ticker: string): Promise<void> {
+  return request<void>(`/api/holdings?ticker=${encodeURIComponent(ticker)}`, {
+    method: "DELETE",
+  });
+}
+
+// --- Portfolio summary ----------------------------------------------------
+
+export type PriceStatus = "ok" | "not_found" | "unavailable";
+
+/** A single lot (one purchase) within a position. */
+export interface PortfolioLot {
+  id: string;
+  ticker: string;
+  shares: number;
+  buyPrice: number;
+  purchaseDate: string | null;
+  costBasis: number;
+  currentPrice: number | null;
+  marketValue: number | null;
+  gainLoss: number | null;
+  gainLossPercent: number | null;
+  dailyChange: number | null;
+  dailyChangePercent: number | null;
+  priceStatus: PriceStatus;
+}
+
+/** All lots for a ticker, grouped with aggregate figures. */
+export interface PortfolioPosition {
+  ticker: string;
+  name: string | null;
+  totalShares: number;
+  avgBuyPrice: number;
+  costBasis: number;
+  currentPrice: number | null;
+  marketValue: number | null;
+  gainLoss: number | null;
+  gainLossPercent: number | null;
+  dailyChange: number | null;
+  dailyChangePercent: number | null;
+  priceStatus: PriceStatus;
+  lots: PortfolioLot[];
+}
+
+export interface PortfolioTotals {
+  marketValue: number;
+  costBasis: number;
+  gainLoss: number;
+  gainLossPercent: number;
+  dailyChange: number;
+  pricedCount: number;
+  unpricedCount: number;
+  partial: boolean;
+}
+
+export interface PortfolioSummary {
+  positions: PortfolioPosition[];
+  totals: PortfolioTotals;
+}
+
+export function getPortfolioSummary(): Promise<PortfolioSummary> {
+  return request<PortfolioSummary>("/api/portfolio/summary");
 }

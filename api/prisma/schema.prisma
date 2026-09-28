@@ -1,0 +1,32 @@
+// Prisma schema for the Equity Lens API.
+//
+// Uses Supabase PostgreSQL with two connection strings:
+//   - DATABASE_URL: pooled (PgBouncer) connection for the running app.
+//   - DIRECT_URL:   direct connection used by Prisma for migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// A single equity holding (one buy lot) in a portfolio. Multiple lots may
+/// share a ticker; the portfolio summary groups them into one position.
+model Holding {
+  id        String    @id @default(uuid())
+  ticker    String
+  /// Number of shares held. Fractional shares supported.
+  shares    Decimal   @db.Decimal(20, 8)
+  /// Price paid per share at purchase, in USD.
+  buyPrice  Decimal   @map("buy_price") @db.Decimal(20, 8)
+  /// Optional date the lot was purchased.
+  purchaseDate DateTime? @map("purchase_date") @db.Date
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("holdings")
+}

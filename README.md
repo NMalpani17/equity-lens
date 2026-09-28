@@ -13,22 +13,35 @@ Browser ──▶ client/ (React) ──▶ api/ (Express) ──▶ ai-service/
 ```
 
 - **client** talks only to the API.
-- **api** is the gateway; it orchestrates and calls the AI service.
-- **ai-service** owns all LLM / LangChain / MCP logic (added in later phases).
+- **api** is the gateway; it orchestrates, persists holdings (Supabase/Prisma),
+  and calls the AI service.
+- **ai-service** owns market data (Finnhub + yfinance fallback) and all LLM /
+  LangChain / MCP logic (added in later phases).
+
+## Features
+
+- **Portfolio tracking** — add, edit, and delete equity holdings and see a live
+  dashboard with market value, gain/loss, and today's change per holding plus
+  portfolio totals. (No login yet — auth comes in a later phase.)
+- **Market data** — the AI service fetches quotes from **Finnhub** (primary) and
+  automatically falls back to **yfinance** on failure or rate limiting, with a
+  60-second cache and graceful handling of invalid tickers.
 
 ## Tech stack
 
-| Part          | Stack                                                       | Port   |
-| ------------- | ----------------------------------------------------------- | ------ |
-| `client/`     | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui      | `5173` |
-| `api/`        | Node.js, TypeScript, Express, Zod, Pino                     | `3001` |
-| `ai-service/` | Python 3.12, FastAPI, Pydantic, Uvicorn                     | `8000` |
+| Part          | Stack                                                          | Port   |
+| ------------- | -------------------------------------------------------------- | ------ |
+| `client/`     | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui         | `5173` |
+| `api/`        | Node.js, TypeScript, Express, Zod, Pino, Prisma (Supabase PG)  | `3001` |
+| `ai-service/` | Python 3.12, FastAPI, Pydantic, Uvicorn, Finnhub + yfinance    | `8000` |
 
 ## Prerequisites
 
 - Node.js 20+ and npm
 - Python 3.12+
 - Git
+- A **Supabase** project (free tier) for the PostgreSQL database
+- A free **Finnhub** API key ([finnhub.io](https://finnhub.io/dashboard))
 
 ## Setup & running locally
 
@@ -42,7 +55,54 @@ cp ai-service/.env.example ai-service/.env
 
 > Never commit `.env` files — only `.env.example` is tracked. See `CLAUDE.md`.
 
-Start the services **bottom-up** (ai-service → api → client).
+Then fill in the required secrets in your new `.env` files:
+
+- `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY` (your Finnhub key).
+- `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
+  (**Project Settings → Database → Connection string**). Keep
+  `?pgbouncer=true` on the pooled URL.
+
+First-time setup (install dependencies once per service):
+
+```bash
+npm install                                   # repo root — Husky + concurrently
+
+cd ai-service && python -m venv .venv         # create the Python virtualenv
+.venv\Scripts\activate                        # Windows (PowerShell/cmd)
+# source .venv/bin/activate                    # macOS/Linux
+pip install -r requirements-dev.txt
+deactivate && cd ..
+
+npm --prefix api install                      # also runs `prisma generate`
+npm --prefix api run prisma:migrate           # creates the holdings table (first run)
+npm --prefix client install
+```
+
+### Run everything with one command
+
+From the repo root, start all three services together:
+
+```bash
+npm run dev
+```
+
+This uses [`concurrently`](https://www.npmjs.com/package/concurrently) to run the
+**ai-service** (via its own `.venv`), **api**, and **client** in a single
+terminal with color-coded, prefixed output (`ai`, `api`, `client`). Press
+`Ctrl+C` once to stop all three.
+
+> The `dev:ai` script invokes `ai-service\.venv\Scripts\uvicorn` directly, so the
+> virtualenv is used automatically — no manual `activate` needed. On macOS/Linux
+> the venv binary lives at `.venv/bin/uvicorn`; adjust the `dev:ai` script in the
+> root `package.json` accordingly.
+
+You can also run a single service: `npm run dev:ai`, `npm run dev:api`, or
+`npm run dev:client`.
+
+### Running services individually
+
+If you prefer separate terminals, start them **bottom-up**
+(ai-service → api → client).
 
 ### 1. ai-service (FastAPI) — port 8000
 
@@ -59,9 +119,13 @@ uvicorn app.main:app --reload --port 8000
 
 ```bash
 cd api
-npm install
+npm install                 # also runs `prisma generate`
+npm run prisma:migrate      # creates the holdings table in Supabase (first run)
 npm run dev
 ```
+
+> `prisma:migrate` uses `DIRECT_URL`; the running app uses the pooled
+> `DATABASE_URL`. Both must be set in `api/.env` before migrating.
 
 ### 3. client (React) — port 5173
 
@@ -71,8 +135,9 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. The home page shows a **System health** card that
-calls `api → ai-service` and reports the status of each hop.
+Open http://localhost:5173. The home page shows the **portfolio dashboard**
+(holdings, summary cards, and add/edit/delete), plus a **System health** card
+that calls `api → ai-service` and reports the status of each hop.
 
 ## Health check
 
@@ -89,6 +154,28 @@ curl http://localhost:3001/api/health
 ```
 
 If the AI service is down, the API responds `503` with `status: "degraded"`.
+
+## API reference
+
+All API routes are served by the Express gateway under `http://localhost:3001`.
+
+| Method   | Path                      | Description                                      |
+| -------- | ------------------------- | ------------------------------------------------ |
+| `GET`    | `/api/health`             | Health of the API and downstream AI service.     |
+| `GET`    | `/api/holdings`           | List all holdings.                               |
+| `POST`   | `/api/holdings`           | Create a holding (`ticker`, `shares`, `buyPrice`).|
+| `GET`    | `/api/holdings/:id`       | Get one holding.                                 |
+| `PATCH`  | `/api/holdings/:id`       | Update a holding.                                |
+| `DELETE` | `/api/holdings/:id`       | Delete a holding.                                |
+| `GET`    | `/api/portfolio/summary`  | Holdings enriched with live prices and totals.   |
+
+The AI service (`http://localhost:8000`) exposes the market-data endpoints the
+API consumes:
+
+| Method | Path                     | Description                                    |
+| ------ | ------------------------ | ---------------------------------------------- |
+| `GET`  | `/quotes/{ticker}`       | One quote (`404` unknown, `502` unavailable).  |
+| `GET`  | `/quotes?symbols=A,B`    | Batch quotes; per-ticker failures in `errors`. |
 
 ## Common scripts
 
