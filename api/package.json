@@ -29,6 +29,7 @@
   "dependencies": {
     "@prisma/client": "^6.2.1",
     "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",

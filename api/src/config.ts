@@ -4,7 +4,17 @@
  * This is the only module that reads `process.env`. Everything else imports
  * the typed `config` object.
  */
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import dotenv from "dotenv";
 import { z } from "zod";
+
+// Load `.env` from the api package root, resolved relative to this module so it
+// works no matter what directory the process was started from (e.g. the repo
+// root via `npm run dev`). `config.ts` lives in `api/src`, so the package root
+// is one directory up.
+const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+dotenv.config({ path: path.join(apiRoot, ".env") });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
