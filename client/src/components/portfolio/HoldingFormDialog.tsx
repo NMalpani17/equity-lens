@@ -12,13 +12,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createHolding, updateHolding, type PortfolioHolding } from "@/lib/api";
+import { createHolding, updateHolding, type PortfolioLot } from "@/lib/api";
 
 interface HoldingFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The holding being edited, or null to add a new one. */
-  holding: PortfolioHolding | null;
+  /** The lot being edited, or null to add a new one. */
+  lot: PortfolioLot | null;
   /** Called after a successful create/update so the parent can refresh. */
   onSaved: () => void;
 }
@@ -26,25 +26,27 @@ interface HoldingFormDialogProps {
 export function HoldingFormDialog({
   open,
   onOpenChange,
-  holding,
+  lot,
   onSaved,
 }: HoldingFormDialogProps) {
-  const isEdit = holding !== null;
+  const isEdit = lot !== null;
   const [ticker, setTicker] = useState("");
   const [shares, setShares] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
+  const [purchaseDate, setPurchaseDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset the form whenever it opens (or the target holding changes).
+  // Reset the form whenever it opens (or the target lot changes).
   useEffect(() => {
     if (open) {
-      setTicker(holding?.ticker ?? "");
-      setShares(holding ? String(holding.shares) : "");
-      setBuyPrice(holding ? String(holding.buyPrice) : "");
+      setTicker(lot?.ticker ?? "");
+      setShares(lot ? String(lot.shares) : "");
+      setBuyPrice(lot ? String(lot.buyPrice) : "");
+      setPurchaseDate(lot?.purchaseDate ?? "");
       setError(null);
     }
-  }, [open, holding]);
+  }, [open, lot]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -71,9 +73,10 @@ export function HoldingFormDialog({
         ticker: ticker.trim().toUpperCase(),
         shares: sharesNum,
         buyPrice: buyPriceNum,
+        purchaseDate: purchaseDate ? purchaseDate : null,
       };
       if (isEdit) {
-        await updateHolding(holding.id, input);
+        await updateHolding(lot.id, input);
       } else {
         await createHolding(input);
       }
@@ -90,11 +93,11 @@ export function HoldingFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit holding" : "Add holding"}</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit lot" : "Add holding"}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? "Update the shares or buy price for this position."
-              : "Add an equity position to your portfolio."}
+              ? "Update the shares, buy price, or purchase date for this lot."
+              : "Add an equity purchase to your portfolio."}
           </DialogDescription>
         </DialogHeader>
 
@@ -132,6 +135,15 @@ export function HoldingFormDialog({
               value={buyPrice}
               onChange={(e) => setBuyPrice(e.target.value)}
               placeholder="150.00"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="purchaseDate">Purchase date (optional)</Label>
+            <Input
+              id="purchaseDate"
+              type="date"
+              value={purchaseDate}
+              onChange={(e) => setPurchaseDate(e.target.value)}
             />
           </div>
 

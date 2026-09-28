@@ -4,7 +4,7 @@ import { AlertTriangle, Loader2, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePortfolio } from "@/hooks/usePortfolio";
-import type { PortfolioHolding } from "@/lib/api";
+import type { PortfolioLot } from "@/lib/api";
 import { SummaryCards } from "./SummaryCards";
 import { HoldingsTable } from "./HoldingsTable";
 import { HoldingFormDialog } from "./HoldingFormDialog";
@@ -13,8 +13,8 @@ import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 export function Dashboard() {
   const { state, refresh, refreshing } = usePortfolio();
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<PortfolioHolding | null>(null);
-  const [deleting, setDeleting] = useState<PortfolioHolding | null>(null);
+  const [editing, setEditing] = useState<PortfolioLot | null>(null);
+  const [deleting, setDeleting] = useState<PortfolioLot | null>(null);
 
   const loading = state.kind === "loading";
   const data = state.kind === "loaded" ? state.data : null;
@@ -24,8 +24,8 @@ export function Dashboard() {
     setFormOpen(true);
   }
 
-  function openEdit(holding: PortfolioHolding) {
-    setEditing(holding);
+  function openEdit(lot: PortfolioLot) {
+    setEditing(lot);
     setFormOpen(true);
   }
 
@@ -56,7 +56,7 @@ export function Dashboard() {
 
       <SummaryCards
         totals={data?.totals ?? null}
-        holdingsCount={data?.holdings.length ?? 0}
+        holdingsCount={data?.positions.length ?? 0}
         loading={loading}
       />
 
@@ -88,7 +88,7 @@ export function Dashboard() {
         </Card>
       )}
 
-      {data && data.holdings.length === 0 && (
+      {data && data.positions.length === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <p className="font-medium">No holdings yet</p>
@@ -103,11 +103,11 @@ export function Dashboard() {
         </Card>
       )}
 
-      {data && data.holdings.length > 0 && (
+      {data && data.positions.length > 0 && (
         <Card>
           <CardContent className="p-0">
             <HoldingsTable
-              holdings={data.holdings}
+              positions={data.positions}
               onEdit={openEdit}
               onDelete={setDeleting}
             />
@@ -118,11 +118,11 @@ export function Dashboard() {
       <HoldingFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
-        holding={editing}
+        lot={editing}
         onSaved={() => void refresh()}
       />
       <ConfirmDeleteDialog
-        holding={deleting}
+        lot={deleting}
         onOpenChange={(open) => !open && setDeleting(null)}
         onDeleted={() => void refresh()}
       />

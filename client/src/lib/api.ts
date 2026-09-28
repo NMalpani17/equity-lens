@@ -85,6 +85,7 @@ export interface Holding {
   ticker: string;
   shares: number;
   buyPrice: number;
+  purchaseDate: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -93,6 +94,8 @@ export interface HoldingInput {
   ticker: string;
   shares: number;
   buyPrice: number;
+  /** Optional ISO date (YYYY-MM-DD); null clears an existing date. */
+  purchaseDate?: string | null;
 }
 
 export function createHolding(input: HoldingInput): Promise<Holding> {
@@ -120,12 +123,13 @@ export function deleteHolding(id: string): Promise<void> {
 
 export type PriceStatus = "ok" | "not_found" | "unavailable";
 
-export interface PortfolioHolding {
+/** A single lot (one purchase) within a position. */
+export interface PortfolioLot {
   id: string;
   ticker: string;
-  name: string | null;
   shares: number;
   buyPrice: number;
+  purchaseDate: string | null;
   costBasis: number;
   currentPrice: number | null;
   marketValue: number | null;
@@ -134,6 +138,23 @@ export interface PortfolioHolding {
   dailyChange: number | null;
   dailyChangePercent: number | null;
   priceStatus: PriceStatus;
+}
+
+/** All lots for a ticker, grouped with aggregate figures. */
+export interface PortfolioPosition {
+  ticker: string;
+  name: string | null;
+  totalShares: number;
+  avgBuyPrice: number;
+  costBasis: number;
+  currentPrice: number | null;
+  marketValue: number | null;
+  gainLoss: number | null;
+  gainLossPercent: number | null;
+  dailyChange: number | null;
+  dailyChangePercent: number | null;
+  priceStatus: PriceStatus;
+  lots: PortfolioLot[];
 }
 
 export interface PortfolioTotals {
@@ -148,7 +169,7 @@ export interface PortfolioTotals {
 }
 
 export interface PortfolioSummary {
-  holdings: PortfolioHolding[];
+  positions: PortfolioPosition[];
   totals: PortfolioTotals;
 }
 

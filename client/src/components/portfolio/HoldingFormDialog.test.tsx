@@ -9,12 +9,7 @@ afterEach(() => {
 
 function renderAdd(onSaved = vi.fn(), onOpenChange = vi.fn()) {
   render(
-    <HoldingFormDialog
-      open
-      onOpenChange={onOpenChange}
-      holding={null}
-      onSaved={onSaved}
-    />,
+    <HoldingFormDialog open onOpenChange={onOpenChange} lot={null} onSaved={onSaved} />,
   );
   return { onSaved, onOpenChange };
 }
@@ -70,6 +65,41 @@ describe("HoldingFormDialog", () => {
       ticker: "AAPL", // normalized to uppercase
       shares: 10,
       buyPrice: 150,
+      purchaseDate: null, // left blank
+    });
+  });
+
+  it("submits an optional purchase date when provided", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "1",
+          ticker: "AAPL",
+          shares: 10,
+          buyPrice: 150,
+          purchaseDate: "2026-01-15",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+        { status: 201 },
+      ),
+    );
+    renderAdd();
+
+    fireEvent.change(screen.getByLabelText("Ticker"), { target: { value: "AAPL" } });
+    fireEvent.change(screen.getByLabelText("Shares"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Buy price (USD)"), {
+      target: { value: "150" },
+    });
+    fireEvent.change(screen.getByLabelText("Purchase date (optional)"), {
+      target: { value: "2026-01-15" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add holding" }));
+
+    await waitFor(() => expect(vi.mocked(globalThis.fetch)).toHaveBeenCalled());
+    const [, init] = vi.mocked(globalThis.fetch).mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      purchaseDate: "2026-01-15",
     });
   });
 

@@ -5,13 +5,12 @@ import { Dashboard } from "./Dashboard";
 import type { PortfolioSummary } from "@/lib/api";
 
 const summary: PortfolioSummary = {
-  holdings: [
+  positions: [
     {
-      id: "1",
       ticker: "AAPL",
       name: "Apple Inc",
-      shares: 10,
-      buyPrice: 100,
+      totalShares: 10,
+      avgBuyPrice: 100,
       costBasis: 1000,
       currentPrice: 110,
       marketValue: 1100,
@@ -20,6 +19,23 @@ const summary: PortfolioSummary = {
       dailyChange: 50,
       dailyChangePercent: 4.76,
       priceStatus: "ok",
+      lots: [
+        {
+          id: "1",
+          ticker: "AAPL",
+          shares: 10,
+          buyPrice: 100,
+          purchaseDate: null,
+          costBasis: 1000,
+          currentPrice: 110,
+          marketValue: 1100,
+          gainLoss: 100,
+          gainLossPercent: 10,
+          dailyChange: 50,
+          dailyChangePercent: 4.76,
+          priceStatus: "ok",
+        },
+      ],
     },
   ],
   totals: {
@@ -60,7 +76,7 @@ describe("Dashboard", () => {
   });
 
   it("shows an empty state when there are no holdings", async () => {
-    mockFetchOnce({ holdings: [], totals: summary.totals });
+    mockFetchOnce({ positions: [], totals: summary.totals });
 
     render(<Dashboard />);
 

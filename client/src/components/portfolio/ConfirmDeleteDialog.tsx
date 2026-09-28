@@ -10,17 +10,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { deleteHolding, type PortfolioHolding } from "@/lib/api";
+import { deleteHolding, type PortfolioLot } from "@/lib/api";
 
 interface ConfirmDeleteDialogProps {
-  /** The holding to delete, or null when the dialog is closed. */
-  holding: PortfolioHolding | null;
+  /** The lot to delete, or null when the dialog is closed. */
+  lot: PortfolioLot | null;
   onOpenChange: (open: boolean) => void;
   onDeleted: () => void;
 }
 
 export function ConfirmDeleteDialog({
-  holding,
+  lot,
   onOpenChange,
   onDeleted,
 }: ConfirmDeleteDialogProps) {
@@ -28,11 +28,11 @@ export function ConfirmDeleteDialog({
   const [error, setError] = useState<string | null>(null);
 
   async function handleConfirm() {
-    if (!holding) return;
+    if (!lot) return;
     setSubmitting(true);
     setError(null);
     try {
-      await deleteHolding(holding.id);
+      await deleteHolding(lot.id);
       onDeleted();
       onOpenChange(false);
     } catch (err) {
@@ -43,12 +43,12 @@ export function ConfirmDeleteDialog({
   }
 
   return (
-    <Dialog open={holding !== null} onOpenChange={onOpenChange}>
+    <Dialog open={lot !== null} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete holding</DialogTitle>
+          <DialogTitle>Delete lot</DialogTitle>
           <DialogDescription>
-            Remove {holding?.ticker} from your portfolio? This cannot be undone.
+            Remove this {lot?.ticker} lot from your portfolio? This cannot be undone.
           </DialogDescription>
         </DialogHeader>
 

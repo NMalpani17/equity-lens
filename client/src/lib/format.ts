@@ -27,6 +27,19 @@ export function formatShares(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
 
+/** Format an ISO date (YYYY-MM-DD) for display, e.g. "Jan 15, 2026". */
+export function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 /** Tailwind text color reflecting gain (green), loss (red), or neutral. */
 export function changeColor(value: number): string {
   if (value > 0) return "text-emerald-600";
