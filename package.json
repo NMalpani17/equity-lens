@@ -1,0 +1,13 @@
+{
+  "name": "equity-lens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Equity Lens — AI investment research platform (monorepo root)",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0"
+  }
+}

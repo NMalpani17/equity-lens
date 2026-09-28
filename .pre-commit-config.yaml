@@ -1,0 +1,13 @@
+# Python (ai-service) pre-commit hooks. Run via Husky's pre-commit hook, or
+# standalone with `pre-commit run`. Ruff config lives in ai-service/pyproject.toml.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        name: ruff (lint + autofix)
+        args: [--fix]
+        files: ^ai-service/
+      - id: ruff-format
+        name: ruff (format)
+        files: ^ai-service/
