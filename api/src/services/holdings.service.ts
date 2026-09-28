@@ -15,15 +15,26 @@ import type {
 /** Prisma's "record not found" error code (thrown by update/delete). */
 const RECORD_NOT_FOUND = "P2025";
 
+/** Serialize a nullable purchase date to a YYYY-MM-DD string (or null). */
+function toDateString(date: Date | null): string | null {
+  return date ? date.toISOString().slice(0, 10) : null;
+}
+
 function toDto(holding: Holding): HoldingDto {
   return {
     id: holding.id,
     ticker: holding.ticker,
     shares: holding.shares.toNumber(),
     buyPrice: holding.buyPrice.toNumber(),
+    purchaseDate: toDateString(holding.purchaseDate),
     createdAt: holding.createdAt.toISOString(),
     updatedAt: holding.updatedAt.toISOString(),
   };
+}
+
+/** Parse a YYYY-MM-DD string into a UTC Date, or null when absent. */
+function toPurchaseDate(value: string | null | undefined): Date | null {
+  return value ? new Date(`${value}T00:00:00.000Z`) : null;
 }
 
 function isRecordNotFound(error: unknown): boolean {
@@ -54,6 +65,7 @@ export async function createHolding(input: CreateHoldingInput): Promise<HoldingD
       ticker: input.ticker,
       shares: new Prisma.Decimal(input.shares),
       buyPrice: new Prisma.Decimal(input.buyPrice),
+      purchaseDate: toPurchaseDate(input.purchaseDate),
     },
   });
   return toDto(holding);
@@ -73,6 +85,9 @@ export async function updateHolding(
         }),
         ...(input.buyPrice !== undefined && {
           buyPrice: new Prisma.Decimal(input.buyPrice),
+        }),
+        ...(input.purchaseDate !== undefined && {
+          purchaseDate: toPurchaseDate(input.purchaseDate),
         }),
       },
     });

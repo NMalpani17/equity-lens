@@ -1,22 +1,27 @@
 /** Shared API types. */
 
-/** A holding as returned by the API (Decimals serialized to numbers). */
+/** Why live pricing is present or missing. */
+export type PriceStatus = "ok" | "not_found" | "unavailable";
+
+/** A holding (one buy lot) as returned by the API (Decimals → numbers). */
 export interface HoldingDto {
   id: string;
   ticker: string;
   shares: number;
   buyPrice: number;
+  /** Optional purchase date, serialized as an ISO date (YYYY-MM-DD). */
+  purchaseDate: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-/** Per-holding row in the portfolio summary, enriched with live pricing. */
-export interface PortfolioHolding {
+/** A single lot within a position, enriched with live pricing. */
+export interface PortfolioLot {
   id: string;
   ticker: string;
-  name: string | null;
   shares: number;
   buyPrice: number;
+  purchaseDate: string | null;
   costBasis: number;
   /** Live pricing fields are null when a quote could not be retrieved. */
   currentPrice: number | null;
@@ -25,27 +30,47 @@ export interface PortfolioHolding {
   gainLossPercent: number | null;
   dailyChange: number | null;
   dailyChangePercent: number | null;
-  /** "ok" when priced, otherwise why pricing is missing. */
-  priceStatus: "ok" | "not_found" | "unavailable";
+  priceStatus: PriceStatus;
 }
 
-/** Aggregate totals across all priced holdings. */
+/**
+ * A position groups all lots that share a ticker. Aggregate figures use the
+ * combined shares; per-lot detail lives in `lots`.
+ */
+export interface PortfolioPosition {
+  ticker: string;
+  name: string | null;
+  totalShares: number;
+  /** Cost-weighted average buy price across the lots. */
+  avgBuyPrice: number;
+  costBasis: number;
+  currentPrice: number | null;
+  marketValue: number | null;
+  gainLoss: number | null;
+  gainLossPercent: number | null;
+  dailyChange: number | null;
+  dailyChangePercent: number | null;
+  priceStatus: PriceStatus;
+  lots: PortfolioLot[];
+}
+
+/** Aggregate totals across all priced positions. */
 export interface PortfolioTotals {
   marketValue: number;
   costBasis: number;
   gainLoss: number;
   gainLossPercent: number;
   dailyChange: number;
-  /** Number of holdings that had a live price and are included in the totals. */
+  /** Number of positions that had a live price and are included in the totals. */
   pricedCount: number;
-  /** Number of holdings excluded from the totals because pricing was missing. */
+  /** Number of positions excluded from the totals because pricing was missing. */
   unpricedCount: number;
-  /** True when some holdings are unpriced, so the totals are only partial. */
+  /** True when some positions are unpriced, so the totals are only partial. */
   partial: boolean;
 }
 
 export interface PortfolioSummary {
-  holdings: PortfolioHolding[];
+  positions: PortfolioPosition[];
   totals: PortfolioTotals;
 }
 

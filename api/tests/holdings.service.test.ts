@@ -27,6 +27,7 @@ function makeRow(overrides: Record<string, unknown> = {}) {
     ticker: "AAPL",
     shares: new Prisma.Decimal(10),
     buyPrice: new Prisma.Decimal(150.25),
+    purchaseDate: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-02T00:00:00.000Z"),
     ...overrides,
@@ -55,9 +56,34 @@ describe("holdings.service", () => {
       ticker: "AAPL",
       shares: 10,
       buyPrice: 150.25,
+      purchaseDate: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     });
+  });
+
+  it("serializes a purchase date to a YYYY-MM-DD string", async () => {
+    mockPrisma.holding.findMany.mockResolvedValue([
+      makeRow({ purchaseDate: new Date("2026-01-15T00:00:00.000Z") }),
+    ]);
+
+    const [holding] = await service.listHoldings();
+
+    expect(holding?.purchaseDate).toBe("2026-01-15");
+  });
+
+  it("persists a purchase date as a UTC Date on create", async () => {
+    mockPrisma.holding.create.mockResolvedValue(makeRow());
+
+    await service.createHolding({
+      ticker: "AAPL",
+      shares: 10,
+      buyPrice: 150.25,
+      purchaseDate: "2026-01-15",
+    });
+
+    const data = mockPrisma.holding.create.mock.calls[0]![0].data;
+    expect(data.purchaseDate).toEqual(new Date("2026-01-15T00:00:00.000Z"));
   });
 
   it("throws NotFoundError when getHolding finds nothing", async () => {
@@ -80,6 +106,7 @@ describe("holdings.service", () => {
         ticker: "AAPL",
         shares: expect.any(Prisma.Decimal),
         buyPrice: expect.any(Prisma.Decimal),
+        purchaseDate: null,
       },
     });
     expect(result.shares).toBe(10);

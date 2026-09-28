@@ -10,10 +10,18 @@ export const tickerSchema = z
 
 export const holdingIdSchema = z.string().uuid("invalid holding id");
 
+/** Optional purchase date as an ISO calendar date (YYYY-MM-DD). */
+const purchaseDateSchema = z
+  .string()
+  .date("purchaseDate must be an ISO date (YYYY-MM-DD)")
+  .nullable()
+  .optional();
+
 export const createHoldingSchema = z.object({
   ticker: tickerSchema,
   shares: z.number().positive("shares must be greater than 0"),
   buyPrice: z.number().positive("buyPrice must be greater than 0"),
+  purchaseDate: purchaseDateSchema,
 });
 
 /** All fields optional on update, but at least one must be present. */

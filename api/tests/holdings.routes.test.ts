@@ -31,6 +31,7 @@ const sample = {
   ticker: "AAPL",
   shares: 10,
   buyPrice: 150.25,
+  purchaseDate: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -80,6 +81,33 @@ describe("POST /api/holdings", () => {
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("validation_error");
+    expect(service.createHolding).not.toHaveBeenCalled();
+  });
+
+  it("passes an optional purchase date through to the service", async () => {
+    service.createHolding.mockResolvedValue(sample);
+
+    const res = await request(app)
+      .post("/api/holdings")
+      .send({
+        ticker: "AAPL",
+        shares: 10,
+        buyPrice: 150.25,
+        purchaseDate: "2026-01-15",
+      });
+
+    expect(res.status).toBe(201);
+    expect(service.createHolding).toHaveBeenCalledWith(
+      expect.objectContaining({ purchaseDate: "2026-01-15" }),
+    );
+  });
+
+  it("returns 422 for a malformed purchase date", async () => {
+    const res = await request(app)
+      .post("/api/holdings")
+      .send({ ticker: "AAPL", shares: 10, buyPrice: 150, purchaseDate: "01/15/2026" });
+
+    expect(res.status).toBe(422);
     expect(service.createHolding).not.toHaveBeenCalled();
   });
 
