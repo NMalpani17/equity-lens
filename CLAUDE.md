@@ -38,19 +38,19 @@ equity-lens/
 
 ## Tech stack
 
-| Part         | Stack                                                                  |
-| ------------ | ---------------------------------------------------------------------- |
-| `client/`    | React 19, **TypeScript**, Vite, Tailwind CSS v4, shadcn/ui, Vitest      |
-| `api/`       | Node.js, **TypeScript**, Express, Zod, Pino, Vitest                     |
-| `ai-service/`| Python 3.12, FastAPI, Pydantic, Uvicorn, Pytest (LangChain/FastMCP later)|
+| Part          | Stack                                                                     |
+| ------------- | ------------------------------------------------------------------------- |
+| `client/`     | React 19, **TypeScript**, Vite, Tailwind CSS v4, shadcn/ui, Vitest        |
+| `api/`        | Node.js, **TypeScript**, Express, Zod, Pino, Vitest                       |
+| `ai-service/` | Python 3.12, FastAPI, Pydantic, Uvicorn, Pytest (LangChain/FastMCP later) |
 
 ## Ports
 
-| Service      | URL                     |
-| ------------ | ----------------------- |
-| client       | http://localhost:5173   |
-| api          | http://localhost:3001   |
-| ai-service   | http://localhost:8000   |
+| Service    | URL                   |
+| ---------- | --------------------- |
+| client     | http://localhost:5173 |
+| api        | http://localhost:3001 |
+| ai-service | http://localhost:8000 |
 
 ## Running locally
 
@@ -85,6 +85,10 @@ npm run dev
    each unit of work (e.g. `feat/portfolio`, `fix/health-badge`,
    `chore/ci`), commit there, push, and open a pull request into `main`.
    `main` only ever advances through reviewed, CI-passing PRs.
+5. **Keep docs in sync.** When a change adds, removes, or alters a user-facing
+   feature, endpoint, env var, or run/setup step, update the docs in the same PR:
+   `README.md` for the summary and `docs/` (`api.md`, `development.md`) for the
+   details. Docs are part of "done."
 
 ## Git workflow
 
