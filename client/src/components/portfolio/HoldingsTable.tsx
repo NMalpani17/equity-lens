@@ -154,9 +154,11 @@ export function HoldingsTable({
                   <TableRow key={lot.id} className="bg-muted/30">
                     <TableCell className="pl-10">
                       <div className="text-sm">Lot</div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatDate(lot.purchaseDate)}
-                      </div>
+                      {lot.purchaseDate && (
+                        <div className="text-xs text-muted-foreground">
+                          {formatDate(lot.purchaseDate)}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatShares(lot.shares)}

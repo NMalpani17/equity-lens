@@ -107,6 +107,30 @@ describe("HoldingsTable", () => {
     expect(onDeletePosition).toHaveBeenCalledWith(position);
   });
 
+  it("shows a lot's purchase date when set, and nothing when not", () => {
+    const mixed: PortfolioPosition = {
+      ...position,
+      lots: [
+        lot({ id: "dated", purchaseDate: "2026-01-15" }),
+        lot({ id: "undated", purchaseDate: null }),
+      ],
+    };
+    render(
+      <HoldingsTable
+        positions={[mixed]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onDeletePosition={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("AAPL"));
+
+    // The dated lot shows its formatted date; there is no em-dash placeholder.
+    expect(screen.getByText("Jan 15, 2026")).toBeInTheDocument();
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+  });
+
   it("renders an unavailable badge when a position has no price", () => {
     const unpriced: PortfolioPosition = {
       ...position,
