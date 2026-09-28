@@ -80,11 +80,15 @@ function computeTotals(rows: PortfolioHolding[]): PortfolioTotals {
   let marketValue = 0;
   let costBasis = 0;
   let dailyChange = 0;
+  let pricedCount = 0;
+  let unpricedCount = 0;
 
   for (const row of rows) {
     if (row.priceStatus !== "ok" || row.marketValue === null) {
+      unpricedCount += 1;
       continue;
     }
+    pricedCount += 1;
     marketValue += row.marketValue;
     costBasis += row.costBasis;
     dailyChange += row.dailyChange ?? 0;
@@ -99,6 +103,9 @@ function computeTotals(rows: PortfolioHolding[]): PortfolioTotals {
     gainLoss: round2(gainLoss),
     gainLossPercent: round2(gainLossPercent),
     dailyChange: round2(dailyChange),
+    pricedCount,
+    unpricedCount,
+    partial: unpricedCount > 0,
   };
 }
 

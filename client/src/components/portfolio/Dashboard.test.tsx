@@ -28,6 +28,9 @@ const summary: PortfolioSummary = {
     gainLoss: 100,
     gainLossPercent: 10,
     dailyChange: 50,
+    pricedCount: 1,
+    unpricedCount: 0,
+    partial: false,
   },
 };
 

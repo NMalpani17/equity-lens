@@ -52,6 +52,9 @@ describe("buildPortfolioSummary", () => {
       gainLoss: 100,
       gainLossPercent: 10,
       dailyChange: 50,
+      pricedCount: 1,
+      unpricedCount: 0,
+      partial: false,
     });
   });
 
@@ -97,5 +100,40 @@ describe("buildPortfolioSummary", () => {
     expect(summary.totals.gainLoss).toBe(200);
     expect(summary.totals.gainLossPercent).toBe(10);
     expect(summary.totals.dailyChange).toBe(0); // 10*5 + 5*(-10)
+  });
+
+  it("flags totals as partial and counts priced vs unpriced holdings", () => {
+    const holdings = [
+      holding({ id: "a", ticker: "AAPL" }),
+      holding({ id: "b", ticker: "TSLA" }),
+    ];
+    const result: QuotesResult = {
+      quotes: { AAPL: quote({ ticker: "AAPL" }) },
+      errors: { TSLA: "not_found" },
+    };
+
+    const summary = buildPortfolioSummary(holdings, result);
+
+    expect(summary.totals.partial).toBe(true);
+    expect(summary.totals.pricedCount).toBe(1);
+    expect(summary.totals.unpricedCount).toBe(1);
+  });
+
+  it("reports no priced holdings when the whole batch is unavailable", () => {
+    const holdings = [
+      holding({ id: "a", ticker: "AAPL" }),
+      holding({ id: "b", ticker: "MSFT" }),
+    ];
+    const result: QuotesResult = {
+      quotes: {},
+      errors: { AAPL: "unavailable", MSFT: "unavailable" },
+    };
+
+    const summary = buildPortfolioSummary(holdings, result);
+
+    expect(summary.totals.pricedCount).toBe(0);
+    expect(summary.totals.unpricedCount).toBe(2);
+    expect(summary.totals.partial).toBe(true);
+    expect(summary.totals.marketValue).toBe(0);
   });
 });

@@ -36,6 +36,12 @@ export interface PortfolioTotals {
   gainLoss: number;
   gainLossPercent: number;
   dailyChange: number;
+  /** Number of holdings that had a live price and are included in the totals. */
+  pricedCount: number;
+  /** Number of holdings excluded from the totals because pricing was missing. */
+  unpricedCount: number;
+  /** True when some holdings are unpriced, so the totals are only partial. */
+  partial: boolean;
 }
 
 export interface PortfolioSummary {

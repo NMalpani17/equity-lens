@@ -25,7 +25,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status})`);
+    // Prefer the API's human-readable error message (e.g. an invalid ticker)
+    // so callers can surface it directly; fall back to a generic message.
+    let message = `Request failed (${response.status})`;
+    try {
+      const body = (await response.json()) as { message?: unknown };
+      if (typeof body?.message === "string" && body.message.length > 0) {
+        message = body.message;
+      }
+    } catch {
+      // Non-JSON or empty body: keep the generic message.
+    }
+    throw new ApiError(response.status, message);
   }
 
   if (response.status === 204) {
@@ -131,6 +142,9 @@ export interface PortfolioTotals {
   gainLoss: number;
   gainLossPercent: number;
   dailyChange: number;
+  pricedCount: number;
+  unpricedCount: number;
+  partial: boolean;
 }
 
 export interface PortfolioSummary {
