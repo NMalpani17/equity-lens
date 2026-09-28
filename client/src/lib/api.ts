@@ -20,7 +20,10 @@ export interface HealthResponse {
 
 /**
  * Fetch the API health, which in turn reflects the downstream AI service.
- * A 503 (degraded) still returns a parsed body, so we read JSON either way.
+ *
+ * A 503 means the API is up but a dependency is down: it returns a valid
+ * `degraded` body, so we parse and return it instead of throwing. Only other
+ * non-OK statuses (the API itself being unreachable) are treated as errors.
  */
 export async function getApiHealth(): Promise<HealthResponse> {
   const response = await fetch(`${API_URL}/api/health`);

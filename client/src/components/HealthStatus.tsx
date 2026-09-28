@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
 
 import { getApiHealth, type HealthResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -56,10 +56,13 @@ export function HealthStatus() {
 
         {state.kind === "loaded" && (
           <ul className="flex flex-col gap-2 text-sm">
-            <StatusRow label="API (Express)" ok={state.data.status === "ok"} />
+            <StatusRow
+              label="API (Express)"
+              status={state.data.status === "ok" ? "ok" : "degraded"}
+            />
             <StatusRow
               label="AI service (FastAPI)"
-              ok={state.data.dependencies.aiService.status === "ok"}
+              status={state.data.dependencies.aiService.status === "ok" ? "ok" : "down"}
             />
           </ul>
         )}
@@ -72,19 +75,25 @@ export function HealthStatus() {
   );
 }
 
-function StatusRow({ label, ok }: { label: string; ok: boolean }) {
+type RowStatus = "ok" | "degraded" | "down";
+
+const STATUS_STYLES: Record<
+  RowStatus,
+  { className: string; icon: typeof CheckCircle2 }
+> = {
+  ok: { className: "text-emerald-600", icon: CheckCircle2 },
+  degraded: { className: "text-amber-600", icon: AlertTriangle },
+  down: { className: "text-destructive", icon: XCircle },
+};
+
+function StatusRow({ label, status }: { label: string; status: RowStatus }) {
+  const { className, icon: Icon } = STATUS_STYLES[status];
   return (
     <li className="flex items-center justify-between">
       <span>{label}</span>
-      {ok ? (
-        <span className="flex items-center gap-1 text-emerald-600">
-          <CheckCircle2 className="size-4" /> ok
-        </span>
-      ) : (
-        <span className="flex items-center gap-1 text-destructive">
-          <XCircle className="size-4" /> down
-        </span>
-      )}
+      <span className={`flex items-center gap-1 ${className}`}>
+        <Icon className="size-4" /> {status}
+      </span>
     </li>
   );
 }
