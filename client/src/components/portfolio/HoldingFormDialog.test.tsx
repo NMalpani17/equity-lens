@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { HoldingFormDialog } from "./HoldingFormDialog";
+import { todayISODate } from "@/lib/format";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -65,8 +66,39 @@ describe("HoldingFormDialog", () => {
       ticker: "AAPL", // normalized to uppercase
       shares: 10,
       buyPrice: 150,
-      purchaseDate: null, // left blank
+      purchaseDate: todayISODate(), // pre-filled with today by default
     });
+  });
+
+  it("pre-fills the purchase date with today when adding", () => {
+    renderAdd();
+
+    const input = screen.getByLabelText<HTMLInputElement>("Purchase date (optional)");
+    expect(input.value).toBe(todayISODate());
+    // Future dates are capped by the input's max attribute.
+    expect(input.max).toBe(todayISODate());
+  });
+
+  it("does not allow submitting a future purchase date", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    renderAdd();
+
+    const future = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+    const dateInput = screen.getByLabelText<HTMLInputElement>(
+      "Purchase date (optional)",
+    );
+    fireEvent.change(screen.getByLabelText("Ticker"), { target: { value: "AAPL" } });
+    fireEvent.change(screen.getByLabelText("Shares"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Buy price (USD)"), {
+      target: { value: "150" },
+    });
+    fireEvent.change(dateInput, { target: { value: future } });
+
+    // A future date is out of range (max=today), so the field is invalid and
+    // the form will not submit — the holding never reaches the API.
+    expect(dateInput.validity.rangeOverflow).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Add holding" }));
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("submits an optional purchase date when provided", async () => {

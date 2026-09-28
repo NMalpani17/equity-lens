@@ -110,6 +110,29 @@ describe("POST /api/holdings", () => {
     expect(service.createHolding).not.toHaveBeenCalled();
   });
 
+  it("returns 422 for a future purchase date", async () => {
+    const future = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post("/api/holdings")
+      .send({ ticker: "AAPL", shares: 10, buyPrice: 150, purchaseDate: future });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("validation_error");
+    expect(service.createHolding).not.toHaveBeenCalled();
+  });
+
+  it("accepts today as a purchase date", async () => {
+    service.createHolding.mockResolvedValue(sample);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post("/api/holdings")
+      .send({ ticker: "AAPL", shares: 10, buyPrice: 150, purchaseDate: today });
+
+    expect(res.status).toBe(201);
+  });
+
   it("returns 422 and does not persist when the ticker is unknown", async () => {
     verifyTickerMock.mockResolvedValue("not_found");
 

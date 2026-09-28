@@ -27,6 +27,15 @@ export function formatShares(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
 
+/** Today's date as a local-time ISO calendar date (YYYY-MM-DD). */
+export function todayISODate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** Format an ISO date (YYYY-MM-DD) for display, e.g. "Jan 15, 2026". */
 export function formatDate(value: string | null): string {
   if (!value) return "—";

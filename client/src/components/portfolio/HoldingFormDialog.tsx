@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createHolding, updateHolding, type PortfolioLot } from "@/lib/api";
+import { todayISODate } from "@/lib/format";
 
 interface HoldingFormDialogProps {
   open: boolean;
@@ -30,6 +31,7 @@ export function HoldingFormDialog({
   onSaved,
 }: HoldingFormDialogProps) {
   const isEdit = lot !== null;
+  const today = todayISODate();
   const [ticker, setTicker] = useState("");
   const [shares, setShares] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
@@ -37,13 +39,14 @@ export function HoldingFormDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset the form whenever it opens (or the target lot changes).
+  // Reset the form whenever it opens (or the target lot changes). New lots
+  // default the purchase date to today; the user can change or clear it.
   useEffect(() => {
     if (open) {
       setTicker(lot?.ticker ?? "");
       setShares(lot ? String(lot.shares) : "");
       setBuyPrice(lot ? String(lot.buyPrice) : "");
-      setPurchaseDate(lot?.purchaseDate ?? "");
+      setPurchaseDate(lot ? (lot.purchaseDate ?? "") : todayISODate());
       setError(null);
     }
   }, [open, lot]);
@@ -63,6 +66,13 @@ export function HoldingFormDialog({
     }
     if (!Number.isFinite(buyPriceNum) || buyPriceNum <= 0) {
       setError("Buy price must be a number greater than 0.");
+      return;
+    }
+    // The date input's `max` normally blocks future dates via native
+    // validation; this guard is a fallback in case a future value slips
+    // through (and mirrors the server-side check).
+    if (purchaseDate && purchaseDate > today) {
+      setError("Purchase date cannot be in the future.");
       return;
     }
 
@@ -142,6 +152,7 @@ export function HoldingFormDialog({
             <Input
               id="purchaseDate"
               type="date"
+              max={today}
               value={purchaseDate}
               onChange={(e) => setPurchaseDate(e.target.value)}
             />
