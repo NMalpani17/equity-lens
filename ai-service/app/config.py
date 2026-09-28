@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed CORS origins (the API gateway).
     cors_origins: str = "http://localhost:3001"
 
+    # --- Market data ---
+    # Finnhub is the primary quote provider; yfinance is the automatic fallback.
+    finnhub_api_key: str = ""
+    finnhub_base_url: str = "https://finnhub.io/api/v1"
+    # How long (seconds) a quote is served from cache before refetching.
+    market_cache_ttl_seconds: int = 60
+    # HTTP timeout (seconds) for outbound provider requests.
+    market_http_timeout_seconds: float = 5.0
+
     @property
     def cors_origin_list(self) -> list[str]:
         """CORS origins as a list."""
