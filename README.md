@@ -1,5 +1,7 @@
 # Equity Lens
 
+[![CI](https://github.com/NMalpani17/equity-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/NMalpani17/equity-lens/actions/workflows/ci.yml)
+
 AI-powered investment research platform. Equity Lens ingests market and company
 data and uses LLM-driven analysis to help users research equities.
 
@@ -106,6 +108,19 @@ equity-lens/
 ├── api/               # Express + TypeScript API gateway
 └── ai-service/        # FastAPI (Python) AI service
 ```
+
+## Contributing
+
+- **Branch per feature** (`feat/…`, `fix/…`, `chore/…`); never commit directly
+  to `main`. Open a PR (a template is provided) and merge once **CI is green**.
+- **Pre-commit hooks** run automatically. Set them up once:
+  ```bash
+  npm install            # repo root — installs Husky hooks + lint-staged
+  pip install pre-commit # for the Python (Ruff) hook
+  ```
+  Husky + lint-staged format/lint staged JS/TS; Ruff handles Python.
+- **CI** runs lint, typecheck, and tests for all three services on every push
+  and PR.
 
 ## Conventions
 

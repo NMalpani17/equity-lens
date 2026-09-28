@@ -1,0 +1,14 @@
+set -e
+
+# JS/TS: format + lint staged files, scoped to each package's own config.
+(cd client && npx lint-staged)
+(cd api && npx lint-staged)
+
+# Python (ai-service): lint + format staged files via the pre-commit framework.
+# Falls back to a warning if the tool isn't installed — CI still enforces Ruff.
+if command -v pre-commit >/dev/null 2>&1; then
+  pre-commit run
+else
+  echo "[pre-commit] not installed — skipping Python (Ruff) checks locally."
+  echo "[pre-commit] install with: pip install pre-commit  (CI enforces Ruff regardless)"
+fi

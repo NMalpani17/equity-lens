@@ -81,6 +81,32 @@ npm run dev
 3. **Never commit secrets.** No `.env` files, API keys, or credentials are ever
    committed. Only `.env.example` (with placeholder values) is tracked. `.env`
    is already in `.gitignore` — keep it that way.
+4. **Branch per feature; never commit directly to `main`.** Create a branch for
+   each unit of work (e.g. `feat/portfolio`, `fix/health-badge`,
+   `chore/ci`), commit there, push, and open a pull request into `main`.
+   `main` only ever advances through reviewed, CI-passing PRs.
+
+## Git workflow
+
+```bash
+git checkout main && git pull          # start from up-to-date main
+git checkout -b feat/<short-name>      # branch per feature
+# ...commit as you go (Conventional Commits)...
+git push -u origin feat/<short-name>   # push the branch
+# open a PR on GitHub using the PR template; merge once CI is green
+```
+
+Branch name prefixes match the commit types: `feat/`, `fix/`, `chore/`, `docs/`.
+
+## CI & pre-commit
+
+- **CI** (`.github/workflows/ci.yml`) runs on every push and PR: lint, typecheck,
+  and tests for `client` and `api`, plus Ruff lint/format and Pytest for
+  `ai-service`. PRs should merge only when CI is green.
+- **Pre-commit hooks** (Husky + lint-staged) auto-format and lint staged JS/TS
+  files; Ruff (via the `pre-commit` framework) does the same for Python. Install
+  once with `npm install` at the repo root (sets up Husky) and
+  `pip install pre-commit`. Don't bypass hooks with `--no-verify`.
 
 ## Code Quality Standards
 
