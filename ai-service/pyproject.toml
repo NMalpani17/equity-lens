@@ -1,0 +1,17 @@
+[project]
+name = "equity-lens-ai-service"
+version = "0.1.0"
+description = "LLM / LangChain / MCP layer for Equity Lens"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, isort, pyupgrade, bugbear
+select = ["F", "E", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
