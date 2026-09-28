@@ -37,8 +37,10 @@ const upstreamQuoteSchema = z.object({
   as_of: z.string(),
 });
 
-const upstreamResponseSchema = z.object({
-  quotes: z.record(upstreamQuoteSchema),
+// Validate the envelope shape loosely: each quote entry is validated
+// individually below so one malformed quote can never sink the whole batch.
+const upstreamEnvelopeSchema = z.object({
+  quotes: z.record(z.unknown()),
   errors: z.record(z.string()),
 });
 
@@ -93,17 +95,74 @@ export async function getQuotes(tickers: string[]): Promise<QuotesResult> {
       return allUnavailable(tickers);
     }
 
-    const parsed = upstreamResponseSchema.parse(await response.json());
-    const quotes: Record<string, Quote> = {};
-    for (const [ticker, raw] of Object.entries(parsed.quotes)) {
-      quotes[ticker] = toQuote(raw);
+    const envelope = upstreamEnvelopeSchema.safeParse(await response.json());
+    if (!envelope.success) {
+      logger.warn(
+        { url: url.toString(), err: envelope.error.flatten() },
+        "ai-service quotes response had an unexpected shape",
+      );
+      return allUnavailable(tickers);
     }
-    return { quotes, errors: parsed.errors };
+
+    const quotes: Record<string, Quote> = {};
+    const errors: Record<string, string> = { ...envelope.data.errors };
+    for (const [ticker, raw] of Object.entries(envelope.data.quotes)) {
+      const parsed = upstreamQuoteSchema.safeParse(raw);
+      if (parsed.success) {
+        quotes[ticker] = toQuote(parsed.data);
+      } else {
+        // A single malformed quote must not fail the whole batch: mark just
+        // this ticker unavailable and keep the valid quotes.
+        logger.warn(
+          { ticker, err: parsed.error.flatten() },
+          "dropping malformed quote from ai-service",
+        );
+        errors[ticker] = "unavailable";
+      }
+    }
+    return { quotes, errors };
   } catch (error) {
     logger.warn(
       { url: url.toString(), err: error },
       "failed to reach ai-service quotes",
     );
     return allUnavailable(tickers);
+  }
+}
+
+/** Result of checking whether a single ticker is a real, quotable symbol. */
+export type TickerCheck = "ok" | "not_found" | "unavailable";
+
+/**
+ * Check whether a ticker exists via the AI service's single-quote endpoint.
+ * Returns "ok" if quotable, "not_found" if the symbol is unknown, and
+ * "unavailable" when the market-data service can't be reached (so callers can
+ * decide whether a transient outage should block the user).
+ */
+export async function verifyTicker(ticker: string): Promise<TickerCheck> {
+  const url = new URL(`/quotes/${encodeURIComponent(ticker)}`, config.aiServiceUrl);
+
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (response.ok) {
+      return "ok";
+    }
+    if (response.status === 404) {
+      return "not_found";
+    }
+    logger.warn(
+      { url: url.toString(), status: response.status },
+      "ai-service ticker check returned non-OK",
+    );
+    return "unavailable";
+  } catch (error) {
+    logger.warn(
+      { url: url.toString(), err: error },
+      "failed to reach ai-service for ticker check",
+    );
+    return "unavailable";
   }
 }
