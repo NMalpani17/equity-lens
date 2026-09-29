@@ -13,6 +13,11 @@ vi.mock("../src/db/prisma.js", () => ({
       delete: vi.fn(),
       deleteMany: vi.fn(),
     },
+    demoSeed: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -47,8 +52,19 @@ function notFoundError() {
   });
 }
 
+function uniqueViolationError() {
+  return new Prisma.PrismaClientKnownRequestError("unique violation", {
+    code: "P2002",
+    clientVersion: "test",
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // Run the interactive-transaction callback against the same mock client.
+  // Cast around Prisma's overloaded $transaction signature.
+  mockPrisma.$transaction.mockImplementation(((fn: (tx: unknown) => unknown) =>
+    fn(mockPrisma)) as never);
 });
 
 describe("holdings.service", () => {
@@ -206,13 +222,16 @@ describe("holdings.service", () => {
   });
 
   describe("ensureDemoHoldings", () => {
-    it("seeds the sample portfolio when the user has none", async () => {
-      mockPrisma.holding.count.mockResolvedValue(0);
+    it("seeds holdings and records a DemoSeed marker on first run", async () => {
+      mockPrisma.demoSeed.findUnique.mockResolvedValue(null); // never seeded
 
       await service.ensureDemoHoldings(USER_ID);
 
-      expect(mockPrisma.holding.count).toHaveBeenCalledWith({
+      expect(mockPrisma.demoSeed.findUnique).toHaveBeenCalledWith({
         where: { userId: USER_ID },
+      });
+      expect(mockPrisma.demoSeed.create).toHaveBeenCalledWith({
+        data: { userId: USER_ID },
       });
       expect(mockPrisma.holding.createMany).toHaveBeenCalledOnce();
       const arg = mockPrisma.holding.createMany.mock.calls[0]![0]!;
@@ -224,12 +243,26 @@ describe("holdings.service", () => {
       }
     });
 
-    it("does nothing when the user already has holdings", async () => {
-      mockPrisma.holding.count.mockResolvedValue(3);
+    it("does not re-seed once the user has a DemoSeed marker", async () => {
+      // Regression: a demo user who deleted every holding must stay empty. The
+      // marker persists even with zero holdings, so no re-seed happens.
+      mockPrisma.demoSeed.findUnique.mockResolvedValue({
+        userId: USER_ID,
+        seededAt: new Date("2026-01-01T00:00:00.000Z"),
+      });
 
       await service.ensureDemoHoldings(USER_ID);
 
+      expect(mockPrisma.demoSeed.create).not.toHaveBeenCalled();
       expect(mockPrisma.holding.createMany).not.toHaveBeenCalled();
+    });
+
+    it("swallows a concurrent seed's unique-violation without re-seeding", async () => {
+      // Two requests race: this one loses the marker's primary key.
+      mockPrisma.demoSeed.findUnique.mockResolvedValue(null);
+      mockPrisma.$transaction.mockRejectedValue(uniqueViolationError());
+
+      await expect(service.ensureDemoHoldings(USER_ID)).resolves.toBeUndefined();
     });
   });
 });

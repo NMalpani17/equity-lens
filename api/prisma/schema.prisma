@@ -34,3 +34,13 @@ model Holding {
   @@index([userId])
   @@map("holdings")
 }
+
+/// Marks that a user has had the demo portfolio seeded. Ensures anonymous
+/// "Try demo" users are seeded exactly once, so deleting every holding does not
+/// trigger a re-seed on the next load.
+model DemoSeed {
+  userId   String   @id @map("user_id") @db.Uuid
+  seededAt DateTime @default(now()) @map("seeded_at")
+
+  @@map("demo_seeds")
+}

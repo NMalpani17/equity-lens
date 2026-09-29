@@ -33,7 +33,9 @@ existence of others' data isn't revealed). `/api/health` is public.
 
 **Demo users:** anonymous ("Try demo") tokens carry an `is_anonymous` claim. The
 first time such a user lists holdings or loads the portfolio summary, the API
-seeds a sample portfolio for them, so the demo dashboard is never empty.
+seeds a sample portfolio for them, so the demo dashboard is never empty. Seeding
+happens exactly once per user (tracked in a `demo_seeds` table), so a demo user
+who deletes every holding is not re-seeded on the next load.
 
 Notes:
 

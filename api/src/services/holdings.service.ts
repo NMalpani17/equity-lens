@@ -15,6 +15,8 @@ import type {
 
 /** Prisma's "record not found" error code (thrown by update/delete). */
 const RECORD_NOT_FOUND = "P2025";
+/** Prisma's "unique constraint failed" error code. */
+const UNIQUE_VIOLATION = "P2002";
 
 /** Serialize a nullable purchase date to a YYYY-MM-DD string (or null). */
 function toDateString(date: Date | null): string | null {
@@ -45,6 +47,13 @@ function isRecordNotFound(error: unknown): boolean {
   );
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === UNIQUE_VIOLATION
+  );
+}
+
 /**
  * Confirm a holding exists and belongs to the user. Throws NotFoundError
  * otherwise, so accessing another user's holding is indistinguishable from a
@@ -66,14 +75,30 @@ export async function listHoldings(userId: string): Promise<HoldingDto[]> {
 }
 
 /**
- * Seed the sample demo portfolio for a user that has none yet. Used for
- * anonymous "Try demo" visitors so their dashboard isn't empty. Idempotent: a
- * user who already has holdings is left untouched.
+ * Seed the sample demo portfolio for an anonymous "Try demo" user, exactly once.
+ *
+ * Seeding is gated by a DemoSeed marker row rather than the holdings count, so a
+ * user who deletes every sample holding is not re-seeded on the next load. The
+ * marker and the holdings are written in one transaction, and the marker's
+ * primary key makes concurrent requests safe: only the first commits, and a
+ * loser's unique-violation is swallowed as "already seeded".
  */
 export async function ensureDemoHoldings(userId: string): Promise<void> {
-  const existing = await prisma.holding.count({ where: { userId } });
-  if (existing === 0) {
-    await prisma.holding.createMany({ data: buildDemoHoldingData(userId) });
+  try {
+    await prisma.$transaction(async (tx) => {
+      const alreadySeeded = await tx.demoSeed.findUnique({ where: { userId } });
+      if (alreadySeeded) {
+        return;
+      }
+      await tx.demoSeed.create({ data: { userId } });
+      await tx.holding.createMany({ data: buildDemoHoldingData(userId) });
+    });
+  } catch (error) {
+    // A concurrent request seeded first; its marker row won the primary key.
+    if (isUniqueViolation(error)) {
+      return;
+    }
+    throw error;
   }
 }
 
