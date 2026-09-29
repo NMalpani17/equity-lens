@@ -24,9 +24,30 @@ cp ai-service/.env.example ai-service/.env
 - `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY` (your Finnhub key).
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
   (**Project Settings → Database → Connection string**). Keep `?pgbouncer=true`
-  on the pooled URL.
+  on the pooled URL. Also set `SUPABASE_URL` (**Project Settings → Data API →
+  Project URL**), used to verify user JWTs. `DEMO_USER_ID` is only needed to seed
+  the demo account (see below).
+- `client/.env` → `VITE_SUPABASE_URL` (same Project URL) and
+  `VITE_SUPABASE_PUBLISHABLE_KEY` (**Project Settings → API Keys → publishable /
+  anon key**). For the "Try demo" button, also set `VITE_DEMO_EMAIL` and
+  `VITE_DEMO_PASSWORD`.
 
 > Never commit `.env` files — only `.env.example` is tracked. See `CLAUDE.md`.
+
+## Supabase Auth setup
+
+Authentication uses Supabase Auth. In the Supabase dashboard:
+
+1. **Authentication → Providers → Email:** enable it. For local dev, turn off
+   "Confirm email" so a sign-up logs in immediately (otherwise users must click
+   the email link before a session is issued).
+2. The API verifies access tokens against the project's **JWKS**, so the project
+   must use asymmetric JWT signing keys (the default for new projects; legacy
+   projects can migrate under **Project Settings → JWT Keys**).
+3. **Demo account (optional):** create one user under **Authentication → Users**.
+   Put its email/password in `client/.env` (`VITE_DEMO_*`) and its **User UID**
+   in `api/.env` as `DEMO_USER_ID`, then run `npm run db:seed` (below) to give it
+   sample holdings.
 
 ## First-time install
 
@@ -40,12 +61,16 @@ pip install -r requirements-dev.txt
 deactivate && cd ..
 
 npm --prefix api install                      # also runs `prisma generate`
-npm --prefix api run prisma:migrate           # creates the holdings table (first run)
+npm --prefix api run prisma:migrate           # creates/updates tables (first run)
+npm --prefix api run db:seed                   # optional: demo holdings (needs DEMO_USER_ID)
 npm --prefix client install
 ```
 
 > `prisma:migrate` uses `DIRECT_URL`; the running app uses the pooled
 > `DATABASE_URL`. Both must be set in `api/.env` before migrating.
+>
+> `db:seed` populates the demo account's sample holdings and is idempotent
+> (re-running replaces them). It requires `DEMO_USER_ID` in `api/.env`.
 
 ## Run everything with one command
 
@@ -101,7 +126,8 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>. The home page shows the **portfolio dashboard**
+Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
+or click **Try demo**. After authenticating you reach the **portfolio dashboard**
 (positions, summary cards, and add/edit/delete), plus a **System health** card
 that calls `api → ai-service` and reports the status of each hop. For health and
 API details, see [api.md](./api.md).

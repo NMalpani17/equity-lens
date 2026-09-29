@@ -16,6 +16,21 @@ All application routes are served by the Express gateway at
 | `DELETE` | `/api/holdings?ticker=X` | Delete a whole position (every lot for a ticker).               |
 | `GET`    | `/api/portfolio/summary` | Positions (lots grouped by ticker) with live prices + totals.   |
 
+### Authentication
+
+All `/api/holdings` and `/api/portfolio` routes require a **Supabase access
+token** sent as a bearer header:
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+The gateway verifies the token against the Supabase project's JWKS (configured
+via `SUPABASE_URL`) and scopes every query to the token's user. A missing or
+invalid token returns `401` `unauthorized`. Every holding is owned by a user;
+requesting or editing another user's holding returns `404` (never `403`, so the
+existence of others' data isn't revealed). `/api/health` is public.
+
 Notes:
 
 - `purchaseDate` is an optional ISO date (`YYYY-MM-DD`) and must not be in the
@@ -23,7 +38,8 @@ Notes:
 - Ticker symbols are normalized to uppercase. Creating (or changing) a ticker
   validates it against the market data service; unknown symbols return `422`
   `invalid_ticker`. A transient market-data outage does not block the write.
-- Validation failures return `422`; unknown resources return `404`.
+- Validation failures return `422`; unknown resources return `404`; missing or
+  invalid auth returns `401`.
 
 ## AI service (`http://localhost:8000`)
 

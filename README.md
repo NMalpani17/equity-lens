@@ -13,6 +13,9 @@ live market data.
 
 ## Features
 
+- **User accounts** — email/password sign-up and login via **Supabase Auth**.
+  The dashboard is behind a protected route, each user sees only their own
+  holdings, and a **"Try demo"** button opens a shared read-through demo account.
 - **Portfolio with lot grouping** — each purchase is its own lot; the dashboard
   groups lots by ticker into a position showing total shares, weighted-average
   cost, and combined market value, gain/loss, and today's change. Expand a
@@ -59,17 +62,30 @@ npm install                                   # repo root (Husky + concurrently)
 cd ai-service && python -m venv .venv && .venv\Scripts\activate \
   && pip install -r requirements-dev.txt && deactivate && cd ..
 npm --prefix api install                      # also runs `prisma generate`
-npm --prefix api run prisma:migrate           # creates the holdings table (first run)
+npm --prefix api run prisma:migrate           # creates/updates tables (first run)
 npm --prefix client install
 
-# 3. Run all three services together
+# 3. (Optional) seed the demo account's sample holdings
+npm --prefix api run db:seed                   # needs DEMO_USER_ID in api/.env
+
+# 4. Run all three services together
 npm run dev
 ```
 
 Fill in the required secrets before running:
 
 - `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY`
-- `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
+- `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase,
+  and `SUPABASE_URL` (verifies user JWTs). `DEMO_USER_ID` is only needed to seed.
+- `client/.env` → `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, plus
+  `VITE_DEMO_EMAIL` / `VITE_DEMO_PASSWORD` for the "Try demo" button.
+
+**Auth setup:** in your Supabase project, enable Email auth and (for local dev)
+turn off email confirmation so sign-ups log in immediately. The API verifies
+access tokens against the project's JWKS, so the project must use Supabase's
+asymmetric JWT signing keys (the default for new projects). To enable the demo,
+create one user under **Authentication → Users**, put its credentials in
+`client/.env` and its UUID in `api/.env` as `DEMO_USER_ID`, then run the seed.
 
 Then open <http://localhost:5173>. Never commit `.env` files — only
 `.env.example` is tracked.
