@@ -1,4 +1,5 @@
 /** Typed client for the Equity Lens API gateway. */
+import { supabase } from "./supabase";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -13,12 +14,20 @@ export class ApiError extends Error {
   }
 }
 
+/** The Authorization header for the current session, or empty when signed out. */
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const auth = await authHeaders();
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, {
-      headers: { "Content-Type": "application/json" },
       ...init,
+      headers: { "Content-Type": "application/json", ...auth, ...init?.headers },
     });
   } catch {
     throw new ApiError(0, "Could not reach the API. Is it running?");
@@ -182,4 +191,11 @@ export interface PortfolioSummary {
 
 export function getPortfolioSummary(): Promise<PortfolioSummary> {
   return request<PortfolioSummary>("/api/portfolio/summary");
+}
+
+// --- Account --------------------------------------------------------------
+
+/** Permanently delete the authenticated user's account and all their data. */
+export function deleteAccount(): Promise<void> {
+  return request<void>("/api/account", { method: "DELETE" });
 }

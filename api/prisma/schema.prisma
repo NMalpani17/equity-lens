@@ -18,6 +18,9 @@ datasource db {
 /// share a ticker; the portfolio summary groups them into one position.
 model Holding {
   id        String    @id @default(uuid())
+  /// Supabase Auth user id (the JWT `sub`) that owns this lot. Every query is
+  /// scoped to this so users only ever see their own holdings.
+  userId    String    @map("user_id") @db.Uuid
   ticker    String
   /// Number of shares held. Fractional shares supported.
   shares    Decimal   @db.Decimal(20, 8)
@@ -28,5 +31,16 @@ model Holding {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
+  @@index([userId])
   @@map("holdings")
+}
+
+/// Marks that a user has had the demo portfolio seeded. Ensures anonymous
+/// "Try demo" users are seeded exactly once, so deleting every holding does not
+/// trigger a re-seed on the next load.
+model DemoSeed {
+  userId   String   @id @map("user_id") @db.Uuid
+  seededAt DateTime @default(now()) @map("seeded_at")
+
+  @@map("demo_seeds")
 }

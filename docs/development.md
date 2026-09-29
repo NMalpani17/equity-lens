@@ -24,9 +24,35 @@ cp ai-service/.env.example ai-service/.env
 - `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY` (your Finnhub key).
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
   (**Project Settings → Database → Connection string**). Keep `?pgbouncer=true`
-  on the pooled URL.
+  on the pooled URL. Also set `SUPABASE_URL` (**Project Settings → Data API →
+  Project URL**), used to verify user JWTs, and `SUPABASE_SERVICE_ROLE_KEY`
+  (**Project Settings → API Keys → service_role**) — server-side only, used to
+  delete a user's auth account. Never expose the service-role key to the client.
+- `client/.env` → `VITE_SUPABASE_URL` (same Project URL) and
+  `VITE_SUPABASE_PUBLISHABLE_KEY` (**Project Settings → API Keys → publishable /
+  anon key**).
 
 > Never commit `.env` files — only `.env.example` is tracked. See `CLAUDE.md`.
+
+## Supabase Auth setup
+
+Authentication uses Supabase Auth. In the Supabase dashboard:
+
+1. **Authentication → Providers → Email:** enable it. For local dev, turn off
+   "Confirm email" so a sign-up logs in immediately (otherwise users must click
+   the email link before a session is issued).
+2. **Authentication → Anonymous sign-ins:** enable it. The "Try demo" button
+   uses anonymous sign-in, so each visitor gets their own temporary user. On
+   that user's first dashboard load the API seeds a sample portfolio (from
+   `api/src/services/demoHoldings.ts`); no shared account or credentials needed.
+3. The API verifies access tokens against the project's **JWKS**, so the project
+   must use asymmetric JWT signing keys (the default for new projects; legacy
+   projects can migrate under **Project Settings → JWT Keys**).
+4. **Password reset:** under **Authentication → URL Configuration**, add the
+   reset page to the allowed **Redirect URLs** (e.g.
+   `http://localhost:5173/reset-password`, plus your deployed origin). The
+   "Forgot password?" link emails a link back to that page; a logged-in user can
+   also change their password from **Account** in the header (hidden in demo).
 
 ## First-time install
 
@@ -40,7 +66,7 @@ pip install -r requirements-dev.txt
 deactivate && cd ..
 
 npm --prefix api install                      # also runs `prisma generate`
-npm --prefix api run prisma:migrate           # creates the holdings table (first run)
+npm --prefix api run prisma:migrate           # creates/updates tables (first run)
 npm --prefix client install
 ```
 
@@ -101,10 +127,12 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>. The home page shows the **portfolio dashboard**
+Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
+or click **Try demo**. After authenticating you reach the **portfolio dashboard**
 (positions, summary cards, and add/edit/delete), plus a **System health** card
-that calls `api → ai-service` and reports the status of each hop. For health and
-API details, see [api.md](./api.md).
+that calls `api → ai-service` and reports the status of each hop. In demo mode a
+slim banner invites you to sign up for your own account. For health and API
+details, see [api.md](./api.md).
 
 ## Common scripts
 

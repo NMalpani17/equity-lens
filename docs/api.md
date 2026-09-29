@@ -15,6 +15,32 @@ All application routes are served by the Express gateway at
 | `DELETE` | `/api/holdings/:id`      | Delete one lot.                                                 |
 | `DELETE` | `/api/holdings?ticker=X` | Delete a whole position (every lot for a ticker).               |
 | `GET`    | `/api/portfolio/summary` | Positions (lots grouped by ticker) with live prices + totals.   |
+| `DELETE` | `/api/account`           | Delete the authenticated user's account and all their data.     |
+
+### Authentication
+
+All `/api/holdings` and `/api/portfolio` routes require a **Supabase access
+token** sent as a bearer header:
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+The gateway verifies the token against the Supabase project's JWKS (configured
+via `SUPABASE_URL`) and scopes every query to the token's user. A missing or
+invalid token returns `401` `unauthorized`. Every holding is owned by a user;
+requesting or editing another user's holding returns `404` (never `403`, so the
+existence of others' data isn't revealed). `/api/health` is public.
+
+**Account deletion:** `DELETE /api/account` removes the user's holdings and
+`demo_seeds` row in a transaction, then deletes the Supabase auth user via the
+Admin API (using the server-only `SUPABASE_SERVICE_ROLE_KEY`). It returns `204`.
+
+**Demo users:** anonymous ("Try demo") tokens carry an `is_anonymous` claim. The
+first time such a user lists holdings or loads the portfolio summary, the API
+seeds a sample portfolio for them, so the demo dashboard is never empty. Seeding
+happens exactly once per user (tracked in a `demo_seeds` table), so a demo user
+who deletes every holding is not re-seeded on the next load.
 
 Notes:
 
@@ -23,7 +49,8 @@ Notes:
 - Ticker symbols are normalized to uppercase. Creating (or changing) a ticker
   validates it against the market data service; unknown symbols return `422`
   `invalid_ticker`. A transient market-data outage does not block the write.
-- Validation failures return `422`; unknown resources return `404`.
+- Validation failures return `422`; unknown resources return `404`; missing or
+  invalid auth returns `401`.
 
 ## AI service (`http://localhost:8000`)
 

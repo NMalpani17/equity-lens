@@ -189,9 +189,9 @@ function computeTotals(positions: PortfolioPosition[]): PortfolioTotals {
   };
 }
 
-/** Orchestrator: load holdings, fetch their quotes, and build the summary. */
-export async function getPortfolioSummary(): Promise<PortfolioSummary> {
-  const holdings = await listHoldings();
+/** Orchestrator: load the user's holdings, fetch quotes, and build the summary. */
+export async function getPortfolioSummary(userId: string): Promise<PortfolioSummary> {
+  const holdings = await listHoldings(userId);
   const tickers = [...new Set(holdings.map((h) => h.ticker))];
   const quotesResult = await getQuotes(tickers);
   return buildPortfolioSummary(holdings, quotesResult);

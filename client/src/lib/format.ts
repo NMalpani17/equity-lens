@@ -49,6 +49,18 @@ export function formatDate(value: string | null): string {
   });
 }
 
+/** Format a full ISO timestamp as a calendar day, e.g. "Feb 12, 2024". */
+export function formatTimestampDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** Tailwind text color reflecting gain (green), loss (red), or neutral. */
 export function changeColor(value: number): string {
   if (value > 0) return "text-emerald-600";

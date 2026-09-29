@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Express API gateway for Equity Lens",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
@@ -28,15 +31,16 @@
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",
+    "@supabase/supabase-js": "^2.117.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
+    "jose": "^5.10.0",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "prisma": "^6.2.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
@@ -44,6 +48,7 @@
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "prettier": "^3.4.2",
+    "prisma": "^6.2.1",
     "supertest": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",

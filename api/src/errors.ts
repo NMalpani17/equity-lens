@@ -12,6 +12,13 @@ export class HttpError extends Error {
   }
 }
 
+/** 401 — the request lacks a valid authentication token. */
+export class UnauthorizedError extends HttpError {
+  constructor(message = "authentication required") {
+    super(401, "unauthorized", message);
+  }
+}
+
 /** 404 — the requested resource does not exist. */
 export class NotFoundError extends HttpError {
   constructor(message = "resource not found") {

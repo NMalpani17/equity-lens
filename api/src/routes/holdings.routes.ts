@@ -3,8 +3,12 @@ import { Router } from "express";
 
 import * as holdings from "../controllers/holdings.controller.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { requireAuth } from "../middleware/auth.js";
 
 export const holdingsRouter = Router();
+
+// Every holdings route requires a valid Supabase JWT and is scoped to its user.
+holdingsRouter.use(asyncHandler(requireAuth));
 
 holdingsRouter.get("/holdings", asyncHandler(holdings.listHoldings));
 holdingsRouter.post("/holdings", asyncHandler(holdings.createHolding));

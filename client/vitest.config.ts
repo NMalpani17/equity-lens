@@ -14,5 +14,11 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: "./src/test/setup.ts",
+    // Placeholder Supabase config so the client can be constructed in tests.
+    // Auth-flow tests mock the Supabase module entirely.
+    env: {
+      VITE_SUPABASE_URL: "https://project-ref.supabase.co",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
+    },
   },
 });
