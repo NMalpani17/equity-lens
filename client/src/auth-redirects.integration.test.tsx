@@ -67,6 +67,7 @@ vi.mock("@/lib/supabase", () => ({ supabase: { auth: supa.auth } }));
 import { AuthProvider } from "@/context/AuthProvider";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { LoginPage } from "@/components/auth/LoginPage";
+import { ForgotPasswordPage } from "@/components/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
 import { Header } from "@/components/Header";
 import { AccountPage } from "@/components/AccountPage";
@@ -98,6 +99,7 @@ function renderApp(initialEntry: string) {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
             path="/"
@@ -220,6 +222,21 @@ describe("auth redirects", () => {
     // One-shot confirmation flash is shown on the dashboard.
     expect(
       await screen.findByText("Your password has been updated."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an error for an expired reset link and offers a new one", async () => {
+    // No recovery session; Supabase left an error in the hash.
+    renderApp("/reset-password#error=access_denied&error_code=otp_expired");
+
+    expect(
+      await screen.findByText("This reset link is invalid or has expired."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Request a new link" }));
+    expect(
+      await screen.findByText("We'll email you a link to set a new password."),
     ).toBeInTheDocument();
   });
 
