@@ -1,23 +1,24 @@
-import { Dashboard } from "@/components/portfolio/Dashboard";
-import { HealthStatus } from "@/components/HealthStatus";
+import { Navigate, Route, Routes } from "react-router-dom";
+
+import { LoginPage } from "@/components/auth/LoginPage";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { DashboardPage } from "@/components/DashboardPage";
 
 function App() {
   return (
-    <div className="min-h-screen">
-      <header className="border-b">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between p-4">
-          <span className="text-lg font-bold tracking-tight">Equity Lens</span>
-          <span className="text-sm text-muted-foreground">AI investment research</span>
-        </div>
-      </header>
-
-      <main>
-        <Dashboard />
-        <div className="mx-auto w-full max-w-6xl px-6 pb-10">
-          <HealthStatus />
-        </div>
-      </main>
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      {/* Unknown routes fall back to the dashboard (which redirects if signed out). */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
