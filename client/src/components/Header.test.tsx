@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
+const navigate = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => navigate };
+});
+
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
 
 import { useAuth } from "@/context/auth-context";
@@ -112,7 +118,7 @@ describe("Header user menu", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("signs out when Log out is selected", async () => {
+  it("signs out and clears the return-to location on logout", async () => {
     mockAuth({ isDemo: false });
     renderHeader();
     openMenu(/user menu for me@example.com/i);
@@ -120,5 +126,12 @@ describe("Header user menu", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Log out" }));
 
     await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
+    // Navigates to login with no return-to so the next login lands on the dashboard.
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/login", {
+        replace: true,
+        state: null,
+      }),
+    );
   });
 });
