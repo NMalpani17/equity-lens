@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "React client for Equity Lens",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

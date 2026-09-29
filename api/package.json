@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Express API gateway for Equity Lens",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
