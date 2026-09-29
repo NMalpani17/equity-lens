@@ -20,6 +20,7 @@ vi.mock("@/context/auth-context", () => ({
 
 import { LoginPage } from "./LoginPage";
 import { clearSignupIntent, rememberSignupIntent } from "@/lib/authIntent";
+import { setAuthFlash } from "@/lib/authFlash";
 
 function renderPage() {
   render(
@@ -36,6 +37,7 @@ function fillCredentials(email = "user@example.com", password = "secret123") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
   clearSignupIntent();
   authValue.user = null;
   authValue.loading = false;
@@ -105,6 +107,13 @@ describe("LoginPage", () => {
     renderPage();
 
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
+  });
+
+  it("shows a one-shot flash message (e.g. after account deletion)", () => {
+    setAuthFlash("Your account has been deleted.");
+    renderPage();
+
+    expect(screen.getByText("Your account has been deleted.")).toBeInTheDocument();
   });
 
   it("surfaces an error when sign in fails", async () => {

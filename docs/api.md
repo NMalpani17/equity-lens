@@ -15,6 +15,7 @@ All application routes are served by the Express gateway at
 | `DELETE` | `/api/holdings/:id`      | Delete one lot.                                                 |
 | `DELETE` | `/api/holdings?ticker=X` | Delete a whole position (every lot for a ticker).               |
 | `GET`    | `/api/portfolio/summary` | Positions (lots grouped by ticker) with live prices + totals.   |
+| `DELETE` | `/api/account`           | Delete the authenticated user's account and all their data.     |
 
 ### Authentication
 
@@ -30,6 +31,10 @@ via `SUPABASE_URL`) and scopes every query to the token's user. A missing or
 invalid token returns `401` `unauthorized`. Every holding is owned by a user;
 requesting or editing another user's holding returns `404` (never `403`, so the
 existence of others' data isn't revealed). `/api/health` is public.
+
+**Account deletion:** `DELETE /api/account` removes the user's holdings and
+`demo_seeds` row in a transaction, then deletes the Supabase auth user via the
+Admin API (using the server-only `SUPABASE_SERVICE_ROLE_KEY`). It returns `204`.
 
 **Demo users:** anonymous ("Try demo") tokens carry an `is_anonymous` claim. The
 first time such a user lists holdings or loads the portfolio summary, the API

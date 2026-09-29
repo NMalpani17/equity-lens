@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
+import { DeleteAccountSection } from "@/components/account/DeleteAccountSection";
 import { useAuth } from "@/context/auth-context";
 import { formatTimestampDate } from "@/lib/format";
 
@@ -61,6 +62,8 @@ export function AccountPage() {
             />
           </CardContent>
         </Card>
+
+        <DeleteAccountSection />
 
         <Link
           to="/"

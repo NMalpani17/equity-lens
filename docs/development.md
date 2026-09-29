@@ -25,7 +25,9 @@ cp ai-service/.env.example ai-service/.env
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
   (**Project Settings → Database → Connection string**). Keep `?pgbouncer=true`
   on the pooled URL. Also set `SUPABASE_URL` (**Project Settings → Data API →
-  Project URL**), used to verify user JWTs.
+  Project URL**), used to verify user JWTs, and `SUPABASE_SERVICE_ROLE_KEY`
+  (**Project Settings → API Keys → service_role**) — server-side only, used to
+  delete a user's auth account. Never expose the service-role key to the client.
 - `client/.env` → `VITE_SUPABASE_URL` (same Project URL) and
   `VITE_SUPABASE_PUBLISHABLE_KEY` (**Project Settings → API Keys → publishable /
   anon key**).

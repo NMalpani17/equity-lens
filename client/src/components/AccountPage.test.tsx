@@ -54,6 +54,9 @@ describe("AccountPage", () => {
     expect(screen.getByText("Member since")).toBeInTheDocument();
     expect(screen.getByText("Feb 12, 2024")).toBeInTheDocument();
     expect(screen.getByText("Change password")).toBeInTheDocument();
+    // Danger zone with the delete-account action.
+    expect(screen.getByText("Danger zone")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete account" })).toBeInTheDocument();
   });
 
   it("redirects demo users away", () => {

@@ -33,6 +33,9 @@ const envSchema = z.object({
   // Supabase project URL (e.g. https://<project-ref>.supabase.co). Used to
   // derive the JWKS endpoint and expected issuer for verifying auth tokens.
   SUPABASE_URL: z.string().url(),
+  // Supabase service-role key — SERVER-SIDE ONLY. Grants admin access (e.g.
+  // deleting auth users); never expose it to the client.
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -55,6 +58,7 @@ export const config = {
   databaseUrl: parsed.data.DATABASE_URL,
   directUrl: parsed.data.DIRECT_URL,
   supabaseUrl: parsed.data.SUPABASE_URL,
+  supabaseServiceRoleKey: parsed.data.SUPABASE_SERVICE_ROLE_KEY,
 } as const;
 
 export type Config = typeof config;

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/auth-context";
 import { clearSignupIntent, hasSignupIntent } from "@/lib/authIntent";
+import { consumeAuthFlash } from "@/lib/authFlash";
 
 type Mode = "login" | "signup";
 
@@ -27,15 +28,22 @@ export function LoginPage() {
     hasSignupIntent() ? "signup" : "login",
   );
 
-  // The intent is one-shot: clear it so a later manual visit starts on login.
-  useEffect(() => clearSignupIntent(), []);
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Sign-up intent is one-shot: clear it so a later manual visit opens login.
+    clearSignupIntent();
+    // Show any handoff message (e.g. after account deletion) exactly once.
+    const flash = consumeAuthFlash();
+    if (flash) {
+      setNotice(flash);
+    }
+  }, []);
 
   // Where to send the user after auth: back to the page they came from, or the
   // dashboard. Redirect happens as soon as a session exists.

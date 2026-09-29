@@ -15,7 +15,8 @@ live market data.
 
 - **User accounts** — email/password sign-up and login via **Supabase Auth**,
   with password reset (email link) and an account page showing your profile
-  (email, member-since date) where you can change your password.
+  (email, member-since date) where you can change your password or delete your
+  account (which removes all your data).
   The dashboard is behind a protected route, each user sees only their own
   holdings, and a **"Try demo"** button starts a per-visitor demo (anonymous
   sign-in) that the API auto-seeds with a sample portfolio.
@@ -76,7 +77,8 @@ Fill in the required secrets before running:
 
 - `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY`
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase,
-  and `SUPABASE_URL` (verifies user JWTs).
+  `SUPABASE_URL` (verifies user JWTs), and `SUPABASE_SERVICE_ROLE_KEY`
+  (server-only; used to delete a user's auth account).
 - `client/.env` → `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 
 **Auth setup:** in your Supabase project, enable **Email** auth and (for local

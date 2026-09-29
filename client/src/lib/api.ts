@@ -192,3 +192,10 @@ export interface PortfolioSummary {
 export function getPortfolioSummary(): Promise<PortfolioSummary> {
   return request<PortfolioSummary>("/api/portfolio/summary");
 }
+
+// --- Account --------------------------------------------------------------
+
+/** Permanently delete the authenticated user's account and all their data. */
+export function deleteAccount(): Promise<void> {
+  return request<void>("/api/account", { method: "DELETE" });
+}
