@@ -62,7 +62,8 @@ describe("DeleteAccountSection", () => {
     await waitFor(() => expect(deleteAccountMock).toHaveBeenCalledOnce());
     expect(setAuthFlashMock).toHaveBeenCalledWith("Your account has been deleted.");
     await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
-    expect(navigate).toHaveBeenCalledWith("/login", { replace: true });
+    // Navigates with no "return to" state so a later login/sign-up starts fresh.
+    expect(navigate).toHaveBeenCalledWith("/login", { replace: true, state: null });
   });
 
   it("surfaces an error and does not sign out when deletion fails", async () => {

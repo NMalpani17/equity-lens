@@ -58,7 +58,9 @@ export function DeleteAccountSection() {
       // Hand a confirmation to the login page, then clear the dead session.
       setAuthFlash("Your account has been deleted.");
       await signOut();
-      navigate("/login", { replace: true });
+      // Go to login with no "return to" location — the account (and the page the
+      // user came from) no longer exists, so a later login/sign-up starts fresh.
+      navigate("/login", { replace: true, state: null });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't delete your account.");
       setDeleting(false);

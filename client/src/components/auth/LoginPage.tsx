@@ -45,11 +45,18 @@ export function LoginPage() {
     }
   }, []);
 
-  // Where to send the user after auth: back to the page they came from, or the
-  // dashboard. Redirect happens as soon as a session exists.
+  // "Return to" location set by ProtectedRoute when it bounces an unauthenticated
+  // user away from a protected page. It only applies to a normal login; sign-up
+  // and demo always land on the dashboard.
   const from = (location.state as { from?: string } | null)?.from ?? "/";
+
+  // Where to send the user once a session exists. Defaults to `from` so a user
+  // who was bounced and is already authenticated returns to where they were;
+  // each action updates it explicitly below.
+  const [redirectTo, setRedirectTo] = useState(from);
+
   if (!loading && user) {
-    return <Navigate to={from} replace />;
+    return <Navigate to={redirectTo} replace />;
   }
 
   function switchMode(next: Mode) {
@@ -71,12 +78,16 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       if (mode === "signup") {
+        // A new account always starts on the dashboard, never a stale return-to.
+        setRedirectTo("/");
         await signUp(email.trim(), password);
         // With email confirmation enabled, no session is created yet.
         setNotice(
           "Account created. If email confirmation is enabled, check your inbox to finish signing in.",
         );
       } else {
+        // A normal login returns to where the user was bounced from (or home).
+        setRedirectTo(from);
         await signIn(email.trim(), password);
       }
     } catch (err) {
@@ -89,6 +100,8 @@ export function LoginPage() {
   async function handleDemo() {
     setError(null);
     setNotice(null);
+    // The demo always opens on the dashboard, never a stale return-to.
+    setRedirectTo("/");
     setDemoLoading(true);
     try {
       await signInWithDemo();

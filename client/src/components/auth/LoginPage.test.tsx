@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 // Control the auth context so the page can be tested in isolation.
 const authValue = {
@@ -33,6 +33,19 @@ function renderPage() {
 function fillCredentials(email = "user@example.com", password = "secret123") {
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: email } });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: password } });
+}
+
+/** Render the login page inside routes so post-auth redirects are observable. */
+function renderWithRoutes(state?: { from?: string }) {
+  render(
+    <MemoryRouter initialEntries={[{ pathname: "/login", state }]}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<div>dashboard-home</div>} />
+        <Route path="/account" element={<div>account-page</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {
@@ -123,5 +136,55 @@ describe("LoginPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Log in" }));
 
     expect(await screen.findByText("Invalid login credentials")).toBeInTheDocument();
+  });
+});
+
+describe("LoginPage post-auth redirect", () => {
+  it("sends a normal login without a bounce to the dashboard", async () => {
+    authValue.signIn.mockImplementation(async () => {
+      authValue.user = { email: "me@example.com" };
+    });
+    renderWithRoutes(); // no return-to location
+
+    fillCredentials("me@example.com", "pw123456");
+    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+    expect(await screen.findByText("dashboard-home")).toBeInTheDocument();
+  });
+
+  it("returns a bounced login to the page it came from", async () => {
+    authValue.signIn.mockImplementation(async () => {
+      authValue.user = { email: "me@example.com" };
+    });
+    renderWithRoutes({ from: "/account" });
+
+    fillCredentials("me@example.com", "pw123456");
+    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+    expect(await screen.findByText("account-page")).toBeInTheDocument();
+  });
+
+  it("sends a sign-up to the dashboard even with a stale return-to location", async () => {
+    authValue.signUp.mockImplementation(async () => {
+      authValue.user = { email: "new@example.com" };
+    });
+    renderWithRoutes({ from: "/account" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fillCredentials("new@example.com", "pw123456");
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(await screen.findByText("dashboard-home")).toBeInTheDocument();
+  });
+
+  it("sends the demo to the dashboard even with a stale return-to location", async () => {
+    authValue.signInWithDemo.mockImplementation(async () => {
+      authValue.user = { email: null, is_anonymous: true };
+    });
+    renderWithRoutes({ from: "/account" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Try demo" }));
+
+    expect(await screen.findByText("dashboard-home")).toBeInTheDocument();
   });
 });
