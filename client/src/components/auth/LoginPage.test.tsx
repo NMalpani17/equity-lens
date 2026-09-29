@@ -92,6 +92,14 @@ describe("LoginPage", () => {
     expect(await screen.findByText(/Account created/)).toBeInTheDocument();
   });
 
+  it("shows a forgot-password link in login mode", () => {
+    renderPage();
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
+  });
+
   it("opens in sign-up mode when a signup intent is set (from the demo banner)", () => {
     rememberSignupIntent();
     renderPage();

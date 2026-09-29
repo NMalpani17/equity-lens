@@ -11,6 +11,8 @@ const authApi = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
   signInAnonymously: vi.fn(),
   signUp: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
+  updateUser: vi.fn(),
   signOut: vi.fn(),
 }));
 
@@ -42,6 +44,12 @@ function Consumer() {
         signin
       </button>
       <button onClick={() => run(() => auth.signInWithDemo())}>demo</button>
+      <button onClick={() => run(() => auth.sendPasswordReset("a@b.com"))}>
+        reset
+      </button>
+      <button onClick={() => run(() => auth.updatePassword("newpass123"))}>
+        update
+      </button>
       <button onClick={() => run(() => auth.signOut())}>signout</button>
     </div>
   );
@@ -64,6 +72,8 @@ beforeEach(() => {
   authApi.signInWithPassword.mockResolvedValue({ error: null });
   authApi.signInAnonymously.mockResolvedValue({ error: null });
   authApi.signUp.mockResolvedValue({ error: null });
+  authApi.resetPasswordForEmail.mockResolvedValue({ error: null });
+  authApi.updateUser.mockResolvedValue({ error: null });
   authApi.signOut.mockResolvedValue({ error: null });
 });
 
@@ -97,6 +107,29 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(authApi.signInAnonymously).toHaveBeenCalledOnce());
     // The demo path never uses password sign-in.
     expect(authApi.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("sends a password-reset email pointing at the reset page", async () => {
+    renderProvider();
+    fireClick("reset");
+
+    await waitFor(() =>
+      expect(authApi.resetPasswordForEmail).toHaveBeenCalledWith(
+        "a@b.com",
+        expect.objectContaining({
+          redirectTo: expect.stringContaining("/reset-password"),
+        }),
+      ),
+    );
+  });
+
+  it("updates the current user's password", async () => {
+    renderProvider();
+    fireClick("update");
+
+    await waitFor(() =>
+      expect(authApi.updateUser).toHaveBeenCalledWith({ password: "newpass123" }),
+    );
   });
 
   it("signs out", async () => {

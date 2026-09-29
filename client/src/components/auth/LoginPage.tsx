@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -119,7 +119,17 @@ export function LoginPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                {mode === "login" && (
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground underline underline-offset-4"
+                  >
+                    Forgot password?
+                  </Link>
+                )}
+              </div>
               <Input
                 id="password"
                 type="password"

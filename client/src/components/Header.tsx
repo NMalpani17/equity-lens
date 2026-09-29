@@ -1,12 +1,13 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/auth-context";
 
-/** App header: brand, the signed-in user's email, and a logout button. */
+/** App header: brand, the signed-in user's email, and account/logout actions. */
 export function Header() {
-  const { user, signOut } = useAuth();
+  const { user, isDemo, signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
@@ -27,6 +28,12 @@ export function Header() {
             <span className="hidden text-sm text-muted-foreground sm:inline">
               {user.email}
             </span>
+          )}
+          {/* Demo users are anonymous and have no password to manage. */}
+          {!isDemo && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/account">Account</Link>
+            </Button>
           )}
           <Button
             variant="outline"

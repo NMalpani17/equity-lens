@@ -46,6 +46,11 @@ Authentication uses Supabase Auth. In the Supabase dashboard:
 3. The API verifies access tokens against the project's **JWKS**, so the project
    must use asymmetric JWT signing keys (the default for new projects; legacy
    projects can migrate under **Project Settings → JWT Keys**).
+4. **Password reset:** under **Authentication → URL Configuration**, add the
+   reset page to the allowed **Redirect URLs** (e.g.
+   `http://localhost:5173/reset-password`, plus your deployed origin). The
+   "Forgot password?" link emails a link back to that page; a logged-in user can
+   also change their password from **Account** in the header (hidden in demo).
 
 ## First-time install
 

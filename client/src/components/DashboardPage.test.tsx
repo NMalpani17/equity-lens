@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 // Stub the data-fetching children so the page renders without network calls.
 vi.mock("@/components/portfolio/Dashboard", () => ({
@@ -24,6 +25,8 @@ function mockAuth(isDemo: boolean) {
     signIn: vi.fn(),
     signUp: vi.fn(),
     signInWithDemo: vi.fn(),
+    sendPasswordReset: vi.fn(),
+    updatePassword: vi.fn(),
     signOut: vi.fn(),
   });
 }
@@ -35,14 +38,22 @@ beforeEach(() => {
 describe("DashboardPage", () => {
   it("shows the demo banner for anonymous demo users", () => {
     mockAuth(true);
-    render(<DashboardPage />);
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText(/You're exploring a demo/)).toBeInTheDocument();
   });
 
   it("hides the demo banner for regular users", () => {
     mockAuth(false);
-    render(<DashboardPage />);
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.queryByText(/You're exploring a demo/)).not.toBeInTheDocument();
     expect(screen.getByText("dashboard-body")).toBeInTheDocument();

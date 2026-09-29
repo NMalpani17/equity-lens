@@ -1,18 +1,31 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { LoginPage } from "@/components/auth/LoginPage";
+import { ForgotPasswordPage } from "@/components/auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardPage } from "@/components/DashboardPage";
+import { AccountPage } from "@/components/AccountPage";
 
 function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/"
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account"
+        element={
+          <ProtectedRoute>
+            <AccountPage />
           </ProtectedRoute>
         }
       />

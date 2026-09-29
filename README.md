@@ -13,7 +13,8 @@ live market data.
 
 ## Features
 
-- **User accounts** — email/password sign-up and login via **Supabase Auth**.
+- **User accounts** — email/password sign-up and login via **Supabase Auth**,
+  with password reset (email link) and an account page to change your password.
   The dashboard is behind a protected route, each user sees only their own
   holdings, and a **"Try demo"** button starts a per-visitor demo (anonymous
   sign-in) that the API auto-seeds with a sample portfolio.

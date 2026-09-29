@@ -56,6 +56,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInAnonymously();
         throwOnError(error);
       },
+      sendPasswordReset: async (email) => {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        throwOnError(error);
+      },
+      updatePassword: async (newPassword) => {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        throwOnError(error);
+      },
       signOut: async () => {
         const { error } = await supabase.auth.signOut();
         throwOnError(error);

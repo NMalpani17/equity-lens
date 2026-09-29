@@ -17,6 +17,10 @@ export interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>;
   /** Start an anonymous demo session (a fresh temporary user). */
   signInWithDemo: () => Promise<void>;
+  /** Email a password-reset link that lands on the reset page. */
+  sendPasswordReset: (email: string) => Promise<void>;
+  /** Set a new password for the current (logged-in or recovery) session. */
+  updatePassword: (newPassword: string) => Promise<void>;
   /** Sign out the current user. */
   signOut: () => Promise<void>;
 }
