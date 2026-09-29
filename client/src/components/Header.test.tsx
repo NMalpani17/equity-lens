@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe("Header user menu", () => {
-  it("labels the trigger with the user's email and initial", () => {
+  it("shows only the avatar initial on the trigger (no inline email text)", () => {
     mockAuth({ isDemo: false });
     renderHeader();
 
@@ -55,6 +55,20 @@ describe("Header user menu", () => {
       name: /user menu for me@example.com/i,
     });
     expect(trigger).toHaveTextContent("M"); // avatar initial
+    // The email is not rendered inline on the trigger; it lives in the menu/tooltip.
+    expect(trigger).not.toHaveTextContent("me@example.com");
+  });
+
+  it("reveals the full email in a tooltip on focus", async () => {
+    mockAuth({ isDemo: false });
+    renderHeader();
+
+    fireEvent.focus(
+      screen.getByRole("button", { name: /user menu for me@example.com/i }),
+    );
+
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("me@example.com");
   });
 
   it("shows account settings and logout for a regular user", async () => {

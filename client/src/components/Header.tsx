@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, LogOut, Settings } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -10,9 +10,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAuth } from "@/context/auth-context";
 
-/** App header: brand and a user menu (account settings + logout). */
+/** App header: brand and an avatar user menu (account settings + logout). */
 export function Header() {
   const { user, isDemo, signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
@@ -35,45 +41,45 @@ export function Header() {
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 p-4">
         <span className="text-lg font-bold tracking-tight">Equity Lens</span>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label={`User menu for ${label}`}
-            className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=open]:bg-accent"
-          >
-            <span
-              aria-hidden="true"
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
-            >
-              {initial}
-            </span>
-            <span className="hidden max-w-[16ch] truncate text-muted-foreground sm:inline">
-              {label}
-            </span>
-            <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
-          </DropdownMenuTrigger>
+        <TooltipProvider>
+          <Tooltip>
+            <DropdownMenu>
+              {/* One avatar button acts as both the tooltip and menu trigger. */}
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger
+                  aria-label={`User menu for ${label}`}
+                  className="flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2"
+                >
+                  {initial}
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
 
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="max-w-[16rem] truncate font-normal text-muted-foreground">
-              {label}
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {!isDemo && (
-              <DropdownMenuItem asChild>
-                <Link to="/account">
-                  <Settings aria-hidden="true" />
-                  Account settings
-                </Link>
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
-              onSelect={() => void handleSignOut()}
-              disabled={signingOut}
-            >
-              <LogOut aria-hidden="true" />
-              Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel className="max-w-[16rem] truncate font-normal text-muted-foreground">
+                  {label}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {!isDemo && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/account">
+                      <Settings aria-hidden="true" />
+                      Account settings
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onSelect={() => void handleSignOut()}
+                  disabled={signingOut}
+                >
+                  <LogOut aria-hidden="true" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <TooltipContent>{label}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </header>
   );
