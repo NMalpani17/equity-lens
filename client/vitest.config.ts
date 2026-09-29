@@ -19,8 +19,6 @@ export default defineConfig({
     env: {
       VITE_SUPABASE_URL: "https://project-ref.supabase.co",
       VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
-      VITE_DEMO_EMAIL: "demo@equitylens.app",
-      VITE_DEMO_PASSWORD: "demo-password",
     },
   },
 });

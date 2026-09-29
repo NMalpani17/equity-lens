@@ -32,6 +32,7 @@ function mockAuth(overrides: Partial<ReturnType<typeof useAuth>>) {
     session: null,
     user: null,
     loading: false,
+    isDemo: false,
     signIn: vi.fn(),
     signUp: vi.fn(),
     signInWithDemo: vi.fn(),

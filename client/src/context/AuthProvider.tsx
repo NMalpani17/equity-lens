@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       user: session?.user ?? null,
       loading,
+      isDemo: session?.user?.is_anonymous ?? false,
       signUp: async (email, password) => {
         const { error } = await supabase.auth.signUp({ email, password });
         throwOnError(error);
@@ -50,15 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throwOnError(error);
       },
       signInWithDemo: async () => {
-        const email = import.meta.env.VITE_DEMO_EMAIL;
-        const password = import.meta.env.VITE_DEMO_PASSWORD;
-        if (!email || !password) {
-          throw new Error(
-            "Demo account is not configured. Set VITE_DEMO_EMAIL and " +
-              "VITE_DEMO_PASSWORD in client/.env.",
-          );
-        }
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        // Each visitor gets their own throwaway anonymous user; the API seeds it
+        // with a sample portfolio on first load.
+        const { error } = await supabase.auth.signInAnonymously();
         throwOnError(error);
       },
       signOut: async () => {

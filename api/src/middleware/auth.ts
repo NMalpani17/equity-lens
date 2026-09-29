@@ -37,8 +37,9 @@ export async function requireAuth(
   }
 
   try {
-    const { userId } = await verifySupabaseToken(token);
+    const { userId, isAnonymous } = await verifySupabaseToken(token);
     req.userId = userId;
+    req.isAnonymous = isAnonymous;
     next();
   } catch (error) {
     logger.warn(
@@ -58,4 +59,9 @@ export function getUserId(req: Request): string {
     throw new UnauthorizedError();
   }
   return req.userId;
+}
+
+/** Whether the request is from an anonymous demo user (set by `requireAuth`). */
+export function isAnonymousRequest(req: Request): boolean {
+  return req.isAnonymous === true;
 }

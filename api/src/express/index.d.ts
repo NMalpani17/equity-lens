@@ -6,6 +6,8 @@ declare global {
     interface Request {
       /** The authenticated user's id, set by `requireAuth`. */
       userId?: string;
+      /** True for anonymous demo users, set by `requireAuth`. */
+      isAnonymous?: boolean;
     }
   }
 }

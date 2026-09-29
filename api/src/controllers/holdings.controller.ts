@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 
 import * as holdingsService from "../services/holdings.service.js";
 import { verifyTicker } from "../services/quotes.service.js";
-import { getUserId } from "../middleware/auth.js";
+import { getUserId, isAnonymousRequest } from "../middleware/auth.js";
 import { InvalidTickerError, NotFoundError } from "../errors.js";
 import {
   createHoldingSchema,
@@ -25,6 +25,10 @@ async function assertTickerExists(ticker: string): Promise<void> {
 
 export async function listHoldings(req: Request, res: Response): Promise<void> {
   const userId = getUserId(req);
+  // Anonymous demo visitors get a sample portfolio on first load.
+  if (isAnonymousRequest(req)) {
+    await holdingsService.ensureDemoHoldings(userId);
+  }
   const holdings = await holdingsService.listHoldings(userId);
   res.status(200).json(holdings);
 }

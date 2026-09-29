@@ -31,6 +31,10 @@ invalid token returns `401` `unauthorized`. Every holding is owned by a user;
 requesting or editing another user's holding returns `404` (never `403`, so the
 existence of others' data isn't revealed). `/api/health` is public.
 
+**Demo users:** anonymous ("Try demo") tokens carry an `is_anonymous` claim. The
+first time such a user lists holdings or loads the portfolio summary, the API
+seeds a sample portfolio for them, so the demo dashboard is never empty.
+
 Notes:
 
 - `purchaseDate` is an optional ISO date (`YYYY-MM-DD`) and must not be in the

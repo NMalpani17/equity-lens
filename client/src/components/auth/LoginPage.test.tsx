@@ -7,6 +7,7 @@ const authValue = {
   session: null as unknown,
   user: null as unknown,
   loading: false,
+  isDemo: false,
   signIn: vi.fn(),
   signUp: vi.fn(),
   signInWithDemo: vi.fn(),

@@ -6,6 +6,7 @@ import { Prisma, type Holding } from "@prisma/client";
 
 import { prisma } from "../db/prisma.js";
 import { NotFoundError } from "../errors.js";
+import { buildDemoHoldingData } from "./demoHoldings.js";
 import type { HoldingDto } from "../types.js";
 import type {
   CreateHoldingInput,
@@ -62,6 +63,18 @@ export async function listHoldings(userId: string): Promise<HoldingDto[]> {
     orderBy: { createdAt: "asc" },
   });
   return holdings.map(toDto);
+}
+
+/**
+ * Seed the sample demo portfolio for a user that has none yet. Used for
+ * anonymous "Try demo" visitors so their dashboard isn't empty. Idempotent: a
+ * user who already has holdings is left untouched.
+ */
+export async function ensureDemoHoldings(userId: string): Promise<void> {
+  const existing = await prisma.holding.count({ where: { userId } });
+  if (existing === 0) {
+    await prisma.holding.createMany({ data: buildDemoHoldingData(userId) });
+  }
 }
 
 export async function getHolding(id: string, userId: string): Promise<HoldingDto> {

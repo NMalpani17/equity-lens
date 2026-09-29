@@ -25,12 +25,10 @@ cp ai-service/.env.example ai-service/.env
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
   (**Project Settings → Database → Connection string**). Keep `?pgbouncer=true`
   on the pooled URL. Also set `SUPABASE_URL` (**Project Settings → Data API →
-  Project URL**), used to verify user JWTs. `DEMO_USER_ID` is only needed to seed
-  the demo account (see below).
+  Project URL**), used to verify user JWTs.
 - `client/.env` → `VITE_SUPABASE_URL` (same Project URL) and
   `VITE_SUPABASE_PUBLISHABLE_KEY` (**Project Settings → API Keys → publishable /
-  anon key**). For the "Try demo" button, also set `VITE_DEMO_EMAIL` and
-  `VITE_DEMO_PASSWORD`.
+  anon key**).
 
 > Never commit `.env` files — only `.env.example` is tracked. See `CLAUDE.md`.
 
@@ -41,13 +39,13 @@ Authentication uses Supabase Auth. In the Supabase dashboard:
 1. **Authentication → Providers → Email:** enable it. For local dev, turn off
    "Confirm email" so a sign-up logs in immediately (otherwise users must click
    the email link before a session is issued).
-2. The API verifies access tokens against the project's **JWKS**, so the project
+2. **Authentication → Anonymous sign-ins:** enable it. The "Try demo" button
+   uses anonymous sign-in, so each visitor gets their own temporary user. On
+   that user's first dashboard load the API seeds a sample portfolio (from
+   `api/src/services/demoHoldings.ts`); no shared account or credentials needed.
+3. The API verifies access tokens against the project's **JWKS**, so the project
    must use asymmetric JWT signing keys (the default for new projects; legacy
    projects can migrate under **Project Settings → JWT Keys**).
-3. **Demo account (optional):** create one user under **Authentication → Users**.
-   Put its email/password in `client/.env` (`VITE_DEMO_*`) and its **User UID**
-   in `api/.env` as `DEMO_USER_ID`, then run `npm run db:seed` (below) to give it
-   sample holdings.
 
 ## First-time install
 
@@ -62,15 +60,11 @@ deactivate && cd ..
 
 npm --prefix api install                      # also runs `prisma generate`
 npm --prefix api run prisma:migrate           # creates/updates tables (first run)
-npm --prefix api run db:seed                   # optional: demo holdings (needs DEMO_USER_ID)
 npm --prefix client install
 ```
 
 > `prisma:migrate` uses `DIRECT_URL`; the running app uses the pooled
 > `DATABASE_URL`. Both must be set in `api/.env` before migrating.
->
-> `db:seed` populates the demo account's sample holdings and is idempotent
-> (re-running replaces them). It requires `DEMO_USER_ID` in `api/.env`.
 
 ## Run everything with one command
 

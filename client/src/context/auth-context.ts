@@ -9,11 +9,13 @@ export interface AuthContextValue {
   user: User | null;
   /** True until the initial session has been resolved. */
   loading: boolean;
+  /** True when the current user is an anonymous ("Try demo") visitor. */
+  isDemo: boolean;
   /** Create an account with email + password. Throws on failure. */
   signUp: (email: string, password: string) => Promise<void>;
   /** Sign in with email + password. Throws on failure. */
   signIn: (email: string, password: string) => Promise<void>;
-  /** Sign in to the shared demo account. Throws if demo creds are unset. */
+  /** Start an anonymous demo session (a fresh temporary user). */
   signInWithDemo: () => Promise<void>;
   /** Sign out the current user. */
   signOut: () => Promise<void>;

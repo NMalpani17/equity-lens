@@ -6,7 +6,9 @@ vi.mock("../src/db/prisma.js", () => ({
     holding: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
+      count: vi.fn(),
       create: vi.fn(),
+      createMany: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
       deleteMany: vi.fn(),
@@ -200,6 +202,34 @@ describe("holdings.service", () => {
     expect(count).toBe(3);
     expect(mockPrisma.holding.deleteMany).toHaveBeenCalledWith({
       where: { ticker: "AAPL", userId: USER_ID },
+    });
+  });
+
+  describe("ensureDemoHoldings", () => {
+    it("seeds the sample portfolio when the user has none", async () => {
+      mockPrisma.holding.count.mockResolvedValue(0);
+
+      await service.ensureDemoHoldings(USER_ID);
+
+      expect(mockPrisma.holding.count).toHaveBeenCalledWith({
+        where: { userId: USER_ID },
+      });
+      expect(mockPrisma.holding.createMany).toHaveBeenCalledOnce();
+      const arg = mockPrisma.holding.createMany.mock.calls[0]![0]!;
+      const rows = arg.data as Array<{ userId: string }>;
+      expect(rows.length).toBeGreaterThan(0);
+      // Every seeded row is owned by the user.
+      for (const row of rows) {
+        expect(row.userId).toBe(USER_ID);
+      }
+    });
+
+    it("does nothing when the user already has holdings", async () => {
+      mockPrisma.holding.count.mockResolvedValue(3);
+
+      await service.ensureDemoHoldings(USER_ID);
+
+      expect(mockPrisma.holding.createMany).not.toHaveBeenCalled();
     });
   });
 });

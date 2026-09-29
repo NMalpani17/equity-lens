@@ -10,6 +10,7 @@ vi.mock("../src/services/holdings.service.js", () => ({
   updateHolding: vi.fn(),
   deleteHolding: vi.fn(),
   deleteHoldingsByTicker: vi.fn(),
+  ensureDemoHoldings: vi.fn(),
 }));
 
 // The controller validates the ticker against the market-data service; mock it
@@ -59,8 +60,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Default to a recognized ticker; individual tests override as needed.
   verifyTickerMock.mockResolvedValue("ok");
-  // Default to an authenticated user; auth-specific tests override this.
-  verifyTokenMock.mockResolvedValue({ userId: USER_ID });
+  // Default to an authenticated, non-anonymous user; tests override as needed.
+  verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: false });
 });
 
 afterEach(() => {
@@ -107,6 +108,18 @@ describe("GET /api/holdings", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual([sample]);
     expect(service.listHoldings).toHaveBeenCalledWith(USER_ID);
+    // A normal user is never auto-seeded.
+    expect(service.ensureDemoHoldings).not.toHaveBeenCalled();
+  });
+
+  it("seeds demo holdings before listing for an anonymous user", async () => {
+    verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: true });
+    service.listHoldings.mockResolvedValue([sample]);
+
+    const res = await get("/api/holdings");
+
+    expect(res.status).toBe(200);
+    expect(service.ensureDemoHoldings).toHaveBeenCalledWith(USER_ID);
   });
 });
 

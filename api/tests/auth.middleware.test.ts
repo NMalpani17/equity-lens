@@ -8,7 +8,7 @@ vi.mock("../src/auth/verifyToken.js", () => ({
 }));
 
 import { verifySupabaseToken } from "../src/auth/verifyToken.js";
-import { getUserId, requireAuth } from "../src/middleware/auth.js";
+import { getUserId, isAnonymousRequest, requireAuth } from "../src/middleware/auth.js";
 import { UnauthorizedError } from "../src/errors.js";
 
 const verifyTokenMock = vi.mocked(verifySupabaseToken);
@@ -36,7 +36,7 @@ beforeEach(() => {
 
 describe("requireAuth", () => {
   it("accepts a valid bearer token and sets req.userId", async () => {
-    verifyTokenMock.mockResolvedValue({ userId: USER_ID });
+    verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: false });
     const req = makeReq("Bearer valid-token");
     const next = makeNext();
 
@@ -44,8 +44,20 @@ describe("requireAuth", () => {
 
     expect(verifyTokenMock).toHaveBeenCalledWith("valid-token");
     expect(req.userId).toBe(USER_ID);
+    expect(req.isAnonymous).toBe(false);
     // next() called with no error argument.
     expect(next.calls).toEqual([[]]);
+  });
+
+  it("flags anonymous demo users via req.isAnonymous", async () => {
+    verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: true });
+    const req = makeReq("Bearer demo-token");
+    const next = makeNext();
+
+    await requireAuth(req, res, next);
+
+    expect(req.isAnonymous).toBe(true);
+    expect(isAnonymousRequest(req)).toBe(true);
   });
 
   it("rejects a request with no Authorization header (401)", async () => {
