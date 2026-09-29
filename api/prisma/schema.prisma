@@ -18,6 +18,9 @@ datasource db {
 /// share a ticker; the portfolio summary groups them into one position.
 model Holding {
   id        String    @id @default(uuid())
+  /// Supabase Auth user id (the JWT `sub`) that owns this lot. Every query is
+  /// scoped to this so users only ever see their own holdings.
+  userId    String    @map("user_id") @db.Uuid
   ticker    String
   /// Number of shares held. Fractional shares supported.
   shares    Decimal   @db.Decimal(20, 8)
@@ -28,5 +31,6 @@ model Holding {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
+  @@index([userId])
   @@map("holdings")
 }

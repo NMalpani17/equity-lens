@@ -44,24 +44,41 @@ function isRecordNotFound(error: unknown): boolean {
   );
 }
 
-export async function listHoldings(): Promise<HoldingDto[]> {
+/**
+ * Confirm a holding exists and belongs to the user. Throws NotFoundError
+ * otherwise, so accessing another user's holding is indistinguishable from a
+ * missing one (no information leak about other users' data).
+ */
+async function assertOwned(id: string, userId: string): Promise<void> {
+  const holding = await prisma.holding.findFirst({ where: { id, userId } });
+  if (!holding) {
+    throw new NotFoundError(`holding ${id} not found`);
+  }
+}
+
+export async function listHoldings(userId: string): Promise<HoldingDto[]> {
   const holdings = await prisma.holding.findMany({
+    where: { userId },
     orderBy: { createdAt: "asc" },
   });
   return holdings.map(toDto);
 }
 
-export async function getHolding(id: string): Promise<HoldingDto> {
-  const holding = await prisma.holding.findUnique({ where: { id } });
+export async function getHolding(id: string, userId: string): Promise<HoldingDto> {
+  const holding = await prisma.holding.findFirst({ where: { id, userId } });
   if (!holding) {
     throw new NotFoundError(`holding ${id} not found`);
   }
   return toDto(holding);
 }
 
-export async function createHolding(input: CreateHoldingInput): Promise<HoldingDto> {
+export async function createHolding(
+  input: CreateHoldingInput,
+  userId: string,
+): Promise<HoldingDto> {
   const holding = await prisma.holding.create({
     data: {
+      userId,
       ticker: input.ticker,
       shares: new Prisma.Decimal(input.shares),
       buyPrice: new Prisma.Decimal(input.buyPrice),
@@ -74,7 +91,11 @@ export async function createHolding(input: CreateHoldingInput): Promise<HoldingD
 export async function updateHolding(
   id: string,
   input: UpdateHoldingInput,
+  userId: string,
 ): Promise<HoldingDto> {
+  // Verify ownership first so another user's holding reads as not found rather
+  // than being modified.
+  await assertOwned(id, userId);
   try {
     const holding = await prisma.holding.update({
       where: { id },
@@ -100,19 +121,20 @@ export async function updateHolding(
   }
 }
 
-export async function deleteHolding(id: string): Promise<void> {
-  try {
-    await prisma.holding.delete({ where: { id } });
-  } catch (error) {
-    if (isRecordNotFound(error)) {
-      throw new NotFoundError(`holding ${id} not found`);
-    }
-    throw error;
+export async function deleteHolding(id: string, userId: string): Promise<void> {
+  // Scope the delete to the owner: deleteMany with a userId filter removes the
+  // row only when it belongs to the user, and reports 0 otherwise.
+  const { count } = await prisma.holding.deleteMany({ where: { id, userId } });
+  if (count === 0) {
+    throw new NotFoundError(`holding ${id} not found`);
   }
 }
 
-/** Delete every lot for a ticker; returns how many rows were removed. */
-export async function deleteHoldingsByTicker(ticker: string): Promise<number> {
-  const { count } = await prisma.holding.deleteMany({ where: { ticker } });
+/** Delete every lot for a ticker owned by the user; returns rows removed. */
+export async function deleteHoldingsByTicker(
+  ticker: string,
+  userId: string,
+): Promise<number> {
+  const { count } = await prisma.holding.deleteMany({ where: { ticker, userId } });
   return count;
 }
