@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -12,7 +11,8 @@ import { ChangePasswordForm } from "./ChangePasswordForm";
 
 /**
  * Set a new password. Reached from the reset email link, where Supabase
- * establishes a short-lived recovery session that authorizes the update.
+ * establishes a short-lived recovery session that authorizes the update. On
+ * success the user is signed in, so we send them to the dashboard.
  */
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -27,14 +27,7 @@ export function ResetPasswordPage() {
         <CardContent>
           <ChangePasswordForm
             submitLabel="Update password"
-            renderSuccess={() => (
-              <div className="flex flex-col gap-4">
-                <p role="status" className="text-sm text-muted-foreground">
-                  Your password has been updated.
-                </p>
-                <Button onClick={() => navigate("/")}>Go to dashboard</Button>
-              </div>
-            )}
+            onSuccess={() => navigate("/", { replace: true })}
           />
         </CardContent>
       </Card>

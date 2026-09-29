@@ -36,13 +36,12 @@ function fillCredentials(email = "user@example.com", password = "secret123") {
 }
 
 /** Render the login page inside routes so post-auth redirects are observable. */
-function renderWithRoutes(state?: { from?: string }) {
+function renderWithRoutes() {
   render(
-    <MemoryRouter initialEntries={[{ pathname: "/login", state }]}>
+    <MemoryRouter initialEntries={["/login"]}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<div>dashboard-home</div>} />
-        <Route path="/account" element={<div>account-page</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -152,23 +151,11 @@ describe("LoginPage post-auth redirect", () => {
     expect(await screen.findByText("dashboard-home")).toBeInTheDocument();
   });
 
-  it("returns a bounced login to the page it came from", async () => {
-    authValue.signIn.mockImplementation(async () => {
-      authValue.user = { email: "me@example.com" };
-    });
-    renderWithRoutes({ from: "/account" });
-
-    fillCredentials("me@example.com", "pw123456");
-    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
-
-    expect(await screen.findByText("account-page")).toBeInTheDocument();
-  });
-
-  it("sends a sign-up to the dashboard even with a stale return-to location", async () => {
+  it("sends a sign-up to the dashboard", async () => {
     authValue.signUp.mockImplementation(async () => {
       authValue.user = { email: "new@example.com" };
     });
-    renderWithRoutes({ from: "/account" });
+    renderWithRoutes();
 
     fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
     fillCredentials("new@example.com", "pw123456");
@@ -177,11 +164,11 @@ describe("LoginPage post-auth redirect", () => {
     expect(await screen.findByText("dashboard-home")).toBeInTheDocument();
   });
 
-  it("sends the demo to the dashboard even with a stale return-to location", async () => {
+  it("sends the demo to the dashboard", async () => {
     authValue.signInWithDemo.mockImplementation(async () => {
       authValue.user = { email: null, is_anonymous: true };
     });
-    renderWithRoutes({ from: "/account" });
+    renderWithRoutes();
 
     fireEvent.click(screen.getByRole("button", { name: "Try demo" }));
 

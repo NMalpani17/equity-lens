@@ -8,13 +8,10 @@ vi.mock("@/context/auth-context", () => ({
 
 import { ChangePasswordForm } from "./ChangePasswordForm";
 
+const onSuccess = vi.fn();
+
 function renderForm() {
-  render(
-    <ChangePasswordForm
-      submitLabel="Update password"
-      renderSuccess={() => <div>done-success</div>}
-    />,
-  );
+  render(<ChangePasswordForm submitLabel="Update password" onSuccess={onSuccess} />);
 }
 
 function fill(newPw: string, confirmPw: string) {
@@ -50,13 +47,13 @@ describe("ChangePasswordForm", () => {
     expect(updatePassword).not.toHaveBeenCalled();
   });
 
-  it("updates the password and shows the success content", async () => {
+  it("updates the password and calls onSuccess", async () => {
     renderForm();
     fill("abcdef", "abcdef");
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
     await waitFor(() => expect(updatePassword).toHaveBeenCalledWith("abcdef"));
-    expect(await screen.findByText("done-success")).toBeInTheDocument();
+    expect(onSuccess).toHaveBeenCalledOnce();
   });
 
   it("surfaces an error when the update fails", async () => {

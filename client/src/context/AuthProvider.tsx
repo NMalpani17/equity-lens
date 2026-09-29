@@ -4,7 +4,6 @@
  * sign-out across tabs.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase";
@@ -18,7 +17,6 @@ function throwOnError(error: { message: string } | null): void {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -71,12 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut: async () => {
         const { error } = await supabase.auth.signOut();
         throwOnError(error);
-        // Every deliberate sign-out lands on login with no "return to" location,
-        // so the next login goes to the dashboard rather than the last page.
-        navigate("/login", { replace: true, state: null });
+        // No navigation here: sign-out UI lives on protected pages, so clearing
+        // the session lets ProtectedRoute redirect to /login (replace, no state).
       },
     }),
-    [session, loading, navigate],
+    [session, loading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

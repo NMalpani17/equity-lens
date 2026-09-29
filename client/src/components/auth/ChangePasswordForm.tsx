@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,25 +12,24 @@ const MIN_PASSWORD_LENGTH = 6;
 interface ChangePasswordFormProps {
   /** Label for the submit button. */
   submitLabel: string;
-  /** Rendered in place of the form after a successful update. */
-  renderSuccess: () => ReactNode;
+  /** Called after a successful password update. */
+  onSuccess: () => void;
 }
 
 /**
- * A new-password + confirm form that calls `updatePassword`. Shared by the
- * reset-password page (recovery session) and the account settings page
- * (logged-in session), which differ only in what they show on success.
+ * A new-password + confirm form that calls `updatePassword`, used by the
+ * reset-password page (recovery session). On success it invokes `onSuccess`
+ * (which sends the now-authenticated user to the dashboard).
  */
 export function ChangePasswordForm({
   submitLabel,
-  renderSuccess,
+  onSuccess,
 }: ChangePasswordFormProps) {
   const { updatePassword } = useAuth();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -46,16 +45,12 @@ export function ChangePasswordForm({
     setSubmitting(true);
     try {
       await updatePassword(password);
-      setDone(true);
+      onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't update the password.");
     } finally {
       setSubmitting(false);
     }
-  }
-
-  if (done) {
-    return <>{renderSuccess()}</>;
   }
 
   return (

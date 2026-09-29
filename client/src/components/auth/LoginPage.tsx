@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,6 @@ type Mode = "login" | "signup";
 /** Email + password auth with an anonymous demo shortcut. */
 export function LoginPage() {
   const { user, loading, signIn, signUp, signInWithDemo } = useAuth();
-  const location = useLocation();
 
   // Open in sign-up mode when arriving via the demo banner's "Sign up".
   const [mode, setMode] = useState<Mode>(() =>
@@ -45,18 +44,10 @@ export function LoginPage() {
     }
   }, []);
 
-  // "Return to" location set by ProtectedRoute when it bounces an unauthenticated
-  // user away from a protected page. It only applies to a normal login; sign-up
-  // and demo always land on the dashboard.
-  const from = (location.state as { from?: string } | null)?.from ?? "/";
-
-  // Where to send the user once a session exists. Defaults to `from` so a user
-  // who was bounced and is already authenticated returns to where they were;
-  // each action updates it explicitly below.
-  const [redirectTo, setRedirectTo] = useState(from);
-
+  // After any successful auth (login, sign-up, demo) the user always lands on the
+  // dashboard. A logged-in user who visits /login is sent there too.
   if (!loading && user) {
-    return <Navigate to={redirectTo} replace />;
+    return <Navigate to="/" replace />;
   }
 
   function switchMode(next: Mode) {
@@ -78,16 +69,12 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       if (mode === "signup") {
-        // A new account always starts on the dashboard, never a stale return-to.
-        setRedirectTo("/");
         await signUp(email.trim(), password);
         // With email confirmation enabled, no session is created yet.
         setNotice(
           "Account created. If email confirmation is enabled, check your inbox to finish signing in.",
         );
       } else {
-        // A normal login returns to where the user was bounced from (or home).
-        setRedirectTo(from);
         await signIn(email.trim(), password);
       }
     } catch (err) {
@@ -100,8 +87,6 @@ export function LoginPage() {
   async function handleDemo() {
     setError(null);
     setNotice(null);
-    // The demo always opens on the dashboard, never a stale return-to.
-    setRedirectTo("/");
     setDemoLoading(true);
     try {
       await signInWithDemo();
