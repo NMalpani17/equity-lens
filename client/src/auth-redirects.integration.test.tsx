@@ -3,6 +3,7 @@
  * real AuthProvider, ProtectedRoute, LoginPage, ResetPasswordPage, Header, and
  * AccountPage. Only Supabase (and the network) is mocked.
  */
+import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
@@ -70,13 +71,23 @@ import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
 import { Header } from "@/components/Header";
 import { AccountPage } from "@/components/AccountPage";
 import { clearSignupIntent } from "@/lib/authIntent";
+import { consumeAuthFlash } from "@/lib/authFlash";
 
-/** Stand-in for the dashboard route; uses the real Header for menu/logout. */
+/**
+ * Stand-in for the dashboard route; uses the real Header for menu/logout and
+ * consumes the one-shot flash the way the real DashboardPage does.
+ */
 function DashboardStub() {
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    const message = consumeAuthFlash();
+    if (message) setFlash(message);
+  }, []);
   return (
     <div>
       <Header />
       <h1>Dashboard page</h1>
+      {flash && <p>{flash}</p>}
     </div>
   );
 }
@@ -206,6 +217,10 @@ describe("auth redirects", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
     expect(await dashboard()).toBeInTheDocument();
+    // One-shot confirmation flash is shown on the dashboard.
+    expect(
+      await screen.findByText("Your password has been updated."),
+    ).toBeInTheDocument();
   });
 
   it("sends a logged-in user who visits /login to the dashboard", async () => {
