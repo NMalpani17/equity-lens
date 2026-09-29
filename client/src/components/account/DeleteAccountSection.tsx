@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,7 +31,6 @@ const CONFIRM_WORD = "DELETE";
 /** Danger zone: permanently delete the account behind a typed confirmation. */
 export function DeleteAccountSection() {
   const { signOut } = useAuth();
-  const navigate = useNavigate();
 
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
@@ -55,12 +53,10 @@ export function DeleteAccountSection() {
     setError(null);
     try {
       await deleteAccount();
-      // Hand a confirmation to the login page, then clear the dead session.
+      // Hand a confirmation to the login page, then sign out — signOut() clears
+      // the dead session and returns to /login with no return-to location.
       setAuthFlash("Your account has been deleted.");
       await signOut();
-      // Go to login with no "return to" location — the account (and the page the
-      // user came from) no longer exists, so a later login/sign-up starts fresh.
-      navigate("/login", { replace: true, state: null });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't delete your account.");
       setDeleting(false);

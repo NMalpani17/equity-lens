@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { LogOut, Settings } from "lucide-react";
 
 import {
@@ -21,16 +21,13 @@ import { useAuth } from "@/context/auth-context";
 /** App header: brand and an avatar user menu (account settings + logout). */
 export function Header() {
   const { user, isDemo, signOut } = useAuth();
-  const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
     setSigningOut(true);
     try {
+      // signOut() clears the session and returns to /login with no return-to.
       await signOut();
-      // Go to login with no "return to" location so the next login lands on the
-      // dashboard, not the page the user just logged out from.
-      navigate("/login", { replace: true, state: null });
     } finally {
       setSigningOut(false);
     }

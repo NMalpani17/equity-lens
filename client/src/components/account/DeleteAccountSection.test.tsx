@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
-const navigate = vi.fn();
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
-  return { ...actual, useNavigate: () => navigate };
-});
-
 const signOut = vi.fn();
 vi.mock("@/context/auth-context", () => ({ useAuth: () => ({ signOut }) }));
 
@@ -61,9 +55,8 @@ describe("DeleteAccountSection", () => {
 
     await waitFor(() => expect(deleteAccountMock).toHaveBeenCalledOnce());
     expect(setAuthFlashMock).toHaveBeenCalledWith("Your account has been deleted.");
+    // signOut() clears the return-to and redirects to login (see AuthProvider tests).
     await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
-    // Navigates with no "return to" state so a later login/sign-up starts fresh.
-    expect(navigate).toHaveBeenCalledWith("/login", { replace: true, state: null });
   });
 
   it("surfaces an error and does not sign out when deletion fails", async () => {
@@ -77,7 +70,7 @@ describe("DeleteAccountSection", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
 
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("server error");
+    // On failure it neither signs out nor navigates away.
     expect(signOut).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
   });
 });

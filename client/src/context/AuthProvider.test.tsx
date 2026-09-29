@@ -18,6 +18,13 @@ const authApi = vi.hoisted(() => ({
 
 vi.mock("@/lib/supabase", () => ({ supabase: { auth: authApi } }));
 
+// Capture navigation so the centralized sign-out redirect can be asserted.
+const navigate = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => navigate };
+});
+
 import { AuthProvider } from "./AuthProvider";
 import { useAuth } from "./auth-context";
 
@@ -132,11 +139,13 @@ describe("AuthProvider", () => {
     );
   });
 
-  it("signs out", async () => {
+  it("signs out and returns to login with no return-to location", async () => {
     renderProvider();
     fireClick("signout");
 
     await waitFor(() => expect(authApi.signOut).toHaveBeenCalledOnce());
+    // Centralized: every deliberate sign-out clears the return-to and goes to login.
+    expect(navigate).toHaveBeenCalledWith("/login", { replace: true, state: null });
   });
 
   it("propagates auth errors to the caller", async () => {
