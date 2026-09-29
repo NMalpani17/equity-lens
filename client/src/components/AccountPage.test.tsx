@@ -12,7 +12,10 @@ const useAuthMock = vi.mocked(useAuth);
 function mockAuth(overrides: Partial<ReturnType<typeof useAuth>>) {
   useAuthMock.mockReturnValue({
     session: null,
-    user: { email: "me@example.com" } as never,
+    user: {
+      email: "me@example.com",
+      created_at: "2024-02-12T10:30:00.000Z",
+    } as never,
     loading: false,
     isDemo: false,
     signIn: vi.fn(),
@@ -41,13 +44,16 @@ beforeEach(() => {
 });
 
 describe("AccountPage", () => {
-  it("shows the change-password form for a regular user", () => {
+  it("shows the profile and change-password form for a regular user", () => {
     mockAuth({ isDemo: false });
     renderAt();
 
     expect(screen.getByText("Account settings")).toBeInTheDocument();
+    // Profile section: email + member-since date.
+    expect(screen.getByText("me@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Member since")).toBeInTheDocument();
+    expect(screen.getByText("Feb 12, 2024")).toBeInTheDocument();
     expect(screen.getByText("Change password")).toBeInTheDocument();
-    expect(screen.getByText(/Signed in as me@example.com/)).toBeInTheDocument();
   });
 
   it("redirects demo users away", () => {

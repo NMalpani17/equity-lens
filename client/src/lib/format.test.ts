@@ -5,6 +5,7 @@ import {
   formatCurrency,
   formatSignedCurrency,
   formatSignedPercent,
+  formatTimestampDate,
 } from "./format";
 
 describe("format helpers", () => {
@@ -21,6 +22,16 @@ describe("format helpers", () => {
   it("prefixes gains with + in percent", () => {
     expect(formatSignedPercent(4.756)).toBe("+4.76%");
     expect(formatSignedPercent(-1.2)).toBe("-1.20%");
+  });
+
+  it("formats an ISO timestamp as a calendar day", () => {
+    expect(formatTimestampDate("2024-02-12T10:30:00.000Z")).toBe("Feb 12, 2024");
+  });
+
+  it("returns a dash for missing or invalid timestamps", () => {
+    expect(formatTimestampDate(null)).toBe("—");
+    expect(formatTimestampDate(undefined)).toBe("—");
+    expect(formatTimestampDate("not-a-date")).toBe("—");
   });
 
   it("colors by sign", () => {

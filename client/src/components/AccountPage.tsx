@@ -10,12 +10,13 @@ import {
 } from "@/components/ui/card";
 import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
 import { useAuth } from "@/context/auth-context";
+import { formatTimestampDate } from "@/lib/format";
 
-/** Account settings: change the logged-in user's password. Hidden for demo. */
+/** Account settings: profile, password, and account deletion. Hidden for demo. */
 export function AccountPage() {
   const { user, isDemo } = useAuth();
 
-  // Demo (anonymous) users have no password to manage.
+  // Demo (anonymous) users have no account to manage.
   if (isDemo) {
     return <Navigate to="/" replace />;
   }
@@ -24,12 +25,25 @@ export function AccountPage() {
     <div className="min-h-screen">
       <Header />
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Account settings</h1>
-          {user?.email && (
-            <p className="text-sm text-muted-foreground">Signed in as {user.email}</p>
-          )}
-        </div>
+        <h1 className="text-2xl font-bold tracking-tight">Account settings</h1>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Profile</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Email</span>
+              <span className="font-medium">{user?.email ?? "—"}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Member since</span>
+              <span className="font-medium">
+                {formatTimestampDate(user?.created_at)}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
