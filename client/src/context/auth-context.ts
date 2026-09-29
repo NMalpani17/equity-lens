@@ -11,6 +11,11 @@ export interface AuthContextValue {
   loading: boolean;
   /** True when the current user is an anonymous ("Try demo") visitor. */
   isDemo: boolean;
+  /**
+   * True when the session was established via a password-recovery link (Supabase's
+   * PASSWORD_RECOVERY event). Only then may the reset-password form be shown.
+   */
+  isPasswordRecovery: boolean;
   /** Create an account with email + password. Throws on failure. */
   signUp: (email: string, password: string) => Promise<void>;
   /** Sign in with email + password. Throws on failure. */

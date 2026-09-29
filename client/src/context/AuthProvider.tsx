@@ -19,6 +19,9 @@ function throwOnError(error: { message: string } | null): void {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  // Set only when the user arrives via a password-recovery link, so the reset
+  // page can distinguish a genuine recovery from any other logged-in session.
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
     // Resolve the initial session, then keep it in sync with Supabase.
@@ -29,8 +32,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordRecovery(true);
+      } else if (event === "SIGNED_OUT") {
+        setIsPasswordRecovery(false);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -42,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       loading,
       isDemo: session?.user?.is_anonymous ?? false,
+      isPasswordRecovery,
       signUp: async (email, password) => {
         const { error } = await supabase.auth.signUp({ email, password });
         throwOnError(error);
@@ -73,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // the session lets ProtectedRoute redirect to /login (replace, no state).
       },
     }),
-    [session, loading],
+    [session, loading, isPasswordRecovery],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

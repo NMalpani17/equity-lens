@@ -12,6 +12,7 @@ import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 // notify listeners, so the real AuthProvider reacts as it would in the browser.
 const supa = vi.hoisted(() => {
   let session: unknown = null;
+  let pendingRecovery = false;
   const listeners = new Set<(event: string, s: unknown) => void>();
   const emit = () => listeners.forEach((cb) => cb("event", session));
   const loggedInUser = {
@@ -22,6 +23,7 @@ const supa = vi.hoisted(() => {
   return {
     reset() {
       session = null;
+      pendingRecovery = false;
       listeners.clear();
     },
     loginExisting() {
@@ -30,10 +32,19 @@ const supa = vi.hoisted(() => {
     loginDemo() {
       session = { user: { email: null, is_anonymous: true } };
     },
+    /** Simulate arriving via a recovery link: session + a PASSWORD_RECOVERY event. */
+    loginRecovery() {
+      session = { user: loggedInUser };
+      pendingRecovery = true;
+    },
     auth: {
       getSession: async () => ({ data: { session } }),
       onAuthStateChange: (cb: (event: string, s: unknown) => void) => {
         listeners.add(cb);
+        if (pendingRecovery) {
+          pendingRecovery = false;
+          queueMicrotask(() => cb("PASSWORD_RECOVERY", session));
+        }
         return { data: { subscription: { unsubscribe: () => listeners.delete(cb) } } };
       },
       signInWithPassword: async ({ email }: { email: string }) => {
@@ -205,7 +216,7 @@ describe("auth redirects", () => {
   });
 
   it("sends a completed password reset to the dashboard", async () => {
-    supa.loginExisting(); // recovery session established by the email link
+    supa.loginRecovery(); // recovery session established by the email link
     renderApp("/reset-password");
     // Wait for the reset page before acting.
     await screen.findByLabelText("New password");
@@ -238,6 +249,16 @@ describe("auth redirects", () => {
     expect(
       await screen.findByText("We'll email you a link to set a new password."),
     ).toBeInTheDocument();
+  });
+
+  it("never shows the reset form for an anonymous session on an expired link", async () => {
+    supa.loginDemo(); // an anonymous "Try demo" session is active
+    renderApp("/reset-password#error=access_denied&error_code=otp_expired");
+
+    expect(
+      await screen.findByText("This reset link is invalid or has expired."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
   });
 
   it("sends a logged-in user who visits /login to the dashboard", async () => {

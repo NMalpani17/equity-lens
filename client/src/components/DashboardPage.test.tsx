@@ -31,6 +31,7 @@ function mockAuth(isDemo: boolean) {
     user: { email: "me@example.com" } as never,
     loading: false,
     isDemo,
+    isPasswordRecovery: false,
     signIn: vi.fn(),
     signUp: vi.fn(),
     signInWithDemo: vi.fn(),

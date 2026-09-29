@@ -39,6 +39,7 @@ function Consumer() {
       <span data-testid="loading">loading:{String(auth.loading)}</span>
       <span data-testid="user">user:{auth.user?.email ?? "none"}</span>
       <span data-testid="demo">demo:{String(auth.isDemo)}</span>
+      <span data-testid="recovery">recovery:{String(auth.isPasswordRecovery)}</span>
       <span data-testid="err">err:{err}</span>
       <button onClick={() => run(() => auth.signIn("a@b.com", "pw123456"))}>
         signin
@@ -167,6 +168,27 @@ describe("AuthProvider", () => {
     act(() => onChange("SIGNED_IN", { user: { email: null, is_anonymous: true } }));
 
     expect(screen.getByTestId("demo")).toHaveTextContent("demo:true");
+    // A plain sign-in is not a password recovery.
+    expect(screen.getByTestId("recovery")).toHaveTextContent("recovery:false");
+  });
+
+  it("flags a password-recovery session only on the PASSWORD_RECOVERY event", async () => {
+    renderProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId("loading")).toHaveTextContent("loading:false"),
+    );
+
+    const onChange = authApi.onAuthStateChange.mock.calls[0]![0] as (
+      event: string,
+      session: unknown,
+    ) => void;
+
+    act(() => onChange("PASSWORD_RECOVERY", { user: { email: "me@example.com" } }));
+    expect(screen.getByTestId("recovery")).toHaveTextContent("recovery:true");
+
+    // Signing out clears the recovery flag.
+    act(() => onChange("SIGNED_OUT", null));
+    expect(screen.getByTestId("recovery")).toHaveTextContent("recovery:false");
   });
 });
 

@@ -21,6 +21,7 @@ function mockAuth(overrides: Partial<ReturnType<typeof useAuth>>) {
     user: null,
     loading: false,
     isDemo: false,
+    isPasswordRecovery: false,
     signIn: vi.fn(),
     signUp: vi.fn(),
     signInWithDemo: vi.fn(),
@@ -39,43 +40,46 @@ function renderAt(entry: string) {
   );
 }
 
+const invalidText = "This reset link is invalid or has expired.";
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("ResetPasswordPage", () => {
-  it("shows the form for a valid recovery session", () => {
-    mockAuth({ user: { email: "me@example.com" } as never });
+  it("shows the form only for a genuine password-recovery session", () => {
+    mockAuth({ isPasswordRecovery: true, user: { email: "me@example.com" } as never });
     renderAt("/reset-password");
 
     expect(screen.getByLabelText("New password")).toBeInTheDocument();
-    expect(
-      screen.queryByText("This reset link is invalid or has expired."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(invalidText)).not.toBeInTheDocument();
   });
 
-  it("shows an error and no form when the link hash carries an auth error", () => {
-    mockAuth({ user: null });
+  it("shows the invalid state for an anonymous (demo) session", () => {
+    mockAuth({
+      isPasswordRecovery: false,
+      isDemo: true,
+      user: { email: null, is_anonymous: true } as never,
+    });
     renderAt("/reset-password#error=access_denied&error_code=otp_expired");
 
-    expect(
-      screen.getByText("This reset link is invalid or has expired."),
-    ).toBeInTheDocument();
+    expect(screen.getByText(invalidText)).toBeInTheDocument();
     expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
-    // The error hash is stripped from the URL.
-    expect(navigate).toHaveBeenCalledWith(
-      { pathname: "/reset-password", hash: "" },
-      { replace: true },
-    );
   });
 
-  it("shows an error when there is no recovery session", () => {
-    mockAuth({ user: null });
+  it("shows the invalid state for a regular logged-in user (not from a link)", () => {
+    mockAuth({ isPasswordRecovery: false, user: { email: "me@example.com" } as never });
     renderAt("/reset-password");
 
-    expect(
-      screen.getByText("This reset link is invalid or has expired."),
-    ).toBeInTheDocument();
+    expect(screen.getByText(invalidText)).toBeInTheDocument();
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+  });
+
+  it("shows the invalid state when there is no session at all", () => {
+    mockAuth({ isPasswordRecovery: false, user: null });
+    renderAt("/reset-password");
+
+    expect(screen.getByText(invalidText)).toBeInTheDocument();
   });
 
   it("shows a spinner while the session is resolving", () => {
@@ -83,13 +87,21 @@ describe("ResetPasswordPage", () => {
     renderAt("/reset-password");
 
     expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("This reset link is invalid or has expired."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(invalidText)).not.toBeInTheDocument();
+  });
+
+  it("strips the token/error hash from the URL", () => {
+    mockAuth({ isPasswordRecovery: false });
+    renderAt("/reset-password#error=access_denied&error_code=otp_expired");
+
+    expect(navigate).toHaveBeenCalledWith(
+      { pathname: "/reset-password", hash: "" },
+      { replace: true },
+    );
   });
 
   it("sends the user to the forgot-password form to request a new link", () => {
-    mockAuth({ user: null });
+    mockAuth({ isPasswordRecovery: false });
     renderAt("/reset-password#error=access_denied&error_code=otp_expired");
 
     fireEvent.click(screen.getByRole("button", { name: "Request a new link" }));

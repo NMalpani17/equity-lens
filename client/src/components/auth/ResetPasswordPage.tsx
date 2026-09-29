@@ -13,25 +13,23 @@ import {
 import { ChangePasswordForm } from "./ChangePasswordForm";
 import { useAuth } from "@/context/auth-context";
 import { setAuthFlash } from "@/lib/authFlash";
-import { hashHasAuthError } from "@/lib/authHash";
 
 /**
- * Set a new password. Reached from the reset email link, where Supabase
- * establishes a short-lived recovery session that authorizes the update.
+ * Set a new password. Reached from the reset email link, where Supabase fires a
+ * PASSWORD_RECOVERY event and establishes a short-lived recovery session.
  *
- * An expired or already-used link has no recovery session and arrives with an
- * error in the URL hash; in that case (or with no session at all) we show a
- * clear message and a way to request a new link instead of a broken form.
+ * The form is shown ONLY for a genuine recovery session — never for an anonymous
+ * ("Try demo") user, nor for a regular logged-in user who opens this page
+ * directly (they can change their password from Account settings), nor for an
+ * expired/used link. Anything else shows an invalid-link message.
  */
 export function ResetPasswordPage() {
-  const { user, loading } = useAuth();
+  const { isPasswordRecovery, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const linkError = hashHasAuthError(location.hash);
-
   useEffect(() => {
-    // Strip Supabase's error/token params from the address bar.
+    // Strip Supabase's token/error params from the address bar.
     if (location.hash) {
       navigate({ pathname: location.pathname, hash: "" }, { replace: true });
     }
@@ -50,8 +48,7 @@ export function ResetPasswordPage() {
     );
   }
 
-  // Expired/used link (error in the hash) or no recovery session at all.
-  if (linkError || !user) {
+  if (!isPasswordRecovery) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <Card className="w-full max-w-sm">
