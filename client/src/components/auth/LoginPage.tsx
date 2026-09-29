@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
@@ -13,15 +13,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/auth-context";
+import { clearSignupIntent, hasSignupIntent } from "@/lib/authIntent";
 
 type Mode = "login" | "signup";
 
-/** Email + password auth with a shared demo shortcut. */
+/** Email + password auth with an anonymous demo shortcut. */
 export function LoginPage() {
   const { user, loading, signIn, signUp, signInWithDemo } = useAuth();
   const location = useLocation();
 
-  const [mode, setMode] = useState<Mode>("login");
+  // Open in sign-up mode when arriving via the demo banner's "Sign up".
+  const [mode, setMode] = useState<Mode>(() =>
+    hasSignupIntent() ? "signup" : "login",
+  );
+
+  // The intent is one-shot: clear it so a later manual visit starts on login.
+  useEffect(() => clearSignupIntent(), []);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);

@@ -19,6 +19,7 @@ vi.mock("@/context/auth-context", () => ({
 }));
 
 import { LoginPage } from "./LoginPage";
+import { clearSignupIntent, rememberSignupIntent } from "@/lib/authIntent";
 
 function renderPage() {
   render(
@@ -35,6 +36,7 @@ function fillCredentials(email = "user@example.com", password = "secret123") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearSignupIntent();
   authValue.user = null;
   authValue.loading = false;
   authValue.signIn.mockResolvedValue(undefined);
@@ -88,6 +90,13 @@ describe("LoginPage", () => {
       expect(authValue.signUp).toHaveBeenCalledWith("new@example.com", "pw123456"),
     );
     expect(await screen.findByText(/Account created/)).toBeInTheDocument();
+  });
+
+  it("opens in sign-up mode when a signup intent is set (from the demo banner)", () => {
+    rememberSignupIntent();
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
   });
 
   it("surfaces an error when sign in fails", async () => {

@@ -123,8 +123,9 @@ npm run dev
 Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
 or click **Try demo**. After authenticating you reach the **portfolio dashboard**
 (positions, summary cards, and add/edit/delete), plus a **System health** card
-that calls `api → ai-service` and reports the status of each hop. For health and
-API details, see [api.md](./api.md).
+that calls `api → ai-service` and reports the status of each hop. In demo mode a
+slim banner invites you to sign up for your own account. For health and API
+details, see [api.md](./api.md).
 
 ## Common scripts
 
