@@ -1,14 +1,8 @@
 import { Link, Navigate } from "react-router-dom";
 
 import { Header } from "@/components/Header";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { ChangePasswordForm } from "@/components/auth/ChangePasswordForm";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PasswordSection } from "@/components/account/PasswordSection";
 import { DeleteAccountSection } from "@/components/account/DeleteAccountSection";
 import { useAuth } from "@/context/auth-context";
 import { formatTimestampDate } from "@/lib/format";
@@ -48,18 +42,10 @@ export function AccountPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Change password</CardTitle>
-            <CardDescription>Set a new password for your account.</CardDescription>
+            <CardTitle>Password</CardTitle>
           </CardHeader>
           <CardContent>
-            <ChangePasswordForm
-              submitLabel="Update password"
-              renderSuccess={() => (
-                <p role="status" className="text-sm text-muted-foreground">
-                  Your password has been updated.
-                </p>
-              )}
-            />
+            <PasswordSection />
           </CardContent>
         </Card>
 

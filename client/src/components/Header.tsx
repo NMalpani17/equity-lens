@@ -39,7 +39,12 @@ export function Header() {
   return (
     <header className="border-b">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 p-4">
-        <span className="text-lg font-bold tracking-tight">Equity Lens</span>
+        <Link
+          to="/"
+          className="rounded-sm text-lg font-bold tracking-tight transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          Equity Lens
+        </Link>
 
         <TooltipProvider>
           <Tooltip>

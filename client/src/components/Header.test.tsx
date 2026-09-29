@@ -46,6 +46,18 @@ beforeEach(() => {
   signOut.mockResolvedValue(undefined);
 });
 
+describe("Header", () => {
+  it("links the logo to the dashboard", () => {
+    mockAuth({ isDemo: false });
+    renderHeader();
+
+    expect(screen.getByRole("link", { name: "Equity Lens" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+  });
+});
+
 describe("Header user menu", () => {
   it("shows only the avatar initial on the trigger (no inline email text)", () => {
     mockAuth({ isDemo: false });
