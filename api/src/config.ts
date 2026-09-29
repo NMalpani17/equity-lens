@@ -30,6 +30,9 @@ const envSchema = z.object({
   // DIRECT_URL is the direct connection Prisma uses for migrations.
   DATABASE_URL: z.string().url(),
   DIRECT_URL: z.string().url(),
+  // Supabase project URL (e.g. https://<project-ref>.supabase.co). Used to
+  // derive the JWKS endpoint and expected issuer for verifying auth tokens.
+  SUPABASE_URL: z.string().url(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -51,6 +54,7 @@ export const config = {
   clientOrigin: parsed.data.CLIENT_ORIGIN,
   databaseUrl: parsed.data.DATABASE_URL,
   directUrl: parsed.data.DIRECT_URL,
+  supabaseUrl: parsed.data.SUPABASE_URL,
 } as const;
 
 export type Config = typeof config;
