@@ -215,3 +215,19 @@ def test_company_name_is_consistent_across_quarters() -> None:
     assert result.company_name == "AAPL Holdings Inc"
     chunks = store.upsert_chunks.call_args.args[0]
     assert {c.company_name for c in chunks} == {"AAPL Holdings Inc"}
+
+
+def test_embedding_daily_quota_stops_like_equibles_quota() -> None:
+    from app.services.rag.errors import EmbeddingQuotaExhaustedError
+
+    repo = FakeRepo()
+    coordinator, _, _ = make_coordinator(repo, run_jobs=False)
+    claim = coordinator.request_on_demand("AAPL")
+    coordinator._pipeline._embedder.embed_documents = MagicMock(
+        side_effect=EmbeddingQuotaExhaustedError("daily")
+    )
+
+    outcome = coordinator.run_job(claim.job_id, "AAPL")
+
+    assert outcome.quota_exhausted
+    assert repo.tickers["AAPL"].status == "failed"

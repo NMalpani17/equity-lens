@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from .errors import (
+    EmbeddingQuotaExhaustedError,
     EquiblesNotFoundError,
     EquiblesQuotaError,
     IngestionCapReachedError,
@@ -98,8 +99,8 @@ class IngestionCoordinator:
             logger.warning("no transcripts for %s: %s", ticker, exc)
             self._repo.fail_job(job_id, ticker, error=_short(exc), unavailable=True)
             return JobOutcome(succeeded=False, error=_short(exc))
-        except EquiblesQuotaError as exc:
-            logger.error("equibles quota exhausted while ingesting %s", ticker)
+        except (EquiblesQuotaError, EmbeddingQuotaExhaustedError) as exc:
+            logger.error("daily quota exhausted while ingesting %s: %s", ticker, exc)
             self._repo.fail_job(job_id, ticker, error=_short(exc), unavailable=False)
             return JobOutcome(succeeded=False, error=_short(exc), quota_exhausted=True)
         except Exception as exc:

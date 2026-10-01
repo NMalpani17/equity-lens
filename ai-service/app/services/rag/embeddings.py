@@ -19,6 +19,7 @@ from pinecone import Pinecone
 
 from .cache import TTLCache
 from .chunking import estimate_tokens
+from .errors import EmbeddingQuotaExhaustedError
 from .pinecone_errors import is_retryable_pinecone_error
 from .rate_limit import SlidingWindowLimiter
 from .retry import RetryPolicy, retry_call
@@ -83,8 +84,32 @@ def l2_normalize(values: Sequence[float]) -> list[float]:
     return [v / norm for v in values] if norm else list(values)
 
 
+def _gemini_error_details(exc: genai_errors.APIError) -> list[dict]:
+    error = exc.details.get("error", {}) if isinstance(exc.details, dict) else {}
+    details = error.get("details", []) if isinstance(error, dict) else []
+    return [d for d in details or [] if isinstance(d, dict)]
+
+
+def is_daily_quota_error(exc: BaseException) -> bool:
+    """True for a 429 caused by a per-day quota (resets at midnight Pacific).
+
+    Gemini still sends a short retryDelay for these, so it must be detected
+    from the violated quota id rather than the delay.
+    """
+    if not isinstance(exc, genai_errors.APIError) or exc.code != 429:
+        return False
+    return any(
+        "PerDay" in str(v.get("quotaId", ""))
+        for d in _gemini_error_details(exc)
+        for v in d.get("violations", []) or []
+        if isinstance(v, dict)
+    )
+
+
 def is_retryable_gemini_error(exc: BaseException) -> bool:
     if isinstance(exc, genai_errors.APIError):
+        if is_daily_quota_error(exc):
+            return False
         return exc.code == 429 or exc.code >= 500
     return isinstance(exc, httpx.TransportError)
 
@@ -96,11 +121,8 @@ def gemini_retry_after(exc: BaseException) -> float | None:
     """Server-requested delay from a Gemini 429 (RetryInfo or message text)."""
     if not isinstance(exc, genai_errors.APIError):
         return None
-    error = (
-        (exc.details or {}).get("error", {}) if isinstance(exc.details, dict) else {}
-    )
-    for detail in error.get("details", []) or []:
-        delay = detail.get("retryDelay") if isinstance(detail, dict) else None
+    for detail in _gemini_error_details(exc):
+        delay = detail.get("retryDelay")
         if isinstance(delay, str) and delay.endswith("s"):
             try:
                 return float(delay[:-1])
@@ -173,13 +195,21 @@ class GeminiEmbedder:
                 )
             return [l2_normalize(e.values or []) for e in embeddings]
 
-        return retry_call(
-            call,
-            is_retryable=is_retryable_gemini_error,
-            policy=self._retry_policy,
-            operation=f"gemini embed ({len(texts)} texts)",
-            retry_after=gemini_retry_after,
-        )
+        try:
+            return retry_call(
+                call,
+                is_retryable=is_retryable_gemini_error,
+                policy=self._retry_policy,
+                operation=f"gemini embed ({len(texts)} texts)",
+                retry_after=gemini_retry_after,
+            )
+        except genai_errors.APIError as exc:
+            if is_daily_quota_error(exc):
+                raise EmbeddingQuotaExhaustedError(
+                    "gemini daily embedding quota exhausted (resets at midnight "
+                    "Pacific); enable billing or raise the project's quota"
+                ) from exc
+            raise
 
 
 class PineconeSparseEncoder:

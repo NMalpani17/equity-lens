@@ -198,3 +198,43 @@ def test_gemini_splits_batches_that_exceed_the_token_budget() -> None:
         len(c.kwargs["contents"]) for c in client.models.embed_content.call_args_list
     ]
     assert sizes == [2, 2, 1]
+
+
+def daily_quota_error() -> genai_errors.ClientError:
+    return genai_errors.ClientError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "message": "Quota exceeded. Please retry in 32s.",
+                "status": "RESOURCE_EXHAUSTED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [
+                            {
+                                "quotaId": "EmbedContentRequestsPerDayPerUserPer"
+                                "ProjectPerModel-FreeTier",
+                                "quotaValue": "1000",
+                            }
+                        ],
+                    },
+                    {
+                        "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                        "retryDelay": "32s",
+                    },
+                ],
+            }
+        },
+    )
+
+
+def test_daily_quota_fails_fast_without_retrying() -> None:
+    from app.services.rag.errors import EmbeddingQuotaExhaustedError
+
+    client = MagicMock()
+    client.models.embed_content.side_effect = daily_quota_error()
+
+    with pytest.raises(EmbeddingQuotaExhaustedError):
+        make_gemini(client).embed_documents(["a"])
+    assert client.models.embed_content.call_count == 1

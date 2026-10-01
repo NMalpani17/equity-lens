@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 summary.append((ticker, f"failed: {outcome.error}"))
                 if outcome.quota_exhausted:
-                    logger.error("Equibles quota exhausted; stopping. Re-run tomorrow.")
+                    logger.error("Daily API quota exhausted; stopping. Re-run later.")
                     break
     finally:
         rag.close()

@@ -64,6 +64,10 @@ class EquiblesQuotaError(EquiblesError):
     """Equibles' daily request quota is exhausted (HTTP 429)."""
 
 
+class EmbeddingQuotaExhaustedError(Exception):
+    """The embedding provider's *daily* quota is used up; retrying won't help."""
+
+
 class EquiblesNotFoundError(EquiblesError):
     """Equibles has no such ticker / quarter (HTTP 404)."""
 

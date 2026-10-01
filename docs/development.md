@@ -71,9 +71,14 @@ with Pinecone's `bge-reranker-v2-m3`.
    - `AI_SERVICE_GEMINI_API_KEY` — [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
      The free tier counts **each embedded text** as a request (100/minute), so
      the service throttles itself to `AI_SERVICE_GEMINI_EMBED_TEXTS_PER_MINUTE`
-     (default 100) and honors Gemini's `retryDelay` on 429s. Seeding the ten
-     default tickers (~2,400 chunks) therefore takes about 25 minutes on the
-     free tier; raise the limit on a paid tier.
+     (default 100) plus an estimated-token budget
+     (`AI_SERVICE_GEMINI_EMBED_TOKENS_PER_MINUTE`, default 24,000), and honors
+     Gemini's `retryDelay` on 429s. **The free tier also caps embeddings at
+     1,000 texts per day** (reset at midnight Pacific), and query embeddings
+     count too. The ten default tickers are ~2,400 chunks, so on the free tier
+     seeding spans several days (the seed stops cleanly when the daily quota
+     runs out and resumes on the next run). Enabling billing on the Gemini
+     project removes this limit; embedding everything costs well under $1.
    - `AI_SERVICE_PINECONE_API_KEY` — [app.pinecone.io](https://app.pinecone.io).
      The Starter plan only allows indexes in AWS `us-east-1` and 500 rerank
      requests/month; when reranking is unavailable search falls back to hybrid
