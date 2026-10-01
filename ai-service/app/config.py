@@ -76,7 +76,6 @@ class Settings(BaseSettings):
     rag_chunk_tokens: int = 400
     rag_chunk_overlap_tokens: int = 60
     rag_candidate_k: int = 25
-    rag_default_top_k: int = 5
     # Dense weight in the hybrid convex combination (sparse gets 1 - alpha).
     rag_hybrid_alpha: float = 0.75
     # New tickers ingested on demand per UTC day (Equibles allows 100 req/day
