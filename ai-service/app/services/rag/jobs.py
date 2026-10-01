@@ -18,6 +18,13 @@ from .repository import Claim, ClaimOutcome, RagRepository, next_utc_midnight
 
 logger = logging.getLogger(__name__)
 
+# Upstream errors can be kilobytes of JSON; keep stored/returned messages short.
+_MAX_ERROR_CHARS = 500
+
+
+def _short(exc: BaseException) -> str:
+    return str(exc)[:_MAX_ERROR_CHARS]
+
 
 @dataclass(frozen=True)
 class JobOutcome:
@@ -89,16 +96,16 @@ class IngestionCoordinator:
             )
         except (NoTranscriptsError, EquiblesNotFoundError) as exc:
             logger.warning("no transcripts for %s: %s", ticker, exc)
-            self._repo.fail_job(job_id, ticker, error=str(exc), unavailable=True)
-            return JobOutcome(succeeded=False, error=str(exc))
+            self._repo.fail_job(job_id, ticker, error=_short(exc), unavailable=True)
+            return JobOutcome(succeeded=False, error=_short(exc))
         except EquiblesQuotaError as exc:
             logger.error("equibles quota exhausted while ingesting %s", ticker)
-            self._repo.fail_job(job_id, ticker, error=str(exc), unavailable=False)
-            return JobOutcome(succeeded=False, error=str(exc), quota_exhausted=True)
+            self._repo.fail_job(job_id, ticker, error=_short(exc), unavailable=False)
+            return JobOutcome(succeeded=False, error=_short(exc), quota_exhausted=True)
         except Exception as exc:
             logger.exception("ingestion job %s for %s failed", job_id, ticker)
-            self._repo.fail_job(job_id, ticker, error=str(exc), unavailable=False)
-            return JobOutcome(succeeded=False, error=str(exc))
+            self._repo.fail_job(job_id, ticker, error=_short(exc), unavailable=False)
+            return JobOutcome(succeeded=False, error=_short(exc))
 
         self._repo.complete_job(
             job_id,

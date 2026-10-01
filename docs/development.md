@@ -69,6 +69,11 @@ with Pinecone's `bge-reranker-v2-m3`.
    - `AI_SERVICE_EQUIBLES_API_KEY` — [equibles.com/dashboard/apikeys](https://equibles.com/dashboard/apikeys)
      (100 requests/day, resets 00:00 UTC; one new ticker costs ~5 requests).
    - `AI_SERVICE_GEMINI_API_KEY` — [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+     The free tier counts **each embedded text** as a request (100/minute), so
+     the service throttles itself to `AI_SERVICE_GEMINI_EMBED_TEXTS_PER_MINUTE`
+     (default 100) and honors Gemini's `retryDelay` on 429s. Seeding the ten
+     default tickers (~2,400 chunks) therefore takes about 25 minutes on the
+     free tier; raise the limit on a paid tier.
    - `AI_SERVICE_PINECONE_API_KEY` — [app.pinecone.io](https://app.pinecone.io).
      The Starter plan only allows indexes in AWS `us-east-1` and 500 rerank
      requests/month; when reranking is unavailable search falls back to hybrid

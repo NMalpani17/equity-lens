@@ -56,3 +56,27 @@ def test_delay_is_capped_at_max_delay() -> None:
     policy = RetryPolicy(base_delay=10, max_delay=15)
 
     assert all(policy.delay_for(attempt) <= 15 for attempt in range(1, 10))
+
+
+def test_server_requested_delay_is_honored_and_capped() -> None:
+    delays: list[float] = []
+    policy = RetryPolicy(
+        max_attempts=3, base_delay=0, max_server_delay=60, sleep=delays.append
+    )
+    outcomes = iter([Transient("wait 45"), Transient("wait 500"), "ok"])
+
+    def fn() -> str:
+        result = next(outcomes)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    retry_call(
+        fn,
+        is_retryable=lambda e: isinstance(e, Transient),
+        policy=policy,
+        operation="test",
+        retry_after=lambda e: float(str(e).split()[-1]),
+    )
+
+    assert delays == [45, 60]

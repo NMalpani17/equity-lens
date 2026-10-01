@@ -6,6 +6,7 @@ and cache query encodings so repeated searches skip the network.
 
 import logging
 import math
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -18,6 +19,7 @@ from pinecone import Pinecone
 
 from .cache import TTLCache
 from .pinecone_errors import is_retryable_pinecone_error
+from .rate_limit import SlidingWindowLimiter
 from .retry import RetryPolicy, retry_call
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,27 @@ def is_retryable_gemini_error(exc: BaseException) -> bool:
     return isinstance(exc, httpx.TransportError)
 
 
+_RETRY_IN_RE = re.compile(r"retry in ([\d.]+)s", re.IGNORECASE)
+
+
+def gemini_retry_after(exc: BaseException) -> float | None:
+    """Server-requested delay from a Gemini 429 (RetryInfo or message text)."""
+    if not isinstance(exc, genai_errors.APIError):
+        return None
+    error = (
+        (exc.details or {}).get("error", {}) if isinstance(exc.details, dict) else {}
+    )
+    for detail in error.get("details", []) or []:
+        delay = detail.get("retryDelay") if isinstance(detail, dict) else None
+        if isinstance(delay, str) and delay.endswith("s"):
+            try:
+                return float(delay[:-1])
+            except ValueError:
+                pass
+    match = _RETRY_IN_RE.search(str(exc))
+    return float(match.group(1)) if match else None
+
+
 class GeminiEmbedder:
     """Gemini embeddings with retrieval task types and fixed dimensionality."""
 
@@ -75,8 +98,11 @@ class GeminiEmbedder:
         batch_size: int,
         retry_policy: RetryPolicy,
         query_cache: TTLCache[list[float]],
+        limiter: SlidingWindowLimiter | None = None,
     ) -> None:
         self._client = client
+        # Gemini counts every text in a batch toward its per-minute quota.
+        self._limiter = limiter or SlidingWindowLimiter(0)
         self._model = model
         self._dimension = dimension
         self._batch_size = batch_size
@@ -101,6 +127,7 @@ class GeminiEmbedder:
         )
 
         def call() -> list[list[float]]:
+            self._limiter.acquire(len(texts))
             result = self._client.models.embed_content(
                 model=self._model, contents=list(texts), config=config
             )
@@ -117,6 +144,7 @@ class GeminiEmbedder:
             is_retryable=is_retryable_gemini_error,
             policy=self._retry_policy,
             operation=f"gemini embed ({len(texts)} texts)",
+            retry_after=gemini_retry_after,
         )
 
 

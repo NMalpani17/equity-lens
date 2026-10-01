@@ -18,6 +18,7 @@ from .equibles import EquiblesClient
 from .errors import RagNotConfiguredError
 from .ingestion import IngestionPipeline, TranscriptSource
 from .jobs import IngestionCoordinator
+from .rate_limit import SlidingWindowLimiter
 from .repository import RagRepository, create_pool
 from .reranker import PineconeReranker
 from .retry import RetryPolicy
@@ -69,6 +70,7 @@ def build_components(settings: Settings) -> RagComponents:
         query_cache=TTLCache(
             settings.rag_query_cache_size, settings.rag_query_cache_ttl_seconds
         ),
+        limiter=SlidingWindowLimiter(settings.gemini_embed_texts_per_minute),
     )
     sparse = PineconeSparseEncoder(
         pc,

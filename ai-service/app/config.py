@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "gemini-embedding-001"
     embedding_dimension: int = 768
     embedding_batch_size: int = 100
+    # Client-side cap on texts embedded per minute (each text counts as one
+    # request on Gemini's free tier, limit 100/min). 0 disables the limiter.
+    gemini_embed_texts_per_minute: int = 100
 
     # --- Vector index (Pinecone) ---
     pinecone_api_key: str = ""
