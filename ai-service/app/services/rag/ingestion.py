@@ -139,6 +139,8 @@ class IngestionPipeline:
                 overlap_tokens=self._overlap_tokens,
             )
         ]
+        # On-demand ingestion may run before anyone has seeded the index.
+        self._store.ensure_index()
         targets = [] if plain_only else [(self._namespace, True)]
         if include_plain or plain_only:
             targets.append((self._plain_namespace, False))

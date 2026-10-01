@@ -55,6 +55,7 @@ def test_first_run_fetches_and_caches_then_reruns_use_cache_only() -> None:
     assert result.quarters == ["FY2025Q4", "FY2025Q3", "FY2025Q2", "FY2025Q1"]
     assert result.company_name == "AAPL Holdings Inc"
     assert result.chunk_count == 12
+    store.ensure_index.assert_called()  # works even before the seed script ran
     assert len(repo.transcripts) == 4
     assert len(equibles.calls) == 5  # 1 list + 4 transcripts
 

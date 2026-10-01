@@ -59,8 +59,13 @@ def test_ensure_index_creates_hybrid_index_once() -> None:
     assert kwargs["dimension"] == 2
 
     pc.reset_mock()
+    store.ensure_index()  # remembered: no further API calls
+    pc.has_index.assert_not_called()
+    pc.create_index.assert_not_called()
+
+    fresh = make_store(pc)
     pc.has_index.return_value = True
-    store.ensure_index()
+    fresh.ensure_index()
     pc.create_index.assert_not_called()
 
 

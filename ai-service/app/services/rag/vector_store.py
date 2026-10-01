@@ -52,10 +52,14 @@ class PineconeVectorStore:
         self._upsert_batch_size = upsert_batch_size
         self._retry_policy = retry_policy
         self._index: Any = None
+        self._index_ready = False
 
     def ensure_index(self) -> None:
         """Create the hybrid-capable index if it does not exist (idempotent)."""
+        if self._index_ready:
+            return
         if self._pc.has_index(self._index_name):
+            self._index_ready = True
             return
         logger.info(
             "creating pinecone index %s (dim=%d, dotproduct, %s/%s)",
@@ -72,6 +76,7 @@ class PineconeVectorStore:
             spec=ServerlessSpec(cloud=self._cloud, region=self._region),
             timeout=_INDEX_READY_TIMEOUT_SECONDS,
         )
+        self._index_ready = True
 
     @property
     def index(self) -> Any:
