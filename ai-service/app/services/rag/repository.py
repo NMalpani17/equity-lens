@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from psycopg import Connection
 from psycopg.rows import dict_row
@@ -81,6 +82,24 @@ class TickerRecord:
     indexed_at: datetime | None = None
 
 
+# Query parameters Prisma understands but libpq rejects ("invalid URI query
+# parameter"), so the same DATABASE_URL works for both services.
+_PRISMA_ONLY_PARAMS = frozenset(
+    {"pgbouncer", "connection_limit", "pool_timeout", "schema", "statement_cache_size"}
+)
+
+
+def to_libpq_url(database_url: str) -> str:
+    """Drop Prisma-only query parameters from a Postgres URL."""
+    parts = urlsplit(database_url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in _PRISMA_ONLY_PARAMS
+    ]
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 def create_pool(database_url: str, max_size: int) -> ConnectionPool:
     """Open a connection pool.
 
@@ -88,7 +107,7 @@ def create_pool(database_url: str, max_size: int) -> ConnectionPool:
     Supabase's transaction-mode pooler (PgBouncer/Supavisor) does not support.
     """
     return ConnectionPool(
-        database_url,
+        to_libpq_url(database_url),
         min_size=1,
         max_size=max_size,
         kwargs={"prepare_threshold": None, "row_factory": dict_row},
