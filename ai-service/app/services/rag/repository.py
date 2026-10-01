@@ -93,6 +93,7 @@ def create_pool(database_url: str, max_size: int) -> ConnectionPool:
         max_size=max_size,
         kwargs={"prepare_threshold": None, "row_factory": dict_row},
         open=True,
+        timeout=10,
     )
 
 
