@@ -4,9 +4,11 @@ Chunks never cross a speaker boundary, so every chunk has exact speaker/role
 metadata. Turns longer than the target size are split on sentence boundaries
 into ~``target_tokens`` windows that overlap by ~``overlap_tokens``.
 
-Equibles does not label sections, so Q&A is taken to start at the first analyst
-turn, or at an operator turn that mentions questions after management has
-spoken (whichever comes first).
+Equibles does not label sections, so Q&A is inferred: once management (anyone
+other than the operator or an analyst) has spoken, Q&A starts at the first
+analyst turn, the first operator turn that mentions questions, or an investor
+relations hand-off such as "we will now open the call for questions". Requiring
+management first guards against Equibles misattributing early turns.
 """
 
 import re
@@ -17,6 +19,11 @@ from app.models.transcript import SpeakerTurn, Transcript
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _QA_OPERATOR_RE = re.compile(r"\bquestions?\b", re.IGNORECASE)
+_QA_HANDOFF_RE = re.compile(
+    r"open (?:the|up the) (?:call|line|lines|floor) (?:for|to) questions"
+    r"|question[- ]and[- ]answer|first question",
+    re.IGNORECASE,
+)
 # Operator turns this short are logistics ("Next question, please.").
 _MIN_OPERATOR_TOKENS = 40
 # Any turn this short ("Thank you.") carries no retrievable content.
@@ -111,7 +118,8 @@ def speaker_label(turn: SpeakerTurn) -> str:
 
 
 def _is_role(turn: SpeakerTurn, role: str) -> bool:
-    return (turn.speaker_role or "").strip().lower() == role
+    """Match a role label; Equibles qualifies some, e.g. "Analyst - UBS"."""
+    return (turn.speaker_role or "").strip().lower().startswith(role)
 
 
 def assign_sections(turns: list[SpeakerTurn]) -> list[Section]:
@@ -122,13 +130,14 @@ def assign_sections(turns: list[SpeakerTurn]) -> list[Section]:
     for turn in turns:
         if not in_qa:
             is_operator = _is_role(turn, "operator")
-            if _is_role(turn, "analyst") or (
-                is_operator
-                and management_has_spoken
-                and _QA_OPERATOR_RE.search(turn.text)
+            is_analyst = _is_role(turn, "analyst")
+            if management_has_spoken and (
+                is_analyst
+                or (is_operator and _QA_OPERATOR_RE.search(turn.text))
+                or _QA_HANDOFF_RE.search(turn.text)
             ):
                 in_qa = True
-            elif not is_operator:
+            elif not (is_operator or is_analyst):
                 management_has_spoken = True
         sections.append(Section.QA if in_qa else Section.PREPARED_REMARKS)
     return sections

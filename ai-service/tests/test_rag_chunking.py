@@ -121,3 +121,30 @@ def test_split_text_hard_wraps_a_single_huge_sentence() -> None:
 
 def test_short_text_is_a_single_window() -> None:
     assert split_text("  Short   answer. ", 400, 60) == ["Short answer."]
+
+
+def test_qualified_analyst_roles_start_qa() -> None:
+    turns = [
+        turn(1, "CEO", "Opening remarks about the quarter and the outlook ahead."),
+        turn(2, "Analyst — Morgan Stanley", "How should we think about capex?"),
+    ]
+
+    assert assign_sections(turns) == [Section.PREPARED_REMARKS, Section.QA]
+
+
+def test_misattributed_analyst_before_management_does_not_start_qa() -> None:
+    turns = [
+        turn(1, "Analyst - Morgan Stanley", "Good afternoon."),
+        turn(2, "CFO", "We delivered another outstanding quarter of revenue growth."),
+        turn(
+            3, "Head of Investor Relations", "We will now open the call for questions."
+        ),
+        turn(4, None, "Thanks. Could you size the networking opportunity?"),
+    ]
+
+    assert assign_sections(turns) == [
+        Section.PREPARED_REMARKS,
+        Section.PREPARED_REMARKS,
+        Section.QA,
+        Section.QA,
+    ]

@@ -195,3 +195,23 @@ def test_plain_only_indexes_just_the_eval_namespace() -> None:
     assert namespaces == ["plain"]
     embedded = pipeline._embedder.last_texts
     assert embedded and not any(t.startswith("AAPL (") for t in embedded)
+
+
+def test_company_name_is_consistent_across_quarters() -> None:
+    equibles = FakeEquibles(PERIODS)
+    original = equibles.get_transcript
+
+    def odd_latest_title(ticker, fy, fq):
+        payload = original(ticker, fy, fq)
+        if (fy, fq) == (2025, 4):
+            payload["eventTitle"] = "2025 Q4 Earnings Call"
+        return payload
+
+    equibles.get_transcript = odd_latest_title
+    pipeline, _, _, store = build(equibles)
+
+    result = pipeline.ingest("AAPL")
+
+    assert result.company_name == "AAPL Holdings Inc"
+    chunks = store.upsert_chunks.call_args.args[0]
+    assert {c.company_name for c in chunks} == {"AAPL Holdings Inc"}

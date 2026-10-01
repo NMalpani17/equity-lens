@@ -9,7 +9,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from app.models.transcript import Transcript
+from app.models.transcript import Transcript, company_from_event_title
 
 from .chunking import Chunk, chunk_id_prefix, chunk_transcript
 from .embeddings import DenseEmbedder, SparseEncoder
@@ -90,6 +90,25 @@ class TranscriptSource:
         return payload
 
 
+def _with_consistent_company(
+    ticker: str, transcripts: list[Transcript]
+) -> list[Transcript]:
+    """Use one company name for every quarter of a ticker.
+
+    Event titles vary (e.g. "2026 Q2 Earnings Call" has no company), so take the
+    first title that yields a name and apply it to all transcripts.
+    """
+    company = next(
+        (
+            name
+            for t in transcripts
+            if (name := company_from_event_title(t.event_title)) is not None
+        ),
+        ticker,
+    )
+    return [t.model_copy(update={"company_name": company}) for t in transcripts]
+
+
 class IngestionPipeline:
     def __init__(
         self,
@@ -129,6 +148,7 @@ class IngestionPipeline:
         transcripts = self._source.load(ticker, refresh=refresh, cache_only=cache_only)
         if not transcripts:
             raise NoTranscriptsError(f"no transcripts available for {ticker}")
+        transcripts = _with_consistent_company(ticker, transcripts)
 
         chunks = [
             chunk
