@@ -19,6 +19,10 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        # Structured fields passed as ``logger.info(msg, extra={"fields": {...}})``.
+        fields = getattr(record, "fields", None)
+        if isinstance(fields, dict):
+            payload.update(fields)
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload)

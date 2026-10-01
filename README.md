@@ -28,6 +28,10 @@ live market data.
   **yfinance** fallback on failure or rate limiting, plus a short-lived cache.
 - **Invalid-ticker validation** — new tickers are verified against the market
   data service; unknown symbols are rejected with a clear message.
+- **Earnings call search (RAG)** — hybrid (dense + keyword) search over the
+  last four earnings call transcripts per ticker, reranked, with speaker and
+  quarter citations. Ten large caps are pre-seeded; searching any other ticker
+  indexes it in the background (capped per day to protect API quotas).
 - **Graceful degradation** — one bad ticker never breaks the batch, unpriced
   holdings are excluded from totals (shown as partial), and the UI reports when
   the AI service is unavailable instead of failing.
@@ -40,20 +44,24 @@ Browser ──▶ client/ (React) ──▶ api/ (Express) ──▶ ai-service/
 
 The **client** talks only to the **api**, which is the gateway: it persists
 holdings (Supabase/Prisma) and orchestrates calls to the **ai-service**, which
-owns market data (and, in later phases, all LLM logic).
+owns market data, transcript ingestion and retrieval (and, in later phases, all
+LLM logic).
 
 ## Tech stack
 
-| Part          | Stack                                                         | Port   |
-| ------------- | ------------------------------------------------------------- | ------ |
-| `client/`     | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui        | `5173` |
-| `api/`        | Node.js, TypeScript, Express, Zod, Pino, Prisma (Supabase PG) | `3001` |
-| `ai-service/` | Python 3.12, FastAPI, Pydantic, Uvicorn, Finnhub + yfinance   | `8000` |
+| Part          | Stack                                                               | Port   |
+| ------------- | ------------------------------------------------------------------- | ------ |
+| `client/`     | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui              | `5173` |
+| `api/`        | Node.js, TypeScript, Express, Zod, Pino, Prisma (Supabase PG)       | `3001` |
+| `ai-service/` | Python 3.12, FastAPI, Pydantic, Finnhub, Equibles, Gemini, Pinecone | `8000` |
 
 ## Quick start
 
 **Prerequisites:** Node.js 20+, Python 3.12+, Git, a [Supabase](https://supabase.com)
 project (PostgreSQL), and a free [Finnhub](https://finnhub.io/dashboard) API key.
+Transcript search additionally needs free [Equibles](https://equibles.com),
+[Gemini](https://aistudio.google.com/apikey) and [Pinecone](https://app.pinecone.io)
+keys.
 
 ```bash
 # 1. Env: copy the examples, then fill in the secrets (see below)
@@ -75,7 +83,11 @@ npm run dev
 
 Fill in the required secrets before running:
 
-- `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY`
+- `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY`; for transcript search also
+  `DATABASE_URL` (same Supabase database, pooled URL),
+  `AI_SERVICE_EQUIBLES_API_KEY`, `AI_SERVICE_GEMINI_API_KEY` and
+  `AI_SERVICE_PINECONE_API_KEY`, then seed the index once with
+  `cd ai-service && python -m scripts.seed_transcripts`.
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase,
   `SUPABASE_URL` (verifies user JWTs), and `SUPABASE_SERVICE_ROLE_KEY`
   (server-only; used to delete a user's auth account).

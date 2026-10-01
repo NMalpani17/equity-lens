@@ -44,3 +44,96 @@ model DemoSeed {
 
   @@map("demo_seeds")
 }
+
+// ---------------------------------------------------------------------------
+// RAG over earnings call transcripts.
+//
+// These tables are owned by Prisma (schema + migrations) but read and written
+// by the ai-service via psycopg. Keep column names in sync with
+// ai-service/app/services/rag/repository.py.
+// ---------------------------------------------------------------------------
+
+/// Lifecycle of a ticker in the transcript search index.
+enum RagTickerStatus {
+  /// An ingestion job is queued or running.
+  indexing
+  /// Transcripts are embedded and searchable.
+  indexed
+  /// The last ingestion attempt failed; a later search may retry it.
+  failed
+  /// Equibles has no transcripts for this ticker; never retried automatically.
+  unavailable
+
+  @@map("rag_ticker_status")
+}
+
+/// Lifecycle of a single ingestion job.
+enum RagJobStatus {
+  queued
+  running
+  succeeded
+  failed
+
+  @@map("rag_job_status")
+}
+
+/// One row per ticker that has been (or is being) ingested into Pinecone.
+model RagTicker {
+  ticker      String          @id
+  companyName String?         @map("company_name")
+  status      RagTickerStatus
+  /// Number of chunks upserted for this ticker on the last successful run.
+  chunkCount  Int             @default(0) @map("chunk_count")
+  /// Quarters indexed, e.g. ["FY2025Q3", "FY2025Q4"].
+  quarters    Json            @default("[]")
+  lastError   String?         @map("last_error")
+  /// The most recent ingestion job for this ticker.
+  lastJobId   String?         @map("last_job_id") @db.Uuid
+  indexedAt   DateTime?       @map("indexed_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  @@map("rag_tickers")
+}
+
+/// A background ingestion run for one ticker.
+model RagIngestionJob {
+  id         String       @id @default(uuid()) @db.Uuid
+  ticker     String
+  status     RagJobStatus
+  /// What started the job: "on_demand" (a search) or "seed" (the CLI script).
+  trigger    String
+  chunkCount Int          @default(0) @map("chunk_count")
+  error      String?
+  createdAt  DateTime     @default(now()) @map("created_at")
+  startedAt  DateTime?    @map("started_at")
+  finishedAt DateTime?    @map("finished_at")
+
+  @@index([ticker, createdAt])
+  @@map("rag_ingestion_jobs")
+}
+
+/// Per-UTC-day counter of new-ticker ingestions, enforcing the daily cap that
+/// keeps us inside Equibles' request quota (which resets at 00:00 UTC).
+model RagDailyUsage {
+  day                 DateTime @id @db.Date
+  newTickerIngestions Int      @default(0) @map("new_ticker_ingestions")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("rag_daily_usage")
+}
+
+/// Raw Equibles transcript responses (all speaker-turn pages merged), cached
+/// so re-runs and re-indexing never spend API quota.
+model RagTranscript {
+  ticker        String
+  fiscalYear    Int       @map("fiscal_year")
+  fiscalQuarter Int       @map("fiscal_quarter")
+  eventTitle    String?   @map("event_title")
+  callDate      DateTime? @map("call_date")
+  payload       Json
+  fetchedAt     DateTime  @default(now()) @map("fetched_at")
+
+  @@id([ticker, fiscalYear, fiscalQuarter])
+  @@map("rag_transcripts")
+}

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "x01",
+    "kind": "exact",
+    "query": "Tricolor and First Brands losses",
+    "expected": { "ticker": "JPM", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "x02",
+    "kind": "exact",
+    "query": "Vibes launch retention and usage growth",
+    "expected": { "ticker": "META", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "x03",
+    "kind": "exact",
+    "query": "K-Pop Demon Hunters",
+    "expected": { "ticker": "NFLX", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "x04",
+    "kind": "exact",
+    "query": "ISS and Glass Lewis recommendations",
+    "expected": { "ticker": "TSLA", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "x05",
+    "kind": "exact",
+    "query": "Universal Commerce Protocol",
+    "expected": { "ticker": "GOOGL", "fiscal_year": 2025, "fiscal_quarter": 4 }
+  },
+  {
+    "id": "x06",
+    "kind": "exact",
+    "query": "H20 sales in the quarter",
+    "expected": { "ticker": "NVDA", "fiscal_year": 2026, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "x07",
+    "kind": "exact",
+    "query": "Oracle MI355X instances on OCI",
+    "expected": { "ticker": "AMD", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "x08",
+    "kind": "exact",
+    "query": "Apple Card portfolio reserve build",
+    "expected": { "ticker": "JPM", "fiscal_year": 2025, "fiscal_quarter": 4 }
+  },
+  {
+    "id": "x09",
+    "kind": "exact",
+    "query": "Siri AI developer and public betas",
+    "expected": { "ticker": "AAPL", "fiscal_year": 2026, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "x10",
+    "kind": "exact",
+    "query": "Agent 365 agents registered",
+    "expected": { "ticker": "MSFT", "fiscal_year": 2026, "fiscal_quarter": 4 }
+  },
+  {
+    "id": "c01",
+    "kind": "conceptual",
+    "query": "How did management respond to talk that AI spending is a bubble?",
+    "expected": { "ticker": "NVDA", "fiscal_year": 2026, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "c02",
+    "kind": "conceptual",
+    "query": "Accounting gain because the AI lab it invests in restructured, changing how the stake is recorded",
+    "expected": { "ticker": "MSFT", "fiscal_year": 2026, "fiscal_quarter": 2 }
+  },
+  {
+    "id": "c03",
+    "kind": "conceptual",
+    "query": "GPU supply deal where the customer received equity that vests at stock price milestones",
+    "expected": { "ticker": "AMD", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "c04",
+    "kind": "conceptual",
+    "query": "The company founder decided not to stand for re-election to the board",
+    "expected": { "ticker": "NFLX", "fiscal_year": 2026, "fiscal_quarter": 1 }
+  },
+  {
+    "id": "c05",
+    "kind": "conceptual",
+    "query": "Bank outlook after a proposal to cap credit card interest rates shook investor confidence",
+    "expected": { "ticker": "JPM", "fiscal_year": 2025, "fiscal_quarter": 4 }
+  },
+  {
+    "id": "c06",
+    "kind": "conceptual",
+    "query": "An AI agent that operates a computer screen the same way the car drives itself",
+    "expected": { "ticker": "TSLA", "fiscal_year": 2026, "fiscal_quarter": 2 }
+  },
+  {
+    "id": "c07",
+    "kind": "conceptual",
+    "query": "Bringing online a huge AI training cluster of about half a million in-house chips used by a frontier model lab",
+    "expected": { "ticker": "AMZN", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "c08",
+    "kind": "conceptual",
+    "query": "Reimagined voice assistant unveiled at the developer conference and early user reviews",
+    "expected": { "ticker": "AAPL", "fiscal_year": 2026, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "c09",
+    "kind": "conceptual",
+    "query": "New lineup of smart glasses announced this fall, including the first pair with a built-in display",
+    "expected": { "ticker": "META", "fiscal_year": 2025, "fiscal_quarter": 3 }
+  },
+  {
+    "id": "c10",
+    "kind": "conceptual",
+    "query": "Closed the cloud security acquisition; how it will be reported and its expected margin headwind",
+    "expected": { "ticker": "GOOGL", "fiscal_year": 2026, "fiscal_quarter": 1 }
+  }
+]

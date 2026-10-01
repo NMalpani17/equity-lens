@@ -1,6 +1,8 @@
 """FastAPI application factory and entrypoint."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,10 +10,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.errors import AppError
 from app.logging_config import configure_logging
-from app.routers import health, market
+from app.routers import health, market, rag
+from app.services.rag.container import shutdown_rag_components
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    shutdown_rag_components()
 
 
 def create_app() -> FastAPI:
@@ -23,6 +33,7 @@ def create_app() -> FastAPI:
         title="Equity Lens AI Service",
         version="0.1.0",
         description="LLM / LangChain / MCP layer for Equity Lens.",
+        lifespan=lifespan,
     )
 
     app.add_middleware(
@@ -34,6 +45,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(market.router)
+    app.include_router(rag.router)
     _register_error_handlers(app)
 
     logger.info("ai-service started in %s environment", settings.environment)
@@ -51,6 +63,15 @@ def _register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content={"error": "validation_error", "detail": exc.errors()},
+        )
+
+    @app.exception_handler(AppError)
+    async def on_app_error(request: Request, exc: AppError) -> JSONResponse:
+        log = logger.error if exc.status_code >= 500 else logger.warning
+        log("%s on %s: %s", exc.code, request.url.path, exc.message)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.code, "message": exc.message, **exc.detail},
         )
 
     @app.exception_handler(Exception)

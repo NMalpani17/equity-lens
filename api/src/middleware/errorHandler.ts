@@ -27,7 +27,9 @@ export function errorHandler(
 
   if (err instanceof HttpError) {
     logger.warn({ err: { code: err.code, message: err.message } }, err.code);
-    res.status(err.status).json({ error: err.code, message: err.message });
+    res
+      .status(err.status)
+      .json({ ...err.details, error: err.code, message: err.message });
     return;
   }
 
