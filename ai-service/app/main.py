@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.errors import AppError
 from app.logging_config import configure_logging
 from app.routers import health, market
 
@@ -51,6 +52,15 @@ def _register_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content={"error": "validation_error", "detail": exc.errors()},
+        )
+
+    @app.exception_handler(AppError)
+    async def on_app_error(request: Request, exc: AppError) -> JSONResponse:
+        log = logger.error if exc.status_code >= 500 else logger.warning
+        log("%s on %s: %s", exc.code, request.url.path, exc.message)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.code, "message": exc.message, **exc.detail},
         )
 
     @app.exception_handler(Exception)
