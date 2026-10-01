@@ -18,6 +18,7 @@ from google.genai import types as genai_types
 from pinecone import Pinecone
 
 from .cache import TTLCache
+from .chunking import estimate_tokens
 from .pinecone_errors import is_retryable_pinecone_error
 from .rate_limit import SlidingWindowLimiter
 from .retry import RetryPolicy, retry_call
@@ -51,6 +52,29 @@ class SparseEncoder(Protocol):
 
 def _batched[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def token_budget_batches(
+    texts: Sequence[str], max_items: int, max_tokens: int
+) -> list[Sequence[str]]:
+    """Split texts into batches bounded by count and estimated tokens.
+
+    ``max_tokens <= 0`` bounds by count only. A single text larger than the
+    budget still gets its own batch.
+    """
+    batches: list[Sequence[str]] = []
+    start, tokens = 0, 0
+    for i, text in enumerate(texts):
+        cost = estimate_tokens(text)
+        too_many = i - start >= max_items
+        too_big = max_tokens > 0 and tokens + cost > max_tokens and i > start
+        if too_many or too_big:
+            batches.append(texts[start:i])
+            start, tokens = i, 0
+        tokens += cost
+    if start < len(texts):
+        batches.append(texts[start:])
+    return batches
 
 
 def l2_normalize(values: Sequence[float]) -> list[float]:
@@ -99,10 +123,17 @@ class GeminiEmbedder:
         retry_policy: RetryPolicy,
         query_cache: TTLCache[list[float]],
         limiter: SlidingWindowLimiter | None = None,
+        token_limiter: SlidingWindowLimiter | None = None,
+        max_batch_tokens: int = 0,
     ) -> None:
         self._client = client
-        # Gemini counts every text in a batch toward its per-minute quota.
+        # Gemini counts every text in a batch toward its per-minute request
+        # quota, and the batch's tokens toward its per-minute token quota. A
+        # batch bigger than the token quota can never succeed, so batches are
+        # also capped by estimated tokens.
         self._limiter = limiter or SlidingWindowLimiter(0)
+        self._token_limiter = token_limiter or SlidingWindowLimiter(0)
+        self._max_batch_tokens = max_batch_tokens
         self._model = model
         self._dimension = dimension
         self._batch_size = batch_size
@@ -111,7 +142,9 @@ class GeminiEmbedder:
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
-        for batch in _batched(texts, self._batch_size):
+        for batch in token_budget_batches(
+            texts, self._batch_size, self._max_batch_tokens
+        ):
             vectors.extend(self._embed(batch, "RETRIEVAL_DOCUMENT"))
         return vectors
 
@@ -128,6 +161,7 @@ class GeminiEmbedder:
 
         def call() -> list[list[float]]:
             self._limiter.acquire(len(texts))
+            self._token_limiter.acquire(sum(estimate_tokens(t) for t in texts))
             result = self._client.models.embed_content(
                 model=self._model, contents=list(texts), config=config
             )

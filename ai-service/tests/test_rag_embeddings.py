@@ -165,3 +165,36 @@ def test_reranker_does_not_retry_client_errors() -> None:
     with pytest.raises(RerankUnavailableError):
         reranker.rerank("q", ["d0"], top_n=1)
     assert pc.inference.rerank.call_count == 1
+
+
+def test_token_budget_batches_respect_count_and_tokens() -> None:
+    from app.services.rag.embeddings import token_budget_batches
+
+    texts = ["x" * 400] * 5  # ~100 tokens each
+
+    assert [len(b) for b in token_budget_batches(texts, 10, 250)] == [2, 2, 1]
+    assert [len(b) for b in token_budget_batches(texts, 3, 0)] == [3, 2]
+    assert [len(b) for b in token_budget_batches(["x" * 4000], 10, 250)] == [1]
+
+
+def test_gemini_splits_batches_that_exceed_the_token_budget() -> None:
+    client = MagicMock()
+    client.models.embed_content.side_effect = lambda **kw: gemini_response(
+        len(kw["contents"])
+    )
+    embedder = GeminiEmbedder(
+        client,
+        model="gemini-embedding-001",
+        dimension=2,
+        batch_size=100,
+        retry_policy=NO_SLEEP,
+        query_cache=TTLCache(10, 60),
+        max_batch_tokens=250,
+    )
+
+    embedder.embed_documents(["x" * 400] * 5)
+
+    sizes = [
+        len(c.kwargs["contents"]) for c in client.models.embed_content.call_args_list
+    ]
+    assert sizes == [2, 2, 1]

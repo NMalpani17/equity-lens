@@ -71,6 +71,8 @@ def build_components(settings: Settings) -> RagComponents:
             settings.rag_query_cache_size, settings.rag_query_cache_ttl_seconds
         ),
         limiter=SlidingWindowLimiter(settings.gemini_embed_texts_per_minute),
+        token_limiter=SlidingWindowLimiter(settings.gemini_embed_tokens_per_minute),
+        max_batch_tokens=settings.gemini_embed_tokens_per_minute,
     )
     sparse = PineconeSparseEncoder(
         pc,

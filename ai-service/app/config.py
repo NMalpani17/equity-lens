@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # Client-side cap on texts embedded per minute (each text counts as one
     # request on Gemini's free tier, limit 100/min). 0 disables the limiter.
     gemini_embed_texts_per_minute: int = 100
+    # Client-side cap on estimated tokens embedded per minute; also the maximum
+    # size of one batch. Free tier allows ~30k/min; the default leaves headroom
+    # for the ~4 chars/token estimate. 0 disables.
+    gemini_embed_tokens_per_minute: int = 24000
 
     # --- Vector index (Pinecone) ---
     pinecone_api_key: str = ""
