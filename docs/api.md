@@ -5,21 +5,24 @@ All application routes are served by the Express gateway at
 
 ## API gateway (`http://localhost:3001`)
 
-| Method   | Path                     | Description                                                     |
-| -------- | ------------------------ | --------------------------------------------------------------- |
-| `GET`    | `/api/health`            | Health of the API and downstream AI service.                    |
-| `GET`    | `/api/holdings`          | List all holdings (lots).                                       |
-| `POST`   | `/api/holdings`          | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
-| `GET`    | `/api/holdings/:id`      | Get one holding.                                                |
-| `PATCH`  | `/api/holdings/:id`      | Update a holding.                                               |
-| `DELETE` | `/api/holdings/:id`      | Delete one lot.                                                 |
-| `DELETE` | `/api/holdings?ticker=X` | Delete a whole position (every lot for a ticker).               |
-| `GET`    | `/api/portfolio/summary` | Positions (lots grouped by ticker) with live prices + totals.   |
-| `DELETE` | `/api/account`           | Delete the authenticated user's account and all their data.     |
+| Method   | Path                       | Description                                                     |
+| -------- | -------------------------- | --------------------------------------------------------------- |
+| `GET`    | `/api/health`              | Health of the API and downstream AI service.                    |
+| `GET`    | `/api/holdings`            | List all holdings (lots).                                       |
+| `POST`   | `/api/holdings`            | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
+| `GET`    | `/api/holdings/:id`        | Get one holding.                                                |
+| `PATCH`  | `/api/holdings/:id`        | Update a holding.                                               |
+| `DELETE` | `/api/holdings/:id`        | Delete one lot.                                                 |
+| `DELETE` | `/api/holdings?ticker=X`   | Delete a whole position (every lot for a ticker).               |
+| `GET`    | `/api/portfolio/summary`   | Positions (lots grouped by ticker) with live prices + totals.   |
+| `DELETE` | `/api/account`             | Delete the authenticated user's account and all their data.     |
+| `POST`   | `/api/rag/search`          | Search earnings call transcripts (hybrid + rerank).             |
+| `GET`    | `/api/rag/tickers`         | Every ticker indexed (or attempted) for transcript search.      |
+| `GET`    | `/api/rag/tickers/:ticker` | Indexing status for one ticker (poll while `indexing`).         |
 
 ### Authentication
 
-All `/api/holdings` and `/api/portfolio` routes require a **Supabase access
+All `/api/holdings`, `/api/portfolio`, `/api/account` and `/api/rag` routes require a **Supabase access
 token** sent as a bearer header:
 
 ```
@@ -52,6 +55,112 @@ Notes:
 - Validation failures return `422`; unknown resources return `404`; missing or
   invalid auth returns `401`.
 
+## Transcript search (RAG)
+
+Searches the last four earnings call transcripts of indexed tickers. Ten large
+caps (AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, JPM, NFLX, AMD) are pre-seeded.
+
+### `POST /api/rag/search`
+
+```json
+{
+  "query": "What did management say about EBITDA margins?",
+  "ticker": "AAPL",
+  "fiscalYear": 2025,
+  "fiscalQuarter": 3,
+  "topK": 5
+}
+```
+
+Only `query` is required. `ticker`, `fiscalYear` and `fiscalQuarter` are
+applied as metadata filters inside the vector query (pre-filtering). `topK` is
+1–20 (default 5). Fiscal years/quarters follow each company's own fiscal
+calendar.
+
+**`200`** — results, best first:
+
+```json
+{
+  "status": "ok",
+  "query": "What did management say about EBITDA margins?",
+  "filters": { "ticker": "AAPL", "fiscalYear": 2025, "fiscalQuarter": 3 },
+  "reranked": true,
+  "candidateCount": 25,
+  "latencyMs": 412.7,
+  "results": [
+    {
+      "id": "AAPL#FY2025Q3#0042",
+      "text": "…original transcript text…",
+      "score": 0.91,
+      "retrievalScore": 0.63,
+      "rerankScore": 0.91,
+      "ticker": "AAPL",
+      "companyName": "Apple Inc",
+      "fiscalYear": 2025,
+      "fiscalQuarter": 3,
+      "callDate": "2025-07-31",
+      "speaker": "Kevan Parekh",
+      "role": "CFO",
+      "section": "qa",
+      "chunkIndex": 42,
+      "contextHeader": "AAPL (Apple Inc) · Q3 FY2025 earnings call · 2025-07-31 · Q&A · Kevan Parekh, CFO"
+    }
+  ]
+}
+```
+
+- `score` is the rerank score when `reranked` is `true`, otherwise the hybrid
+  retrieval score. If the reranker fails or its monthly quota is exhausted the
+  search still succeeds in hybrid order with `reranked: false`.
+- `section` is `prepared_remarks` or `qa`. `speaker` falls back to the role
+  (e.g. `Analyst`) when Equibles does not identify the speaker by name.
+
+**`202`** — the ticker is not indexed yet. Ingestion has started in the
+background (or was already running); poll `pollUrl` and search again once it
+reports `indexed` (typically well under a minute):
+
+```json
+{
+  "status": "indexing",
+  "ticker": "CRM",
+  "jobId": "1b0c…",
+  "message": "CRM transcripts are being indexed; …",
+  "pollUrl": "/api/rag/tickers/CRM"
+}
+```
+
+Errors: `422` validation; `404` `transcripts_unavailable` (no transcripts exist
+for the ticker; not retried automatically); `429` `ingestion_cap_reached` (the
+daily cap on new tickers — default 8 per UTC day — is used up; the body includes
+`cap` and `resetsAt`); `503` `rag_not_configured`; `502` upstream failure.
+
+### `GET /api/rag/tickers/:ticker`
+
+```json
+{
+  "ticker": "CRM",
+  "status": "indexing",
+  "companyName": null,
+  "chunkCount": 0,
+  "quarters": [],
+  "indexedAt": null,
+  "lastError": null,
+  "job": {
+    "id": "1b0c…",
+    "status": "running",
+    "trigger": "on_demand",
+    "error": null,
+    "createdAt": "2026-09-30T18:02:11.120",
+    "startedAt": "2026-09-30T18:02:11.480",
+    "finishedAt": null
+  }
+}
+```
+
+`status` is one of `not_indexed`, `indexing`, `indexed`, `failed` (a later
+search retries) or `unavailable`. `GET /api/rag/tickers` returns
+`{ "tickers": [...] }` with the same shape (without `job`).
+
 ## AI service (`http://localhost:8000`)
 
 The market-data endpoints the API consumes directly:
@@ -61,6 +170,14 @@ The market-data endpoints the API consumes directly:
 | `GET`  | `/health`             | Service health.                                |
 | `GET`  | `/quotes/{ticker}`    | One quote (`404` unknown, `502` unavailable).  |
 | `GET`  | `/quotes?symbols=A,B` | Batch quotes; per-ticker failures in `errors`. |
+
+Transcript search (same semantics as the gateway routes above, snake_case JSON):
+
+| Method | Path                    | Description                                                               |
+| ------ | ----------------------- | ------------------------------------------------------------------------- |
+| `POST` | `/rag/search`           | `{query, ticker?, fiscal_year?, fiscal_quarter?, top_k}` → `200` / `202`. |
+| `GET`  | `/rag/tickers`          | All tracked tickers and their status.                                     |
+| `GET`  | `/rag/tickers/{ticker}` | One ticker's status and latest ingestion job.                             |
 
 Quotes come from Finnhub with an automatic yfinance fallback. In a batch, a
 single failing ticker is isolated: valid tickers still return quotes, and the
