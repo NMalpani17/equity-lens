@@ -6,9 +6,9 @@ into ~``target_tokens`` windows that overlap by ~``overlap_tokens``.
 
 Equibles does not label sections, so Q&A is inferred: once management (anyone
 other than the operator or an analyst) has spoken, Q&A starts at the first
-analyst turn, the first operator turn that mentions questions, or an investor
-relations hand-off such as "we will now open the call for questions". Requiring
-management first guards against Equibles misattributing early turns.
+analyst turn, the first operator turn that mentions questions, or the turn after
+a management hand-off such as "we will now open the call for questions".
+Requiring management first guards against Equibles misattributing early turns.
 """
 
 import re
@@ -126,18 +126,27 @@ def assign_sections(turns: list[SpeakerTurn]) -> list[Section]:
     """Label each turn as prepared remarks or Q&A."""
     sections: list[Section] = []
     in_qa = False
+    qa_starts_next = False
     management_has_spoken = False
     for turn in turns:
         if not in_qa:
             is_operator = _is_role(turn, "operator")
             is_analyst = _is_role(turn, "analyst")
-            if management_has_spoken and (
-                is_analyst
-                or (is_operator and _QA_OPERATOR_RE.search(turn.text))
-                or _QA_HANDOFF_RE.search(turn.text)
+            if qa_starts_next or (
+                management_has_spoken
+                and (
+                    is_analyst
+                    or (is_operator and _QA_OPERATOR_RE.search(turn.text))
+                    or (is_operator and _QA_HANDOFF_RE.search(turn.text))
+                )
             ):
                 in_qa = True
             elif not (is_operator or is_analyst):
+                # Management often closes its remarks with the hand-off ("we'll
+                # now open the call for questions"); that turn is still prepared
+                # remarks, and Q&A begins with the next turn.
+                if management_has_spoken and _QA_HANDOFF_RE.search(turn.text):
+                    qa_starts_next = True
                 management_has_spoken = True
         sections.append(Section.QA if in_qa else Section.PREPARED_REMARKS)
     return sections

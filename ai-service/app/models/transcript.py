@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+_FILER_SUFFIX_RE = re.compile(r"\s*/[A-Za-z]{1,5}$")
 # "Nvidia Corp Q1 FY2027 Earnings Call" -> "Nvidia Corp"
 _TITLE_COMPANY_RE = re.compile(r"^(?P<company>.+?)\s+Q[1-4]\s+FY\d{4}\b", re.IGNORECASE)
 
@@ -15,7 +16,10 @@ def company_from_event_title(title: str | None) -> str | None:
     if not title:
         return None
     match = _TITLE_COMPANY_RE.match(title.strip())
-    return match.group("company").strip() if match else None
+    if not match:
+        return None
+    # Drop SEC filer suffixes such as "/New" or "/DE".
+    return _FILER_SUFFIX_RE.sub("", match.group("company")).strip() or None
 
 
 class EarningsCallEvent(BaseModel):

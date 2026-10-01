@@ -145,6 +145,24 @@ def test_misattributed_analyst_before_management_does_not_start_qa() -> None:
     assert assign_sections(turns) == [
         Section.PREPARED_REMARKS,
         Section.PREPARED_REMARKS,
+        Section.PREPARED_REMARKS,  # the hand-off itself is still remarks
         Section.QA,
+    ]
+
+
+def test_management_handoff_at_end_of_remarks_keeps_the_remarks() -> None:
+    turns = [
+        turn(1, "CFO", "Welcome to the call. Our COO will speak first."),
+        turn(2, "COO", "Thanks. A few highlights from the year before results."),
+        turn(
+            3, "CFO", "Membership fee income rose 14%. We'll then open for questions."
+        ),
+        turn(4, "Operator", "To ask a question, press star one on your keypad now."),
+    ]
+
+    assert assign_sections(turns) == [
+        Section.PREPARED_REMARKS,
+        Section.PREPARED_REMARKS,
+        Section.PREPARED_REMARKS,
         Section.QA,
     ]

@@ -9,6 +9,9 @@ def test_company_from_event_title() -> None:
     assert company_from_event_title("Nvidia Corp Q1 FY2027 Earnings Call") == (
         "Nvidia Corp"
     )
+    assert company_from_event_title(
+        "Costco Wholesale Corp /New Q4 FY2025 Earnings Call"
+    ) == ("Costco Wholesale Corp")
     assert company_from_event_title("Some Investor Day") is None
     assert company_from_event_title(None) is None
 
