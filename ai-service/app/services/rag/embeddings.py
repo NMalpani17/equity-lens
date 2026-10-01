@@ -1,0 +1,174 @@
+"""Dense (Gemini) and sparse (Pinecone hosted) text encoders.
+
+Both batch document calls, retry rate limits / transient errors with backoff,
+and cache query encodings so repeated searches skip the network.
+"""
+
+import logging
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+import httpx
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types as genai_types
+from pinecone import Pinecone
+
+from .cache import TTLCache
+from .pinecone_errors import is_retryable_pinecone_error
+from .retry import RetryPolicy, retry_call
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SparseVector:
+    indices: list[int]
+    values: list[float]
+
+    def scaled(self, factor: float) -> "SparseVector":
+        return SparseVector(self.indices, [v * factor for v in self.values])
+
+    def to_pinecone(self) -> dict[str, list[Any]]:
+        return {"indices": self.indices, "values": self.values}
+
+
+class DenseEmbedder(Protocol):
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+    def embed_query(self, text: str) -> list[float]: ...
+
+
+class SparseEncoder(Protocol):
+    def encode_documents(self, texts: Sequence[str]) -> list[SparseVector]: ...
+
+    def encode_query(self, text: str) -> SparseVector: ...
+
+
+def _batched[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def l2_normalize(values: Sequence[float]) -> list[float]:
+    """Unit-normalize a vector (Gemini only normalizes full 3072-d output)."""
+    norm = math.sqrt(sum(v * v for v in values))
+    return [v / norm for v in values] if norm else list(values)
+
+
+def is_retryable_gemini_error(exc: BaseException) -> bool:
+    if isinstance(exc, genai_errors.APIError):
+        return exc.code == 429 or exc.code >= 500
+    return isinstance(exc, httpx.TransportError)
+
+
+class GeminiEmbedder:
+    """Gemini embeddings with retrieval task types and fixed dimensionality."""
+
+    def __init__(
+        self,
+        client: genai.Client,
+        *,
+        model: str,
+        dimension: int,
+        batch_size: int,
+        retry_policy: RetryPolicy,
+        query_cache: TTLCache[list[float]],
+    ) -> None:
+        self._client = client
+        self._model = model
+        self._dimension = dimension
+        self._batch_size = batch_size
+        self._retry_policy = retry_policy
+        self._query_cache = query_cache
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for batch in _batched(texts, self._batch_size):
+            vectors.extend(self._embed(batch, "RETRIEVAL_DOCUMENT"))
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        key = ("dense", self._model, self._dimension, text)
+        return self._query_cache.get_or_compute(
+            key, lambda: self._embed([text], "RETRIEVAL_QUERY")[0]
+        )
+
+    def _embed(self, texts: Sequence[str], task_type: str) -> list[list[float]]:
+        config = genai_types.EmbedContentConfig(
+            task_type=task_type, output_dimensionality=self._dimension
+        )
+
+        def call() -> list[list[float]]:
+            result = self._client.models.embed_content(
+                model=self._model, contents=list(texts), config=config
+            )
+            embeddings = result.embeddings or []
+            if len(embeddings) != len(texts):
+                raise ValueError(
+                    f"gemini returned {len(embeddings)} embeddings for "
+                    f"{len(texts)} inputs"
+                )
+            return [l2_normalize(e.values or []) for e in embeddings]
+
+        return retry_call(
+            call,
+            is_retryable=is_retryable_gemini_error,
+            policy=self._retry_policy,
+            operation=f"gemini embed ({len(texts)} texts)",
+        )
+
+
+class PineconeSparseEncoder:
+    """Sparse lexical vectors from Pinecone's hosted ``pinecone-sparse-english-v0``."""
+
+    def __init__(
+        self,
+        pc: Pinecone,
+        *,
+        model: str,
+        batch_size: int,
+        retry_policy: RetryPolicy,
+        query_cache: TTLCache[SparseVector],
+    ) -> None:
+        self._pc = pc
+        self._model = model
+        self._batch_size = batch_size
+        self._retry_policy = retry_policy
+        self._query_cache = query_cache
+
+    def encode_documents(self, texts: Sequence[str]) -> list[SparseVector]:
+        vectors: list[SparseVector] = []
+        for batch in _batched(texts, self._batch_size):
+            vectors.extend(self._encode(batch, "passage"))
+        return vectors
+
+    def encode_query(self, text: str) -> SparseVector:
+        key = ("sparse", self._model, text)
+        return self._query_cache.get_or_compute(
+            key, lambda: self._encode([text], "query")[0]
+        )
+
+    def _encode(self, texts: Sequence[str], input_type: str) -> list[SparseVector]:
+        def call() -> list[SparseVector]:
+            result = self._pc.inference.embed(
+                model=self._model,
+                inputs=list(texts),
+                parameters={
+                    "input_type": input_type,
+                    "truncate": "END",
+                    "max_tokens_per_sequence": 512,
+                },
+            )
+            return [
+                SparseVector(list(e.sparse_indices), list(e.sparse_values))
+                for e in result.data
+            ]
+
+        return retry_call(
+            call,
+            is_retryable=is_retryable_pinecone_error,
+            policy=self._retry_policy,
+            operation=f"pinecone sparse embed ({len(texts)} texts)",
+        )
