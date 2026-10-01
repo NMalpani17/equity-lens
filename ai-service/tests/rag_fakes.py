@@ -69,10 +69,12 @@ class FakeEquibles:
 class FakeEmbedder:
     def __init__(self) -> None:
         self.document_calls = 0
+        self.last_texts: list[str] = []
         self.queries: list[str] = []
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         self.document_calls += 1
+        self.last_texts = list(texts)
         return [[1.0, 0.0] for _ in texts]
 
     def embed_query(self, text: str) -> list[float]:

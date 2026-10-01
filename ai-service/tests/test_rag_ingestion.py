@@ -181,3 +181,16 @@ def test_quota_exhaustion_marks_job_failed() -> None:
     assert not outcome.succeeded and outcome.quota_exhausted
     assert repo.tickers["AAPL"].status == "failed"
     assert repo.jobs[claim.job_id].status == "failed"
+
+
+def test_plain_only_indexes_just_the_eval_namespace() -> None:
+    pipeline, _, _, store = build()
+    pipeline.ingest("AAPL")
+    store.reset_mock()
+
+    pipeline.ingest("AAPL", cache_only=True, plain_only=True)
+
+    namespaces = [c.kwargs["namespace"] for c in store.upsert_chunks.call_args_list]
+    assert namespaces == ["plain"]
+    embedded = pipeline._embedder.last_texts
+    assert embedded and not any(t.startswith("AAPL (") for t in embedded)

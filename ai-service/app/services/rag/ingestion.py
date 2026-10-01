@@ -119,11 +119,12 @@ class IngestionPipeline:
         refresh: bool = False,
         cache_only: bool = False,
         include_plain: bool = False,
+        plain_only: bool = False,
     ) -> IngestionResult:
         """Index the latest transcripts for ``ticker``. Safe to re-run.
 
         ``include_plain`` also indexes header-less copies into the evaluation
-        namespace.
+        namespace; ``plain_only`` indexes only those.
         """
         transcripts = self._source.load(ticker, refresh=refresh, cache_only=cache_only)
         if not transcripts:
@@ -138,8 +139,8 @@ class IngestionPipeline:
                 overlap_tokens=self._overlap_tokens,
             )
         ]
-        targets = [(self._namespace, True)]
-        if include_plain:
+        targets = [] if plain_only else [(self._namespace, True)]
+        if include_plain or plain_only:
             targets.append((self._plain_namespace, False))
         for namespace, with_header in targets:
             self._index(chunks, namespace=namespace, with_header=with_header)
