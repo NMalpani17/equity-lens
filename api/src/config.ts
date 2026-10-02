@@ -23,6 +23,17 @@ const envSchema = z.object({
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   AI_SERVICE_URL: z.string().url().default("http://localhost:8000"),
+  // Shared secret proving requests to the ai-service come from this gateway.
+  // Chat returns 503 until it is set.
+  AI_SERVICE_INTERNAL_TOKEN: z.string().default(""),
+  // AI analyst chat limits (user messages per UTC day).
+  CHAT_DAILY_LIMIT: z.coerce.number().int().positive().default(20),
+  CHAT_DAILY_LIMIT_ANON: z.coerce.number().int().positive().default(5),
+  CHAT_GLOBAL_DAILY_LIMIT: z.coerce.number().int().positive().default(60),
+  CHAT_MAX_MESSAGE_CHARS: z.coerce.number().int().positive().default(2000),
+  // Context sent to the model: final answers only, newest first.
+  CHAT_HISTORY_MESSAGES: z.coerce.number().int().nonnegative().default(6),
+  CHAT_HISTORY_TOKENS: z.coerce.number().int().positive().default(3000),
   // Comma-separated list of origins allowed by CORS (the client dev server).
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
   // Supabase PostgreSQL connection strings.
@@ -54,6 +65,15 @@ export const config = {
   port: parsed.data.PORT,
   logLevel: parsed.data.LOG_LEVEL,
   aiServiceUrl: parsed.data.AI_SERVICE_URL,
+  aiServiceInternalToken: parsed.data.AI_SERVICE_INTERNAL_TOKEN,
+  chat: {
+    dailyLimit: parsed.data.CHAT_DAILY_LIMIT,
+    dailyLimitAnon: parsed.data.CHAT_DAILY_LIMIT_ANON,
+    globalDailyLimit: parsed.data.CHAT_GLOBAL_DAILY_LIMIT,
+    maxMessageChars: parsed.data.CHAT_MAX_MESSAGE_CHARS,
+    historyMessages: parsed.data.CHAT_HISTORY_MESSAGES,
+    historyTokens: parsed.data.CHAT_HISTORY_TOKENS,
+  },
   clientOrigin: parsed.data.CLIENT_ORIGIN,
   databaseUrl: parsed.data.DATABASE_URL,
   directUrl: parsed.data.DIRECT_URL,
