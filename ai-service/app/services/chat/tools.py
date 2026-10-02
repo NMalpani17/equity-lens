@@ -147,9 +147,16 @@ def get_portfolio(turn: TurnContext | None) -> ToolOutput:
 
 
 def resolve_company(
-    deps: ToolDeps, *, query: str, period: str | None = None
+    deps: ToolDeps,
+    turn: TurnContext | None = None,
+    *,
+    query: str,
+    period: str | None = None,
 ) -> ToolOutput:
-    return ToolOutput.of(deps.resolver().resolve(query, period).as_dict())
+    resolution = deps.resolver().resolve(query, period)
+    if turn and resolution.ticker and resolution.company_name:
+        turn.company_names[resolution.ticker] = resolution.company_name
+    return ToolOutput.of(resolution.as_dict())
 
 
 def calculate_position_tool(

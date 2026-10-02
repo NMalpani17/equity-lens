@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _TICKER_RE = re.compile(r"^[A-Z]{1,5}(?:\.[A-Z])?$")
 _SUFFIX_RE = re.compile(
     r"\b(inc|incorporated|corp|corporation|co|company|ltd|limited|plc|holdings?|"
-    r"group|the|class [abc]|com|sa|nv|ag|se)\b"
+    r"group|the|(?:class|cl) [abc]|com|sa|nv|ag|se)\b"
 )
 # Colloquial names that map to more than one listing or aren't in the index.
 _ALIASES: dict[str, list[str]] = {
@@ -55,6 +55,39 @@ def normalize_name(name: str) -> str:
     text = re.sub(r"[^a-z0-9 ]+", " ", name.lower().replace("&", " and "))
     text = _SUFFIX_RE.sub(" ", text)
     return " ".join(text.split())
+
+
+# A trailing legal suffix or share-class tag in a listing name, e.g. the
+# " INC", " -CL B" and " & CO" in "NIKE INC -CL B" or "JPMORGAN CHASE & CO".
+_LEGAL_TAIL_RE = re.compile(
+    r"[\s,.&/-]+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|"
+    r"holdings?|group|sa|nv|ag|se|(?:cl|class)\s*[a-c])\.?[\s,.&-]*$"
+    r"|\s*/[a-z]{2}$",  # state of incorporation, e.g. "/DE"
+    re.IGNORECASE,
+)
+
+
+def display_name(name: str | None, ticker: str) -> str:
+    """A short, readable company name for status labels, or the ticker.
+
+    "NIKE INC -CL B" -> "Nike", "Starbucks Corp" -> "Starbucks". Never turns a
+    ticker into a fake name (no "Nke"): if nothing beyond the ticker is known,
+    the ticker is returned unchanged.
+    """
+    text = (name or "").strip()
+    previous = None
+    while text and text != previous:
+        previous = text
+        text = _LEGAL_TAIL_RE.sub("", text).strip()
+    text = text.strip(" ,.&/-")
+    if not text or text.upper() == ticker.upper():
+        return ticker
+    if text.isupper():
+        # Listing names are often all caps; keep short acronyms (IBM, AT&T).
+        text = " ".join(
+            w.capitalize() if w.isalpha() and len(w) > 3 else w for w in text.split()
+        )
+    return text
 
 
 @dataclass
@@ -216,13 +249,13 @@ class CompanyResolver:
         upper = query.upper()
         record = by_ticker.get(upper)
         if record and normalize_name(query) not in _ALIASES:
-            return Resolution("resolved", query, upper, record.company_name or upper)
+            # A ticker that is still indexing may not have a name yet.
+            name = record.company_name or self._listed_name(upper) or upper
+            return Resolution("resolved", query, upper, name)
         if _TICKER_RE.match(upper) and query == upper:
-            match = next(
-                (r for r in self._safe_search(upper) if r["symbol"] == upper), None
-            )
-            if match:
-                return Resolution("resolved", query, upper, match["description"])
+            listed = self._listed_name(upper)
+            if listed:
+                return Resolution("resolved", query, upper, listed)
 
         norm = normalize_name(query)
         if not norm:
@@ -289,6 +322,12 @@ class CompanyResolver:
             query,
             message="No US-listed company matched; ask the user for the ticker.",
         )
+
+    def _listed_name(self, symbol: str) -> str | None:
+        match = next(
+            (r for r in self._safe_search(symbol) if r["symbol"] == symbol), None
+        )
+        return match["description"] if match else None
 
     @staticmethod
     def _ambiguous(query: str, candidates: list[Candidate]) -> Resolution:

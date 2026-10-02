@@ -240,6 +240,7 @@ def get_portfolio(ctx: Context) -> ToolResult:
 
 @mcp.tool(annotations=READ_ONLY)
 def resolve_company(
+    ctx: Context,
     query: Annotated[
         str,
         Field(description="Company name or ticker.", min_length=1, max_length=100),
@@ -256,7 +257,9 @@ def resolve_company(
     """Map a company name to its ticker and a period phrase to fiscal
     year/quarter. Returns 'ambiguous' with candidates when several listings
     match (e.g. share classes); then ask the user which they mean."""
-    return _result(tools.resolve_company(_deps_provider(), query=query, period=period))
+    return _result(
+        tools.resolve_company(_deps_provider(), _turn(ctx), query=query, period=period)
+    )
 
 
 @mcp.tool(annotations=READ_ONLY)

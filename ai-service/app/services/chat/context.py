@@ -36,6 +36,9 @@ class TurnContext:
     # Starbucks transcripts…") to the stream. Thread-safe; tools may run in
     # worker threads.
     progress: Callable[[str], None] | None = None
+    # Company names resolve_company found this turn (ticker -> name), so
+    # status labels say "Indexing Nike transcripts…" rather than a ticker.
+    company_names: dict[str, str] = field(default_factory=dict)
 
     def report_progress(self, label: str) -> None:
         if self.progress is not None:

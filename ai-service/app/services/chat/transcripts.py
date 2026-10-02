@@ -29,7 +29,7 @@ from app.services.rag.search import RagSearchService
 
 from .citations import CitationRegistry, format_passage
 from .context import TurnContext
-from .resolver import CompanyResolver, normalize_name
+from .resolver import CompanyResolver, display_name
 
 logger = logging.getLogger(__name__)
 
@@ -147,19 +147,21 @@ def prioritize_recent(
     )
 
 
-def _company_label(deps: SearchDeps, ticker: str) -> str:
-    try:
-        resolution = deps.resolver().resolve(ticker)
-    except Exception:
-        return ticker
-    company = getattr(resolution, "company_name", None)
-    name = normalize_name(company) if isinstance(company, str) else ""
-    return name.title() if name else ticker
+def company_label(deps: SearchDeps, turn: TurnContext | None, ticker: str) -> str:
+    """The company's name for status labels ("Nike"), else the ticker as-is."""
+    known = turn.company_names.get(ticker) if turn else None
+    if not known:
+        try:
+            company = getattr(deps.resolver().resolve(ticker), "company_name", None)
+        except Exception:
+            company = None
+        known = company if isinstance(company, str) else None
+    return display_name(known, ticker)
 
 
 def wait_for_index(deps: SearchDeps, turn: TurnContext | None, ticker: str) -> str:
     """Wait for on-demand indexing. Returns the final ticker status or "timeout"."""
-    label = f"Indexing {_company_label(deps, ticker)} transcripts…"
+    label = f"Indexing {company_label(deps, turn, ticker)} transcripts…"
     if turn:
         turn.report_progress(label)
     deadline = deps.clock() + deps.index_wait_seconds

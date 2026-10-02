@@ -172,9 +172,9 @@ def test_search_for_goog_uses_googl_calls_without_asking() -> None:
 # --- waiting for on-demand indexing -------------------------------------------
 
 
-def indexing() -> RagIndexingResponse:
+def indexing(ticker: str = "SBUX") -> RagIndexingResponse:
     return RagIndexingResponse(
-        ticker="SBUX", job_id="j", message="m", poll_url="/rag/tickers/SBUX"
+        ticker=ticker, job_id="j", message="m", poll_url=f"/rag/tickers/{ticker}"
     )
 
 
@@ -215,6 +215,40 @@ def test_waits_for_indexing_then_answers_in_the_same_call() -> None:
         "Searching SBUX transcripts…",
     ]
     assert clock[0] == 6.0  # three 2-second polls, well under the 45 s budget
+
+
+def _indexing_label(deps, ctx) -> str:
+    progress: list[str] = []
+    ctx.progress = progress.append
+    search_transcripts(deps, ctx, query="q", ticker="NKE")
+    return progress[0]
+
+
+def test_indexing_label_uses_the_name_resolve_company_found() -> None:
+    search = MagicMock()
+    search.search.return_value = indexing("NKE")
+    resolver = MagicMock()
+    resolver.resolve.return_value = MagicMock(ticker="NKE", company_name="NKE")
+    deps, _ = make_deps(
+        search, records=lambda _: indexed("NKE", status="indexing"), resolver=resolver
+    )
+    ctx = turn()
+    ctx.company_names["NKE"] = "NIKE INC -CL B"
+
+    assert _indexing_label(deps, ctx) == "Indexing Nike transcripts…"
+    resolver.resolve.assert_not_called()
+
+
+def test_indexing_label_never_mangles_a_bare_ticker() -> None:
+    search = MagicMock()
+    search.search.return_value = indexing("NKE")
+    resolver = MagicMock()
+    resolver.resolve.return_value = MagicMock(ticker="NKE", company_name="NKE")
+    deps, _ = make_deps(
+        search, records=lambda _: indexed("NKE", status="indexing"), resolver=resolver
+    )
+
+    assert _indexing_label(deps, turn()) == "Indexing NKE transcripts…"
 
 
 def test_indexing_that_takes_too_long_falls_back_to_try_again() -> None:

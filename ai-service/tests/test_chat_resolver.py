@@ -2,7 +2,12 @@
 
 import pytest
 
-from app.services.chat.resolver import CompanyResolver, normalize_name, resolve_period
+from app.services.chat.resolver import (
+    CompanyResolver,
+    display_name,
+    normalize_name,
+    resolve_period,
+)
 from app.services.rag.repository import TickerRecord
 
 INDEXED = [
@@ -132,3 +137,44 @@ def test_relative_period_without_index_explains_itself() -> None:
 
     assert period["basis"] == "unknown" and "indexed" in period["note"]
     assert resolve_period("tell me about revenue", ["FY2026Q3"]) is None
+
+
+# --- display names for status labels ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("name", "ticker", "expected"),
+    [
+        ("NIKE INC -CL B", "NKE", "Nike"),
+        ("STARBUCKS CORP", "SBUX", "Starbucks"),
+        ("Alphabet Inc-Cl A", "GOOGL", "Alphabet"),
+        ("JPMORGAN CHASE & CO", "JPM", "Jpmorgan Chase"),
+        ("AT&T INC", "T", "AT&T"),
+        ("INTL BUSINESS MACHINES CORP", "IBM", "Intl Business Machines"),
+        ("Costco Wholesale Corp", "COST", "Costco Wholesale"),
+        ("TESLA INC /DE", "TSLA", "Tesla"),
+        ("NKE", "NKE", "NKE"),  # only the ticker is known: never "Nke"
+        (None, "NKE", "NKE"),
+        ("", "SBUX", "SBUX"),
+    ],
+)
+def test_display_name_is_readable_and_never_mangles_a_ticker(
+    name, ticker, expected
+) -> None:
+    assert display_name(name, ticker) == expected
+
+
+def test_normalize_name_drops_finnhub_share_class_tags() -> None:
+    assert normalize_name("NIKE INC -CL B") == "nike"
+
+
+def test_record_without_a_name_uses_the_listing_name_not_the_ticker() -> None:
+    indexing = TickerRecord("NKE", "indexing", None, 0, [])
+    resolver = CompanyResolver(
+        lambda: [indexing],
+        lambda q: [{"symbol": "NKE", "description": "NIKE INC -CL B"}],
+    )
+
+    result = resolver.resolve("NKE")
+
+    assert result.ticker == "NKE" and result.company_name == "NIKE INC -CL B"

@@ -162,3 +162,18 @@ def test_quote_timestamp_uses_the_users_time_zone() -> None:
     )
 
     assert out.data["as_of"] == "Oct 2, 2026, 11:10 AM EDT"
+
+
+def test_resolve_company_remembers_the_name_for_status_labels() -> None:
+    from app.services.chat.resolver import Resolution
+
+    resolver = MagicMock()
+    resolver.resolve.return_value = Resolution(
+        "resolved", "Nike", "NKE", "NIKE INC -CL B"
+    )
+    ctx = turn()
+
+    out = tools.resolve_company(deps(resolver=resolver), ctx, query="Nike")
+
+    assert out.data["ticker"] == "NKE"
+    assert ctx.company_names == {"NKE": "NIKE INC -CL B"}
