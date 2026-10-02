@@ -217,7 +217,12 @@ export async function getUsage(
 
 /** Throw 429 if the user's or the global daily cap is reached. */
 export async function assertWithinLimits(userId: string, isAnonymous: boolean) {
-  const usage = await getUsage(userId, isAnonymous);
+  const { start } = utcDayWindow();
+  // Both counts are independent; run them together to keep turn latency low.
+  const [usage, globalUsed] = await Promise.all([
+    getUsage(userId, isAnonymous),
+    prisma.chatMessage.count({ where: { role: "user", createdAt: { gte: start } } }),
+  ]);
   if (usage.remaining <= 0) {
     throw new ChatLimitError(
       "user",
@@ -228,10 +233,6 @@ export async function assertWithinLimits(userId: string, isAnonymous: boolean) {
         : `You've reached today's limit of ${usage.limit} messages. It resets at midnight UTC.`,
     );
   }
-  const { start } = utcDayWindow();
-  const globalUsed = await prisma.chatMessage.count({
-    where: { role: "user", createdAt: { gte: start } },
-  });
   if (globalUsed >= config.chat.globalDailyLimit) {
     throw new ChatLimitError(
       "global",

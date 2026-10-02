@@ -74,8 +74,19 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   const conversationId = conversationIdSchema.parse(req.params.id);
   const { content } = sendMessageSchema.parse(req.body);
 
+  const started = performance.now();
+  const timings: Record<string, number> = {};
+  const mark = (stage: string) => {
+    timings[stage] = Math.round(performance.now() - started);
+  };
+
   await chatService.assertWithinLimits(userId, isAnonymous);
+  mark("limitsMs");
+  // The portfolio snapshot is independent of claiming the turn, so load it
+  // concurrently (it never rejects; failures become a null snapshot).
+  const portfolioPromise = loadPortfolioSnapshot(userId);
   const turn = await chatService.beginTurn(conversationId, userId, content);
+  mark("beginTurnMs");
 
   const abort = new AbortController();
   res.on("close", () => {
@@ -84,7 +95,8 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
 
   let events;
   try {
-    const portfolio = await loadPortfolioSnapshot(userId);
+    const portfolio = await portfolioPromise;
+    mark("portfolioMs");
     events = await openChatStream(
       {
         userId,
@@ -106,6 +118,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
     throw error;
   }
 
+  mark("upstreamOpenMs");
   res.status(200).set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -121,6 +134,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   });
 
   const result = await relayEvents(events, sink, abort.signal);
+  mark("relayMs");
   try {
     const saved = await chatService.finishTurn(
       conversationId,
@@ -139,5 +153,17 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
     });
   } finally {
     if (!res.writableEnded) res.end();
+    mark("totalMs");
+    logger.info(
+      {
+        event: "chat_turn",
+        conversationId,
+        outcome: result.kind,
+        status: result.outcome.status,
+        toolCalls: result.outcome.toolCalls?.length ?? 0,
+        ...timings,
+      },
+      "chat turn",
+    );
   }
 }
