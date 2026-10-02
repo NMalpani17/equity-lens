@@ -357,6 +357,58 @@ def test_every_model_call_carries_the_hashed_user_and_session() -> None:
     tracer.shutdown()
 
 
+def test_fastmcp_spans_are_never_exported(monkeypatch) -> None:
+    import fastmcp.telemetry as fastmcp_telemetry
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+    provider = TracerProvider()
+    everything = InMemorySpanExporter()  # what the app emits, before filtering
+    provider.add_span_processor(SimpleSpanProcessor(everything))
+    # Point FastMCP's real instrumentation at this test's provider.
+    monkeypatch.setattr(
+        fastmcp_telemetry,
+        "otel_get_tracer",
+        lambda name, version=None: provider.get_tracer(name, version),
+    )
+    exported = InMemorySpanExporter()
+    tracer = build_tracer(
+        settings(
+            langfuse_public_key="pk-lf-scope-test",
+            langfuse_secret_key="sk-lf-test-secret",
+            langfuse_base_url="http://127.0.0.1:9",
+            langfuse_timeout_seconds=1,
+        ),
+        span_exporter=exported,
+        tracer_provider=provider,
+    )
+    assert isinstance(tracer, LangfuseTracer)
+    tracer.score = lambda **_: None  # type: ignore[method-assign]
+    model = ScriptedChatModel(
+        script=[
+            ai(tool_calls=[{"name": "get_portfolio", "id": "p1"}]),
+            ai("You hold NVDA."),
+        ]
+    )
+
+    run_turn(
+        make_service(model, tracer),
+        "How is my portfolio?",
+        portfolio=portfolio(position("NVDA", 10, 100, 150)),
+    )
+    tracer.flush()
+
+    emitted = {s.instrumentation_scope.name for s in everything.get_finished_spans()}
+    assert "fastmcp" in emitted  # FastMCP did trace the tool call...
+    spans = exported.get_finished_spans()
+    assert {s.instrumentation_scope.name for s in spans} == {"langfuse-sdk"}
+    tools = [
+        s for s in spans if s.attributes.get("langfuse.observation.type") == "tool"
+    ]
+    assert [s.name for s in tools] == ["get_portfolio"]  # ...ours is the only copy
+    tracer.shutdown()
+
+
 def test_a_failing_trace_scope_never_breaks_the_turn() -> None:
     class BrokenScope:
         def __enter__(self):

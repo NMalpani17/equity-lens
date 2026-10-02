@@ -300,10 +300,29 @@ def _secrets(settings: Settings) -> list[str]:
     ]
 
 
-def build_tracer(settings: Settings, *, span_exporter: Any = None) -> Tracer:
+# OpenTelemetry scopes whose spans Langfuse must not export. FastMCP traces
+# every tool call itself; those spans have no exported parent (so they show
+# up as orphan traces with no user), duplicate our LangChain tool spans, and
+# bypass the mask hook, which only covers Langfuse's own observations.
+BLOCKED_INSTRUMENTATION_SCOPES = frozenset({"fastmcp"})
+
+
+def _should_export_span(span: Any) -> bool:
+    """Langfuse's default export rule, minus the blocked scopes."""
+    from langfuse.span_filter import is_default_export_span
+
+    scope = span.instrumentation_scope
+    blocked = scope is not None and scope.name in BLOCKED_INSTRUMENTATION_SCOPES
+    return not blocked and is_default_export_span(span)
+
+
+def build_tracer(
+    settings: Settings, *, span_exporter: Any = None, tracer_provider: Any = None
+) -> Tracer:
     """A Langfuse tracer when both keys are set, otherwise a no-op tracer.
 
-    ``span_exporter`` replaces the OTLP exporter (tests capture spans with it).
+    ``span_exporter`` replaces the OTLP exporter and ``tracer_provider`` the
+    OpenTelemetry provider (tests capture spans with them).
     """
     if not settings.tracing_enabled:
         return NoopTracer()
@@ -319,7 +338,9 @@ def build_tracer(settings: Settings, *, span_exporter: Any = None) -> Tracer:
             timeout=settings.langfuse_timeout_seconds,
             flush_interval=settings.langfuse_flush_interval_seconds,
             mask=TraceMasker(_secrets(settings)),
+            should_export_span=_should_export_span,
             **({"span_exporter": span_exporter} if span_exporter else {}),
+            **({"tracer_provider": tracer_provider} if tracer_provider else {}),
         )
     except Exception:
         logger.warning(

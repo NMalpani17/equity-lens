@@ -279,7 +279,12 @@ call with its latency, and errors (level `ERROR`). Traces are named
 `chat-turn`, grouped by conversation (session id), tagged `chat` (plus `demo`
 for anonymous users and `eval` for eval runs), and get a `turn_status` score
 (`complete`, `truncated`, `blocked`, `empty`, `refused`, `error`). Guardrail
-refusals, which never reach the model, are recorded as single-span traces.
+refusals, which never reach the model, are recorded as single-span traces. Every
+model and tool span carries the hashed user id and session id (the agent run is
+driven from one task that holds Langfuse's `propagate_attributes` scope), so
+cost is attributed per user and session. FastMCP's own OpenTelemetry spans are
+not exported (`should_export_span` drops the `fastmcp` scope): they would
+duplicate the tool spans as parentless traces and bypass the mask hook.
 
 **Privacy** (`ai-service/app/services/observability/masking.py`): the Langfuse
 client's `mask` hook runs on every input, output and metadata payload before
