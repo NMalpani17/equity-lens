@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { ArrowDown } from "lucide-react";
 
 import { Header } from "@/components/Header";
 import { DemoBanner } from "@/components/DemoBanner";
@@ -10,6 +11,7 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { StarterQuestions } from "@/components/chat/StarterQuestions";
 import { useAuth } from "@/context/auth-context";
 import { useChat } from "@/hooks/useChat";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import type { ChatMessage, Citation } from "@/lib/chatApi";
 
 /** The user question an assistant reply answered (for Retry). */
@@ -26,13 +28,20 @@ export function ChatPage() {
   const { isDemo } = useAuth();
   const chat = useChat();
   const [citation, setCitation] = useState<Citation | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [chat.messages, chat.streamText, chat.tools]);
+  const contentKey = [
+    chat.activeId,
+    chat.messages.length,
+    chat.messages.at(-1)?.status,
+    chat.streamText.length,
+    chat.tools.map((t) => `${t.label}:${t.state}`).join("|"),
+  ].join("/");
+  const scroll = useStickToBottom<HTMLElement>(contentKey);
 
   const outOfMessages = chat.usage !== null && chat.usage.remaining <= 0;
+  const send = (content: string) => {
+    scroll.scrollToBottom(); // your own message always brings you to the end
+    void chat.send(content);
+  };
 
   return (
     <div className="flex h-screen flex-col">
@@ -47,18 +56,20 @@ export function ChatPage() {
           onRename={chat.renameConversation}
           onDelete={chat.deleteConversation}
         />
-        <main className="flex min-h-0 flex-1 flex-col">
+        <main className="relative flex min-h-0 flex-1 flex-col">
           {chat.banner && (
             <ChatBanner banner={chat.banner} onDismiss={chat.dismissBanner} />
           )}
           <section
+            ref={scroll.containerRef}
+            onScroll={scroll.onScroll}
             aria-label="Messages"
             aria-live="polite"
             className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
           >
             {chat.messages.length === 0 && !chat.loading ? (
               <StarterQuestions
-                onPick={(q) => void chat.send(q)}
+                onPick={send}
                 disabled={chat.streaming || outOfMessages}
               />
             ) : (
@@ -71,14 +82,24 @@ export function ChatPage() {
                     streamText={chat.streamText}
                     tools={chat.tools}
                     onCite={setCitation}
-                    onRetry={question ? () => void chat.send(question) : undefined}
+                    onRetry={question ? () => send(question) : undefined}
                     retryDisabled={chat.streaming || outOfMessages}
                   />
                 );
               })
             )}
-            <div ref={bottomRef} />
+            <div ref={scroll.endRef} />
           </section>
+          {!scroll.atBottom && chat.messages.length > 0 && (
+            <button
+              type="button"
+              onClick={scroll.scrollToBottom}
+              className="absolute bottom-28 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-xs font-medium shadow-md hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <ArrowDown aria-hidden="true" className="size-3.5" />
+              Jump to latest
+            </button>
+          )}
           {chat.usage && (chat.usage.isDemo || chat.usage.remaining <= 5) && (
             <p className="px-4 text-xs text-muted-foreground" data-testid="chat-usage">
               {chat.usage.remaining > 0
@@ -89,7 +110,7 @@ export function ChatPage() {
           <ChatComposer
             streaming={chat.streaming}
             disabled={outOfMessages}
-            onSend={(content) => void chat.send(content)}
+            onSend={send}
             onStop={chat.stop}
           />
         </main>

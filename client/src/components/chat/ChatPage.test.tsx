@@ -243,6 +243,54 @@ describe("ChatPage", () => {
     expect(api.streamMessage.mock.calls[1]![1]).toBe("And AMD?");
   });
 
+  it("auto-scrolls only near the bottom and offers Jump to latest", async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
+    let emit: (event: ChatStreamEvent) => void = () => {};
+    api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
+      emit = onEvent;
+      await new Promise<void>(() => {});
+    });
+    renderPage();
+    await screen.findByText("Ask the AI analyst");
+    sendViaComposer("Summarize NVDA's last call");
+    await waitFor(() => expect(api.streamMessage).toHaveBeenCalled());
+
+    const list = screen.getByRole("region", { name: "Messages" });
+    const setScroll = (scrollTop: number) => {
+      Object.defineProperty(list, "scrollHeight", { value: 2000, configurable: true });
+      Object.defineProperty(list, "clientHeight", { value: 500, configurable: true });
+      Object.defineProperty(list, "scrollTop", {
+        value: scrollTop,
+        configurable: true,
+      });
+      fireEvent.scroll(list);
+    };
+
+    // At the bottom: streaming text keeps the view pinned to the end.
+    setScroll(1500);
+    scrollSpy.mockClear();
+    emit({ type: "token", text: "NVIDIA said " });
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+    expect(
+      screen.queryByRole("button", { name: "Jump to latest" }),
+    ).not.toBeInTheDocument();
+
+    // Scrolled up to reread: new tokens don't move the view.
+    setScroll(200);
+    scrollSpy.mockClear();
+    emit({ type: "token", text: "demand stayed strong" });
+    await screen.findByText(/demand stayed strong/);
+    expect(scrollSpy).not.toHaveBeenCalled();
+    const jump = screen.getByRole("button", { name: "Jump to latest" });
+
+    fireEvent.click(jump);
+    expect(scrollSpy).toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Jump to latest" }),
+    ).not.toBeInTheDocument();
+    scrollSpy.mockRestore();
+  });
+
   it("shows a rate-limit banner when the daily cap is reached", async () => {
     api.streamMessage.mockRejectedValue(
       new ApiError(
