@@ -144,3 +144,30 @@ describe("relayEvents", () => {
     expect(result.outcome.content).toBe("Half");
   });
 });
+
+describe("tool progress", () => {
+  it("relays progress labels for the running tool", async () => {
+    const out = sink();
+
+    await relayEvents(
+      events(
+        {
+          type: "tool_start",
+          id: "t1",
+          name: "search_transcripts",
+          label: "Searching SBUX transcripts…",
+          args: {},
+        },
+        { type: "tool_progress", id: "t1", label: "Indexing Starbucks transcripts…" },
+        DONE,
+      ),
+      out,
+      new AbortController().signal,
+    );
+
+    expect(out.sent[1]).toEqual({
+      event: "tool_progress",
+      data: { id: "t1", label: "Indexing Starbucks transcripts…" },
+    });
+  });
+});

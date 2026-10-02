@@ -185,6 +185,33 @@ describe("ChatPage", () => {
     expect(within(dialog).getByText(citation.text)).toBeInTheDocument();
   });
 
+  it("updates a running tool's label from tool_progress events", async () => {
+    let emit: (event: ChatStreamEvent) => void = () => {};
+    api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
+      emit = onEvent;
+      await new Promise<void>(() => {});
+    });
+    renderPage();
+    await screen.findByText("Ask the AI analyst");
+
+    sendViaComposer("What did Starbucks say about traffic?");
+    await waitFor(() => expect(api.streamMessage).toHaveBeenCalled());
+    emit({
+      type: "tool_start",
+      id: "s1",
+      name: "search_transcripts",
+      label: "Searching SBUX transcripts…",
+      args: {},
+    });
+    expect(await screen.findByText("Searching SBUX transcripts…")).toBeInTheDocument();
+    emit({ type: "tool_progress", id: "s1", label: "Indexing Starbucks transcripts…" });
+
+    expect(
+      await screen.findByText("Indexing Starbucks transcripts…"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Searching SBUX transcripts…")).not.toBeInTheDocument();
+  });
+
   it("shows a rate-limit banner when the daily cap is reached", async () => {
     api.streamMessage.mockRejectedValue(
       new ApiError(

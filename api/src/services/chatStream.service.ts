@@ -44,6 +44,7 @@ const eventSchemas = {
     label: z.string(),
     args: z.record(z.unknown()).default({}),
   }),
+  tool_progress: z.object({ id: z.string(), label: z.string() }),
   tool_end: z.object({
     id: z.string(),
     name: z.string(),
@@ -92,6 +93,7 @@ export type AiChatEvent =
       label: string;
       args: Record<string, unknown>;
     }
+  | { type: "tool_progress"; id: string; label: string }
   | { type: "tool_end"; id: string; name: string; ok: boolean; summary: string }
   | {
       type: "done";
@@ -134,6 +136,7 @@ export function mapEvent(type: string, data: unknown): AiChatEvent | null {
   switch (type) {
     case "token":
     case "tool_start":
+    case "tool_progress":
     case "tool_end":
     case "error": {
       const parsed = eventSchemas[type].safeParse(data);

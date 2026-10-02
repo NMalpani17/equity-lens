@@ -81,6 +81,7 @@ export type ChatStreamEvent =
       label: string;
       args: Record<string, unknown>;
     }
+  | { type: "tool_progress"; id: string; label: string }
   | { type: "tool_end"; id: string; name: string; ok: boolean; summary: string }
   | ({ type: "error" } & ChatErrorPayload)
   | { type: "done"; message: ChatMessage };
@@ -89,6 +90,7 @@ const STREAM_EVENTS = new Set([
   "turn",
   "token",
   "tool_start",
+  "tool_progress",
   "tool_end",
   "error",
   "done",

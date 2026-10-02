@@ -84,6 +84,9 @@ export async function relayEvents(
             args: event.args,
           });
           break;
+        case "tool_progress":
+          sink.send("tool_progress", { id: event.id, label: event.label });
+          break;
         case "tool_end": {
           const call = toolCalls.get(event.id);
           if (call) Object.assign(call, { ok: event.ok, summary: event.summary });

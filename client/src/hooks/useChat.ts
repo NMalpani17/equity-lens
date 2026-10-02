@@ -158,6 +158,12 @@ export function useChat() {
           { id: event.id, label: event.label, state: "running" },
         ]);
         break;
+      case "tool_progress":
+        // Live status for a long-running tool, e.g. waiting for indexing.
+        setTools((list) =>
+          list.map((t) => (t.id === event.id ? { ...t, label: event.label } : t)),
+        );
+        break;
       case "tool_end":
         setTools((list) =>
           list.map((t) =>

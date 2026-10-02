@@ -174,3 +174,14 @@ describe("openChatStream", () => {
     expect(unreachable).toMatchObject({ status: 503, code: "chat_unavailable" });
   });
 });
+
+describe("mapEvent tool_progress", () => {
+  it("accepts progress labels and rejects malformed ones", () => {
+    expect(mapEvent("tool_progress", { id: "t1", label: "Indexing…" })).toEqual({
+      type: "tool_progress",
+      id: "t1",
+      label: "Indexing…",
+    });
+    expect(mapEvent("tool_progress", { id: "t1" })).toBeNull();
+  });
+});
