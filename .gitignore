@@ -182,3 +182,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Chat eval run outputs (summaries go in README)
+ai-service/scripts/eval/results/
