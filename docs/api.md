@@ -28,6 +28,12 @@ All application routes are served by the Express gateway at
 | `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.      |
 | `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).         |
 
+### Errors
+
+Errors are JSON with a machine-readable `error` code and a plain-language
+`message`, e.g. `{ "error": "validation_error", "message": "invalid message id",
+"detail": { … } }` (`detail` holds the field-level problems for `422`s).
+
 ### Authentication
 
 All `/api/holdings`, `/api/portfolio`, `/api/account` and `/api/rag` routes require a **Supabase access

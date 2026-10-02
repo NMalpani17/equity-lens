@@ -515,3 +515,109 @@ describe("POST /api/conversations/:id/messages/:messageId/retry", () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe("what the browser client actually sends", () => {
+  const ASSISTANT = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
+  beforeEach(() => {
+    service.beginRetry.mockResolvedValue({
+      turnId: "turn-3",
+      question: "What did NVDA say?",
+      conversation,
+      userMessage,
+      assistantMessageId: ASSISTANT,
+      history: [],
+    });
+    openStream.mockResolvedValue(
+      stream({
+        type: "done",
+        content: "ok",
+        status: "complete",
+        citations: [],
+        toolCalls: [],
+        inputTokens: 1,
+        outputTokens: 1,
+        model: "m",
+      }),
+    );
+  });
+
+  // Mirrors client/src/lib/chatApi.ts streamRetry: same URL shape, headers and body.
+  const clientRetry = (messageId: string) =>
+    request(app)
+      .post(`/api/conversations/${CONV}/messages/${messageId}/retry`)
+      .set("Authorization", AUTH)
+      .set("Content-Type", "application/json")
+      .set("Accept", "text/event-stream")
+      .send(JSON.stringify({ timeZone: "America/New_York" }));
+
+  it("streams a retry of the saved reply id after Stop", async () => {
+    const res = await clientRetry(ASSISTANT);
+
+    expect(res.status).toBe(200);
+    expect(parseSse(res.text).map((e) => e.event)).toEqual(["turn", "done"]);
+    expect(service.beginRetry).toHaveBeenCalledWith(CONV, USER, ASSISTANT);
+  });
+
+  it("rejects a client-side placeholder id with a readable message", async () => {
+    // The bug: the Retry button sent the streaming placeholder's id.
+    const res = await clientRetry("streaming-reply");
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({
+      error: "validation_error",
+      message: "invalid message id",
+    });
+    expect(service.beginRetry).not.toHaveBeenCalled();
+  });
+});
+
+describe("Stop pressed before streaming starts", () => {
+  it("still saves the turn as interrupted and never runs the model", async () => {
+    let releaseBeginTurn: () => void = () => {};
+    const clientGone = new Promise<void>((resolve) => (releaseBeginTurn = resolve));
+    const begin = service.beginTurn.getMockImplementation();
+    service.beginTurn.mockImplementation(async (...args) => {
+      await clientGone; // the turn is still being set up when Stop is clicked
+      return begin!(...args);
+    });
+    let upstreamSignal: AbortSignal | undefined;
+    openStream.mockImplementation(async (_req, signal) => {
+      upstreamSignal = signal;
+      if (signal.aborted) throw new DOMException("aborted", "AbortError");
+      return stream();
+    });
+    const server = app.listen(0);
+    const { port } = server.address() as AddressInfo;
+    const controller = new AbortController();
+    try {
+      const pending = fetch(
+        `http://127.0.0.1:${port}/api/conversations/${CONV}/messages`,
+        {
+          method: "POST",
+          headers: { Authorization: AUTH, "Content-Type": "application/json" },
+          body: JSON.stringify({ content: "What did NVDA say?" }),
+          signal: controller.signal,
+        },
+      ).catch(() => undefined);
+      await vi.waitFor(() => expect(service.beginTurn).toHaveBeenCalled());
+      controller.abort();
+      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      releaseBeginTurn();
+
+      await vi.waitFor(() => expect(service.finishTurn).toHaveBeenCalled(), {
+        timeout: 2000,
+      });
+      expect(service.finishTurn).toHaveBeenCalledWith(
+        CONV,
+        "turn-1",
+        "a1",
+        expect.objectContaining({ status: "interrupted" }),
+      );
+      expect(upstreamSignal?.aborted ?? true).toBe(true);
+    } finally {
+      server.close();
+    }
+  });
+});

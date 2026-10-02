@@ -76,7 +76,21 @@ function turnTimer() {
   };
 }
 
+/**
+ * Abort signal for "the client went away". Attach it before any await: a
+ * Stop clicked while the turn is still being set up must not be missed, or
+ * the model would run to completion with the reply stuck as "streaming".
+ */
+function watchClient(res: Response): AbortController {
+  const abort = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) abort.abort();
+  });
+  return abort;
+}
+
 interface TurnContext {
+  abort: AbortController;
   userId: string;
   isAnonymous: boolean;
   conversationId: string;
@@ -95,6 +109,7 @@ interface TurnContext {
  * `error` (if any) and `done` with the saved assistant message.
  */
 export async function sendMessage(req: Request, res: Response): Promise<void> {
+  const abort = watchClient(res);
   const userId = getUserId(req);
   const isAnonymous = isAnonymousRequest(req);
   const conversationId = conversationIdSchema.parse(req.params.id);
@@ -109,6 +124,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   const turn = await chatService.beginTurn(conversationId, userId, content);
   timer.mark("beginTurnMs");
   await streamTurn(res, {
+    abort,
     userId,
     isAnonymous,
     conversationId,
@@ -125,6 +141,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
  * message id is reused.
  */
 export async function retryMessage(req: Request, res: Response): Promise<void> {
+  const abort = watchClient(res);
   const userId = getUserId(req);
   const isAnonymous = isAnonymousRequest(req);
   const conversationId = conversationIdSchema.parse(req.params.id);
@@ -138,6 +155,7 @@ export async function retryMessage(req: Request, res: Response): Promise<void> {
   const turn = await chatService.beginRetry(conversationId, userId, messageId);
   timer.mark("beginTurnMs");
   await streamTurn(res, {
+    abort,
     userId,
     isAnonymous,
     conversationId,
@@ -149,11 +167,7 @@ export async function retryMessage(req: Request, res: Response): Promise<void> {
 }
 
 async function streamTurn(res: Response, ctx: TurnContext): Promise<void> {
-  const { userId, isAnonymous, conversationId, timeZone, turn, timer } = ctx;
-  const abort = new AbortController();
-  res.on("close", () => {
-    if (!res.writableEnded) abort.abort(); // the client went away mid-stream
-  });
+  const { abort, userId, isAnonymous, conversationId, timeZone, turn, timer } = ctx;
 
   let events;
   try {

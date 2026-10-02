@@ -21,7 +21,12 @@ export function errorHandler(
 ): void {
   if (err instanceof ZodError) {
     logger.warn({ err: err.flatten() }, "validation error");
-    res.status(422).json({ error: "validation_error", detail: err.flatten() });
+    // `message` is the first problem in plain words, like every other error body.
+    res.status(422).json({
+      error: "validation_error",
+      message: err.issues[0]?.message ?? "Invalid request.",
+      detail: err.flatten(),
+    });
     return;
   }
 
