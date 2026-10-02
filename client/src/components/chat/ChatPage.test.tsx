@@ -24,7 +24,7 @@ vi.mock("@/lib/chatApi", () => ({
 import { useAuth } from "@/context/auth-context";
 import { ApiError } from "@/lib/api";
 import * as chatApi from "@/lib/chatApi";
-import type { ChatMessage, ChatStreamEvent, Citation } from "@/lib/chatApi";
+import type { ChatMessage, ChatStreamEvent, Citation, PriceChart } from "@/lib/chatApi";
 import { ChatPage } from "./ChatPage";
 
 const api = vi.mocked(chatApi);
@@ -41,6 +41,25 @@ const citation: Citation = {
   role: "CFO",
   section: "prepared_remarks",
   text: "We expect Vera Rubin to be the fastest ramp in our history.",
+};
+
+const priceChart: PriceChart = {
+  id: "chart-h1",
+  kind: "price_history",
+  ticker: "NVDA",
+  period: "6mo",
+  currency: "USD",
+  points: [
+    { date: "2026-04-01", close: 100 },
+    { date: "2026-10-01", close: 120 },
+  ],
+  firstClose: 100,
+  lastClose: 120,
+  change: 20,
+  changePercent: 20,
+  high: 120,
+  low: 100,
+  asOf: null,
 };
 
 function msg(overrides: Partial<ChatMessage>): ChatMessage {
@@ -231,6 +250,51 @@ describe("ChatPage", () => {
       await within(sidebar).findByRole("button", { name: "Earlier chat" }),
     );
   }
+
+  it("shows a chart as soon as its tool returns and keeps the saved one", async () => {
+    let emit: (event: ChatStreamEvent) => void = () => {};
+    let finish: () => void = () => {};
+    api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
+      emit = (event) => act(() => onEvent(event));
+      await new Promise<void>((resolve) => (finish = resolve));
+    });
+    renderPage();
+    await screen.findByText("Ask the AI analyst");
+
+    sendViaComposer("How has NVDA traded over 6 months?");
+    await waitFor(() => expect(api.streamMessage).toHaveBeenCalled());
+    emit({ type: "chart", chart: priceChart });
+
+    expect(await screen.findByText("NVDA · 6 months")).toBeInTheDocument();
+
+    emit({
+      type: "done",
+      message: msg({
+        id: "a1",
+        content: "NVDA rose 20% over six months.",
+        charts: [priceChart],
+      }),
+    });
+    await act(async () => finish());
+
+    expect(
+      await screen.findByText("NVDA rose 20% over six months."),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("NVDA · 6 months")).toHaveLength(1);
+  });
+
+  it("shows saved charts when an earlier conversation is reopened", async () => {
+    await openEarlierChat([
+      msg({ id: "u1", role: "user", content: "How has NVDA traded?" }),
+      msg({ id: "a1", content: "NVDA rose 20%.", charts: [priceChart] }),
+      // Messages saved before charts existed have no charts field.
+      msg({ id: "u2", role: "user", content: "Thanks" }),
+      { ...msg({ id: "a2", content: "You're welcome." }), charts: undefined },
+    ]);
+
+    expect(await screen.findByText("NVDA · 6 months")).toBeInTheDocument();
+    expect(screen.getByText("You're welcome.")).toBeInTheDocument();
+  });
 
   it("offers Retry only on the latest stopped or failed reply", async () => {
     await openEarlierChat([

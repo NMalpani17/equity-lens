@@ -41,12 +41,51 @@ export interface ToolCall {
   summary?: string | null;
 }
 
+/** A ticker's closing prices over a period (from the price history tool). */
+export interface PriceChart {
+  id: string;
+  kind: "price_history";
+  ticker: string;
+  period: string;
+  currency: string;
+  points: { date: string; close: number }[];
+  firstClose: number;
+  lastClose: number;
+  change: number;
+  changePercent: number;
+  high: number;
+  low: number;
+  asOf: string | null;
+}
+
+/** The user's holdings by market value (from the portfolio tool). */
+export interface AllocationChart {
+  id: string;
+  kind: "portfolio_allocation";
+  currency: string;
+  slices: {
+    ticker: string;
+    name: string | null;
+    marketValue: number;
+    weightPercent: number;
+  }[];
+  totalMarketValue: number;
+  /** Some holdings had no price and are left out. */
+  partial: boolean;
+  asOf: string | null;
+}
+
+/** An inline chart built from tool results (never from model-written numbers). */
+export type ChatChart = PriceChart | AllocationChart;
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   status: MessageStatus;
   citations: Citation[];
+  /** Missing on messages saved before charts existed. */
+  charts?: ChatChart[];
   toolCalls: ToolCall[];
   errorCode: string | null;
   createdAt: string;
@@ -83,6 +122,7 @@ export type ChatStreamEvent =
     }
   | { type: "tool_progress"; id: string; label: string }
   | { type: "tool_end"; id: string; name: string; ok: boolean; summary: string }
+  | { type: "chart"; chart: ChatChart }
   | ({ type: "error" } & ChatErrorPayload)
   | { type: "done"; message: ChatMessage };
 
@@ -101,6 +141,7 @@ const STREAM_EVENTS = new Set([
   "tool_start",
   "tool_progress",
   "tool_end",
+  "chart",
   "error",
   "done",
 ]);

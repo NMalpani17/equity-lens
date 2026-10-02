@@ -1,5 +1,6 @@
 import { RotateCcw, Wrench } from "lucide-react";
 
+import { ChatCharts } from "@/components/chat/ChatCharts";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { ToolProgress } from "@/components/chat/ToolProgress";
 import type { ToolProgressItem } from "@/hooks/useChat";
@@ -49,6 +50,7 @@ export function MessageBubble({
   const fallback = isStreaming ? null : fallbackText(message);
   const note = STATUS_NOTES[message.status];
   const usedTools = !isStreaming ? message.toolCalls : [];
+  const charts = message.charts ?? [];
   const canRetry =
     !isStreaming && onRetry !== undefined && RETRYABLE.includes(message.status);
 
@@ -57,6 +59,9 @@ export function MessageBubble({
       <div
         className={cn(
           "max-w-[85%] rounded-2xl rounded-bl-sm border bg-card px-4 py-3",
+          // Charts fill the bubble (a shrink-to-fit bubble would collapse them),
+          // and take the full row on phones so axes stay readable.
+          charts.length > 0 && "w-full max-w-full sm:max-w-[85%]",
           message.status === "error" && "border-destructive/40",
         )}
         aria-busy={isStreaming}
@@ -78,6 +83,7 @@ export function MessageBubble({
             </p>
           )
         )}
+        <ChatCharts charts={charts} />
         {(note || usedTools.length > 0 || canRetry) && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {note && <span className="rounded bg-muted px-1.5 py-0.5">{note}</span>}
