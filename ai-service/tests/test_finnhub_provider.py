@@ -15,7 +15,7 @@ def patch_get(monkeypatch: pytest.MonkeyPatch, handler) -> None:
 
 
 def test_returns_quote_with_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    def handler(url, params=None, timeout=None):
+    def handler(url, params=None, headers=None, timeout=None):
         if "profile2" in url:
             return httpx.Response(200, json={"name": "Apple Inc"})
         return httpx.Response(200, json={"c": 150.0, "pc": 148.0})

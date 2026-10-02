@@ -306,7 +306,8 @@ def finnhub_symbol_search(api_key: str, base_url: str, timeout: float) -> Symbol
             return []
         response = httpx.get(
             f"{base_url.rstrip('/')}/search",
-            params={"q": query, "exchange": "US", "token": api_key},
+            params={"q": query, "exchange": "US"},
+            headers={"X-Finnhub-Token": api_key},  # keep the key out of URLs
             timeout=timeout,
         )
         response.raise_for_status()
