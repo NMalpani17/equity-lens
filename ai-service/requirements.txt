@@ -1,5 +1,5 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
 pydantic==2.13.5
 pydantic-settings==2.7.1
 httpx==0.28.1
@@ -8,3 +8,9 @@ pinecone==10.0.0
 google-genai==2.26.0
 psycopg[binary]==3.3.6
 psycopg-pool==3.3.3
+# AI analyst chat: MCP tool server, LangGraph agent, Gemini chat model.
+fastmcp==4.0.10
+langchain[mcp,google-genai]==1.4.3
+langchain-core==1.6.6
+langgraph==1.2.12
+langchain-google-genai==4.4.0

@@ -97,10 +97,40 @@ class Settings(BaseSettings):
     rag_retry_base_seconds: float = 1.0
     rag_retry_max_seconds: float = 30.0
 
+    # --- Internal service auth ---
+    # Shared secret the API gateway sends as X-Internal-Token (and as a bearer
+    # token for /mcp). Chat and MCP endpoints reject requests without it.
+    internal_token: str = ""
+
+    # --- AI analyst chat ---
+    # "provider:model" for LangChain's init_chat_model, so the provider is
+    # swappable through config alone.
+    chat_model: str = "google_genai:gemini-3.8-flash"
+    # Gemini 3 thinking level (3.8 Flash supports low/medium/high, not minimal).
+    chat_thinking_level: str = "low"
+    # Includes thinking tokens on Gemini.
+    chat_max_output_tokens: int = 2048
+    chat_timeout_seconds: float = 60.0
+    chat_max_model_calls: int = 6
+    chat_max_tool_calls: int = 8
+    chat_max_message_chars: int = 2000
+    # History sent to the model: final answers only, newest first, capped.
+    chat_history_max_messages: int = 6
+    chat_history_max_tokens: int = 3000
+    chat_search_top_k: int = 5
+
     @property
     def cors_origin_list(self) -> list[str]:
         """CORS origins as a list."""
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def chat_missing_settings(self) -> list[str]:
+        """Names of required chat settings that are not configured."""
+        missing = [] if self.internal_token else ["AI_SERVICE_INTERNAL_TOKEN"]
+        if self.chat_model.startswith("google_genai:") and not self.gemini_api_key:
+            missing.append("AI_SERVICE_GEMINI_API_KEY")
+        return missing
 
     @property
     def rag_missing_settings(self) -> list[str]:
