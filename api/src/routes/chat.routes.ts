@@ -15,4 +15,8 @@ chatRouter.patch("/conversations/:id", asyncHandler(chat.renameConversation));
 chatRouter.delete("/conversations/:id", asyncHandler(chat.deleteConversation));
 chatRouter.get("/conversations/:id/messages", asyncHandler(chat.listMessages));
 chatRouter.post("/conversations/:id/messages", asyncHandler(chat.sendMessage));
+chatRouter.post(
+  "/conversations/:id/messages/:messageId/retry",
+  asyncHandler(chat.retryMessage),
+);
 chatRouter.get("/chat/usage", asyncHandler(chat.getUsage));

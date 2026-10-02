@@ -15,6 +15,7 @@ export async function deleteAccount(userId: string): Promise<void> {
   await prisma.$transaction([
     prisma.holding.deleteMany({ where: { userId } }),
     prisma.chatConversation.deleteMany({ where: { userId } }),
+    prisma.chatUsageEvent.deleteMany({ where: { userId } }),
     prisma.demoSeed.deleteMany({ where: { userId } }),
   ]);
   await deleteAuthUser(userId);

@@ -49,6 +49,13 @@ export class TurnInProgressError extends HttpError {
   }
 }
 
+/** 409 — only the latest stopped or failed reply can be retried. */
+export class RetryNotAllowedError extends HttpError {
+  constructor(message = "Only the latest stopped or failed reply can be retried.") {
+    super(409, "retry_not_allowed", message);
+  }
+}
+
 /** 429 — a chat message cap (per user or global) has been reached. */
 export class ChatLimitError extends HttpError {
   constructor(

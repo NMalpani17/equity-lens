@@ -203,3 +203,17 @@ model ChatMessage {
   @@index([role, createdAt])
   @@map("chat_messages")
 }
+
+/// One row per chat turn (a sent message or a retry), so daily caps count
+/// every model run, including retries that don't add a user message.
+model ChatUsageEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  /// "message" (a new question) or "retry" (regenerating a stopped/failed reply).
+  kind      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("chat_usage_events")
+}

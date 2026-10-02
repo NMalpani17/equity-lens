@@ -14,9 +14,13 @@ import { logger } from "../logger.js";
 import {
   conversationIdSchema,
   createConversationSchema,
+  messageIdSchema,
   renameConversationSchema,
+  retryMessageSchema,
   sendMessageSchema,
 } from "../schemas/chat.schema.js";
+import type { TurnStart } from "../services/chat.service.js";
+import type { PortfolioSummary } from "../types.js";
 
 export async function listConversations(req: Request, res: Response): Promise<void> {
   res.status(200).json(await chatService.listConversations(getUserId(req)));
@@ -60,34 +64,92 @@ function sseSink(res: Response): EventSink {
   };
 }
 
+/** Timing marks for one turn, logged with its outcome. */
+function turnTimer() {
+  const started = performance.now();
+  const timings: Record<string, number> = {};
+  return {
+    timings,
+    mark(stage: string) {
+      timings[stage] = Math.round(performance.now() - started);
+    },
+  };
+}
+
+interface TurnContext {
+  userId: string;
+  isAnonymous: boolean;
+  conversationId: string;
+  timeZone?: string;
+  turn: TurnStart;
+  portfolioPromise: Promise<PortfolioSummary | null>;
+  timer: ReturnType<typeof turnTimer>;
+}
+
 /**
  * Send a message and stream the reply as server-sent events.
  *
  * Errors before streaming starts (validation, caps, 409 overlap, upstream
  * unavailable) are normal JSON errors. Once streaming, the client receives
- * `turn`, then `token` / `tool_start` / `tool_end`, then `error` (if any) and
- * `done` with the saved assistant message.
+ * `turn`, then `token` / `tool_start` / `tool_progress` / `tool_end`, then
+ * `error` (if any) and `done` with the saved assistant message.
  */
 export async function sendMessage(req: Request, res: Response): Promise<void> {
   const userId = getUserId(req);
   const isAnonymous = isAnonymousRequest(req);
   const conversationId = conversationIdSchema.parse(req.params.id);
   const { content, timeZone } = sendMessageSchema.parse(req.body);
-
-  const started = performance.now();
-  const timings: Record<string, number> = {};
-  const mark = (stage: string) => {
-    timings[stage] = Math.round(performance.now() - started);
-  };
+  const timer = turnTimer();
 
   await chatService.assertWithinLimits(userId, isAnonymous);
-  mark("limitsMs");
+  timer.mark("limitsMs");
   // The portfolio snapshot is independent of claiming the turn, so load it
   // concurrently (it never rejects; failures become a null snapshot).
   const portfolioPromise = loadPortfolioSnapshot(userId);
   const turn = await chatService.beginTurn(conversationId, userId, content);
-  mark("beginTurnMs");
+  timer.mark("beginTurnMs");
+  await streamTurn(res, {
+    userId,
+    isAnonymous,
+    conversationId,
+    timeZone,
+    turn,
+    portfolioPromise,
+    timer,
+  });
+}
 
+/**
+ * Regenerate the latest stopped/failed reply in place. Same SSE contract as
+ * sendMessage; no new user message is created and the same assistant
+ * message id is reused.
+ */
+export async function retryMessage(req: Request, res: Response): Promise<void> {
+  const userId = getUserId(req);
+  const isAnonymous = isAnonymousRequest(req);
+  const conversationId = conversationIdSchema.parse(req.params.id);
+  const messageId = messageIdSchema.parse(req.params.messageId);
+  const { timeZone } = retryMessageSchema.parse(req.body ?? {});
+  const timer = turnTimer();
+
+  await chatService.assertWithinLimits(userId, isAnonymous);
+  timer.mark("limitsMs");
+  const portfolioPromise = loadPortfolioSnapshot(userId);
+  const turn = await chatService.beginRetry(conversationId, userId, messageId);
+  timer.mark("beginTurnMs");
+  await streamTurn(res, {
+    userId,
+    isAnonymous,
+    conversationId,
+    timeZone,
+    turn,
+    portfolioPromise,
+    timer,
+  });
+}
+
+async function streamTurn(res: Response, ctx: TurnContext): Promise<void> {
+  const { userId, isAnonymous, conversationId, timeZone, turn, timer } = ctx;
   const abort = new AbortController();
   res.on("close", () => {
     if (!res.writableEnded) abort.abort(); // the client went away mid-stream
@@ -95,14 +157,14 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
 
   let events;
   try {
-    const portfolio = await portfolioPromise;
-    mark("portfolioMs");
+    const portfolio = await ctx.portfolioPromise;
+    timer.mark("portfolioMs");
     events = await openChatStream(
       {
         userId,
         isAnonymous,
         conversationId,
-        message: content,
+        message: turn.question,
         history: turn.history,
         portfolio,
         timeZone,
@@ -119,7 +181,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
     throw error;
   }
 
-  mark("upstreamOpenMs");
+  timer.mark("upstreamOpenMs");
   res.status(200).set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -135,7 +197,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   });
 
   const result = await relayEvents(events, sink, abort.signal);
-  mark("relayMs");
+  timer.mark("relayMs");
   try {
     const saved = await chatService.finishTurn(
       conversationId,
@@ -154,7 +216,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
     });
   } finally {
     if (!res.writableEnded) res.end();
-    mark("totalMs");
+    timer.mark("totalMs");
     logger.info(
       {
         event: "chat_turn",
@@ -162,7 +224,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
         outcome: result.kind,
         status: result.outcome.status,
         toolCalls: result.outcome.toolCalls?.length ?? 0,
-        ...timings,
+        ...timer.timings,
       },
       "chat turn",
     );

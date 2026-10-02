@@ -4,6 +4,7 @@ vi.mock("../src/db/prisma.js", () => ({
   prisma: {
     holding: { deleteMany: vi.fn() },
     chatConversation: { deleteMany: vi.fn() },
+    chatUsageEvent: { deleteMany: vi.fn() },
     demoSeed: { deleteMany: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -37,6 +38,9 @@ describe("account.service.deleteAccount", () => {
       where: { userId: USER_ID },
     });
     expect(mockPrisma.chatConversation.deleteMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+    });
+    expect(mockPrisma.chatUsageEvent.deleteMany).toHaveBeenCalledWith({
       where: { userId: USER_ID },
     });
     expect(mockPrisma.$transaction).toHaveBeenCalledOnce();

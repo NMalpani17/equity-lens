@@ -18,6 +18,7 @@ vi.mock("../src/services/chat.service.js", async (importOriginal) => {
     getUsage: vi.fn(),
     assertWithinLimits: vi.fn(),
     beginTurn: vi.fn(),
+    beginRetry: vi.fn(),
     finishTurn: vi.fn(),
   };
 });
@@ -38,6 +39,7 @@ import { verifySupabaseToken } from "../src/auth/verifyToken.js";
 import {
   ChatLimitError,
   NotFoundError,
+  RetryNotAllowedError,
   ServiceUnavailableError,
   TurnInProgressError,
 } from "../src/errors.js";
@@ -93,6 +95,7 @@ beforeEach(() => {
   service.assertWithinLimits.mockResolvedValue(undefined);
   service.beginTurn.mockResolvedValue({
     turnId: "turn-1",
+    question: "What did NVDA say?",
     conversation,
     userMessage,
     assistantMessageId: "a1",
@@ -408,5 +411,107 @@ describe("POST /api/conversations/:id/messages", () => {
       status: "interrupted",
       toolCalls: [],
     });
+  });
+});
+
+describe("POST /api/conversations/:id/messages/:messageId/retry", () => {
+  const ASSISTANT = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  const retryPath = `/api/conversations/${CONV}/messages/${ASSISTANT}/retry`;
+
+  beforeEach(() => {
+    service.beginRetry.mockResolvedValue({
+      turnId: "turn-2",
+      question: "What did NVDA say?",
+      conversation,
+      userMessage,
+      assistantMessageId: ASSISTANT,
+      history: [],
+    });
+  });
+
+  it("streams a new answer into the same reply without a new user message", async () => {
+    openStream.mockResolvedValue(
+      stream(
+        { type: "token", text: "Demand is strong." },
+        {
+          type: "done",
+          content: "Demand is strong.",
+          status: "complete",
+          citations: [],
+          toolCalls: [],
+          inputTokens: 10,
+          outputTokens: 5,
+          model: "m",
+        },
+      ),
+    );
+
+    const res = await post(retryPath).send({ timeZone: "Europe/Berlin" });
+
+    expect(res.status).toBe(200);
+    const events = parseSse(res.text);
+    expect(events.map((e) => e.event)).toEqual(["turn", "token", "done"]);
+    expect(events[0]!.data).toMatchObject({
+      assistantMessageId: ASSISTANT,
+      userMessage: { id: "u1" },
+    });
+    expect(events.at(-1)!.data).toMatchObject({
+      message: { id: ASSISTANT, content: "Demand is strong." },
+    });
+    expect(service.beginRetry).toHaveBeenCalledWith(CONV, USER, ASSISTANT);
+    expect(service.beginTurn).not.toHaveBeenCalled();
+    expect(openStream.mock.calls[0]![0]).toMatchObject({
+      message: "What did NVDA say?",
+      history: [],
+      timeZone: "Europe/Berlin",
+    });
+    expect(service.finishTurn).toHaveBeenCalledWith(
+      CONV,
+      "turn-2",
+      ASSISTANT,
+      expect.objectContaining({ status: "complete" }),
+    );
+  });
+
+  it("works without a body", async () => {
+    openStream.mockResolvedValue(
+      stream({
+        type: "done",
+        content: "ok",
+        status: "complete",
+        citations: [],
+        toolCalls: [],
+        inputTokens: 1,
+        outputTokens: 1,
+        model: "m",
+      }),
+    );
+
+    expect((await post(retryPath)).status).toBe(200);
+  });
+
+  it("returns 409 when the reply can't be retried", async () => {
+    service.beginRetry.mockRejectedValue(new RetryNotAllowedError());
+
+    const res = await post(retryPath).send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("retry_not_allowed");
+    expect(openStream).not.toHaveBeenCalled();
+  });
+
+  it("checks the daily cap before retrying", async () => {
+    service.assertWithinLimits.mockRejectedValue(
+      new ChatLimitError("user", 20, "2026-10-02T00:00:00.000Z", "limit"),
+    );
+
+    expect((await post(retryPath).send({})).status).toBe(429);
+    expect(service.beginRetry).not.toHaveBeenCalled();
+  });
+
+  it("validates the message id", async () => {
+    const res = await post(`/api/conversations/${CONV}/messages/nope/retry`).send({});
+
+    expect(res.status).toBe(422);
   });
 });

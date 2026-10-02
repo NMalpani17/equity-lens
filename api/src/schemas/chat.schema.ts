@@ -5,6 +5,8 @@ import { config } from "../config.js";
 
 export const conversationIdSchema = z.string().uuid("invalid conversation id");
 
+export const messageIdSchema = z.string().uuid("invalid message id");
+
 const titleSchema = z
   .string()
   .trim()
@@ -43,5 +45,7 @@ export const sendMessageSchema = z.object({
     ),
   timeZone: timeZoneSchema,
 });
+
+export const retryMessageSchema = z.object({ timeZone: timeZoneSchema });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

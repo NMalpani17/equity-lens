@@ -5,27 +5,28 @@ All application routes are served by the Express gateway at
 
 ## API gateway (`http://localhost:3001`)
 
-| Method   | Path                              | Description                                                     |
-| -------- | --------------------------------- | --------------------------------------------------------------- |
-| `GET`    | `/api/health`                     | Health of the API and downstream AI service.                    |
-| `GET`    | `/api/holdings`                   | List all holdings (lots).                                       |
-| `POST`   | `/api/holdings`                   | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
-| `GET`    | `/api/holdings/:id`               | Get one holding.                                                |
-| `PATCH`  | `/api/holdings/:id`               | Update a holding.                                               |
-| `DELETE` | `/api/holdings/:id`               | Delete one lot.                                                 |
-| `DELETE` | `/api/holdings?ticker=X`          | Delete a whole position (every lot for a ticker).               |
-| `GET`    | `/api/portfolio/summary`          | Positions (lots grouped by ticker) with live prices + totals.   |
-| `DELETE` | `/api/account`                    | Delete the authenticated user's account and all their data.     |
-| `POST`   | `/api/rag/search`                 | Search earnings call transcripts (hybrid + rerank).             |
-| `GET`    | `/api/conversations`              | The user's chat conversations, most recent first.               |
-| `POST`   | `/api/conversations`              | Start a conversation (`title?`).                                |
-| `PATCH`  | `/api/conversations/:id`          | Rename a conversation (`title`).                                |
-| `DELETE` | `/api/conversations/:id`          | Delete a conversation and its messages.                         |
-| `GET`    | `/api/conversations/:id/messages` | Messages with citations and tool calls.                         |
-| `POST`   | `/api/conversations/:id/messages` | Send a message; the reply streams as SSE.                       |
-| `GET`    | `/api/chat/usage`                 | Today's message allowance (`used`, `limit`, `remaining`).       |
-| `GET`    | `/api/rag/tickers`                | Every ticker indexed (or attempted) for transcript search.      |
-| `GET`    | `/api/rag/tickers/:ticker`        | Indexing status for one ticker (poll while `indexing`).         |
+| Method   | Path                                               | Description                                                     |
+| -------- | -------------------------------------------------- | --------------------------------------------------------------- |
+| `GET`    | `/api/health`                                      | Health of the API and downstream AI service.                    |
+| `GET`    | `/api/holdings`                                    | List all holdings (lots).                                       |
+| `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
+| `GET`    | `/api/holdings/:id`                                | Get one holding.                                                |
+| `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                               |
+| `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                 |
+| `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).               |
+| `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.   |
+| `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.     |
+| `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).             |
+| `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.               |
+| `POST`   | `/api/conversations`                               | Start a conversation (`title?`).                                |
+| `PATCH`  | `/api/conversations/:id`                           | Rename a conversation (`title`).                                |
+| `DELETE` | `/api/conversations/:id`                           | Delete a conversation and its messages.                         |
+| `GET`    | `/api/conversations/:id/messages`                  | Messages with citations and tool calls.                         |
+| `POST`   | `/api/conversations/:id/messages`                  | Send a message; the reply streams as SSE.                       |
+| `POST`   | `/api/conversations/:id/messages/:messageId/retry` | Regenerate the latest stopped/failed reply in place (SSE).      |
+| `GET`    | `/api/chat/usage`                                  | Today's message allowance (`used`, `limit`, `remaining`).       |
+| `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.      |
+| `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).         |
 
 ### Authentication
 
@@ -190,8 +191,9 @@ Errors before streaming starts are normal JSON errors:
 | `429`  | `chat_limit_reached`                       | Daily cap reached; body has `scope` (`user`/`global`), `limit`, `resetsAt`.   |
 | `503`  | `chat_unavailable` / `chat_not_configured` | The ai-service is down or not configured.                                     |
 
-Daily caps (user messages per UTC day, configurable): **20** for signed-in users,
-**5** for demo (anonymous) users, and **60** across all users.
+Daily caps (turns per UTC day — sent messages plus retries, configurable):
+**20** for signed-in users, **5** for demo (anonymous) users, and **60** across
+all users.
 
 On success the response is `text/event-stream`:
 
@@ -204,6 +206,18 @@ On success the response is `text/event-stream`:
 | `token`         | `{ text }` — answer text as it is generated (reset by the next `tool_start`).               |
 | `error`         | `{ code, message, retryable }`, e.g. `ai_credits_exhausted`, `ai_rate_limited`.             |
 | `done`          | `{ message }` — the saved assistant message (always last).                                  |
+
+### `POST /api/conversations/:id/messages/:messageId/retry`
+
+Regenerates a stopped (`interrupted`) or failed (`error`) reply in place,
+like "Regenerate": no new user message is saved, the same assistant message
+is reset and re-streamed, and the model sees the original question with the
+history before it (the failed attempt is never sent as context). Body:
+`{ "timeZone": "America/New_York" }` (optional). The stream and error
+responses match sending a message, with one addition: `409 retry_not_allowed`
+when the message isn't the conversation's latest message, isn't a stopped or
+failed reply, or has no question before it. A retry counts toward the daily
+caps.
 
 A saved assistant message:
 

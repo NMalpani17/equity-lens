@@ -17,6 +17,7 @@ vi.mock("../src/db/prisma.js", () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    chatUsageEvent: { count: vi.fn(), create: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -24,6 +25,7 @@ vi.mock("../src/db/prisma.js", () => ({
 import { prisma } from "../src/db/prisma.js";
 import {
   assertWithinLimits,
+  beginRetry,
   beginTurn,
   buildHistory,
   finishTurn,
@@ -31,7 +33,12 @@ import {
   titleFromMessage,
   utcDayWindow,
 } from "../src/services/chat.service.js";
-import { ChatLimitError, NotFoundError, TurnInProgressError } from "../src/errors.js";
+import {
+  ChatLimitError,
+  NotFoundError,
+  RetryNotAllowedError,
+  TurnInProgressError,
+} from "../src/errors.js";
 
 const db = vi.mocked(prisma, true);
 const USER = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -106,8 +113,18 @@ describe("helpers", () => {
 });
 
 describe("limits", () => {
+  it("counts every turn (messages and retries) from the usage events", async () => {
+    db.chatUsageEvent.count.mockResolvedValue(2);
+
+    await getUsage(USER, false);
+
+    expect(db.chatUsageEvent.count.mock.calls[0]![0]!.where).toMatchObject({
+      userId: USER,
+    });
+  });
+
   it("reports usage with the demo limit for anonymous users", async () => {
-    db.chatMessage.count.mockResolvedValue(3);
+    db.chatUsageEvent.count.mockResolvedValue(3);
 
     const usage = await getUsage(USER, true);
 
@@ -115,7 +132,7 @@ describe("limits", () => {
   });
 
   it("blocks a signed-in user at 20 messages", async () => {
-    db.chatMessage.count.mockResolvedValueOnce(20);
+    db.chatUsageEvent.count.mockResolvedValueOnce(20);
 
     const error = await assertWithinLimits(USER, false).catch((e: unknown) => e);
 
@@ -124,7 +141,7 @@ describe("limits", () => {
   });
 
   it("blocks a demo user at 5 messages with a sign-up hint", async () => {
-    db.chatMessage.count.mockResolvedValueOnce(5);
+    db.chatUsageEvent.count.mockResolvedValueOnce(5);
 
     const error = (await assertWithinLimits(USER, true).catch(
       (e: unknown) => e,
@@ -135,7 +152,7 @@ describe("limits", () => {
   });
 
   it("enforces the global daily cap", async () => {
-    db.chatMessage.count.mockResolvedValueOnce(1).mockResolvedValueOnce(60);
+    db.chatUsageEvent.count.mockResolvedValueOnce(1).mockResolvedValueOnce(60);
 
     const error = await assertWithinLimits(USER, false).catch((e: unknown) => e);
 
@@ -146,7 +163,7 @@ describe("limits", () => {
   });
 
   it("allows a user under both caps", async () => {
-    db.chatMessage.count.mockResolvedValueOnce(4).mockResolvedValueOnce(30);
+    db.chatUsageEvent.count.mockResolvedValueOnce(4).mockResolvedValueOnce(30);
 
     await expect(assertWithinLimits(USER, false)).resolves.toBeUndefined();
   });
@@ -172,6 +189,7 @@ describe("turns", () => {
             message({ id: "a1", role: "assistant", status: "streaming" }),
           ),
       },
+      chatUsageEvent: { create: vi.fn() },
     };
     db.$transaction.mockImplementation(((fn: (t: typeof tx) => unknown) =>
       fn(tx)) as never);
@@ -183,6 +201,10 @@ describe("turns", () => {
     expect(turn.conversation.title).toBe("What did NVIDIA say?");
     expect(turn.userMessage.id).toBe("u1");
     expect(turn.assistantMessageId).toBe("a1");
+    expect(turn.question).toBe("What did NVIDIA say?");
+    expect(tx.chatUsageEvent.create).toHaveBeenCalledWith({
+      data: { userId: USER, kind: "message" },
+    });
     expect(turn.history).toEqual([
       { role: "user", content: "earlier question" },
       { role: "assistant", content: "earlier answer" },
@@ -240,5 +262,104 @@ describe("turns", () => {
       id: CONV,
       activeTurnId: "turn-1",
     });
+  });
+});
+
+describe("retry", () => {
+  const failed = message({
+    id: "a2",
+    role: "assistant",
+    content: "Partial",
+    status: "interrupted",
+  });
+  const question = message({ id: "u2", content: "What did NVIDIA say?" });
+  const older = [
+    message({ id: "a1", role: "assistant", content: "earlier answer" }),
+    message({ id: "u1", content: "earlier question" }),
+  ];
+
+  function retryTx() {
+    const tx = {
+      chatMessage: { update: vi.fn(), create: vi.fn() },
+      chatUsageEvent: { create: vi.fn() },
+      chatConversation: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue(conversation("NVDA")),
+      },
+    };
+    db.$transaction.mockImplementation(((fn: (t: typeof tx) => unknown) =>
+      fn(tx)) as never);
+    return tx;
+  }
+
+  beforeEach(() => {
+    db.chatConversation.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("resets the same reply in place without a new user message", async () => {
+    db.chatMessage.findMany.mockResolvedValue([failed, question, ...older] as never);
+    const tx = retryTx();
+
+    const turn = await beginRetry(CONV, USER, "a2");
+
+    expect(turn.assistantMessageId).toBe("a2");
+    expect(turn.question).toBe("What did NVIDIA say?");
+    expect(turn.userMessage.id).toBe("u2");
+    expect(tx.chatMessage.create).not.toHaveBeenCalled();
+    expect(db.chatMessage.create).not.toHaveBeenCalled();
+    expect(tx.chatMessage.update.mock.calls[0]![0]).toMatchObject({
+      where: { id: "a2" },
+      data: { content: "", status: "streaming", citations: [], errorCode: null },
+    });
+    expect(tx.chatUsageEvent.create).toHaveBeenCalledWith({
+      data: { userId: USER, kind: "retry" },
+    });
+  });
+
+  it("sends clean history: no repeated question and no failed attempt", async () => {
+    db.chatMessage.findMany.mockResolvedValue([
+      failed,
+      question,
+      ...older,
+      message({ id: "a0", role: "assistant", content: "boom", status: "error" }),
+      message({ id: "u0", content: "first question" }),
+    ] as never);
+    retryTx();
+
+    const turn = await beginRetry(CONV, USER, "a2");
+
+    expect(turn.history).toEqual([
+      { role: "user", content: "first question" },
+      { role: "user", content: "earlier question" },
+      { role: "assistant", content: "earlier answer" },
+    ]);
+  });
+
+  it.each([
+    ["an older reply", [failed, question, ...older], "a1"],
+    [
+      "a completed reply",
+      [{ ...failed, status: "complete" }, question, ...older],
+      "a2",
+    ],
+    ["a user message", [question, ...older], "u2"],
+    ["a reply with no question before it", [failed], "a2"],
+  ])("refuses to retry %s and releases the lock", async (_label, rows, id) => {
+    db.chatMessage.findMany.mockResolvedValue(rows as never);
+
+    await expect(beginRetry(CONV, USER, id)).rejects.toBeInstanceOf(
+      RetryNotAllowedError,
+    );
+    expect(db.$transaction).not.toHaveBeenCalled();
+    const release = db.chatConversation.updateMany.mock.calls.at(-1)![0];
+    expect(release.data).toEqual({ activeTurnId: null, activeTurnStartedAt: null });
+  });
+
+  it("rejects a retry while another turn is streaming", async () => {
+    db.chatConversation.updateMany.mockResolvedValue({ count: 0 });
+    db.chatConversation.findFirst.mockResolvedValue(conversation() as never);
+
+    await expect(beginRetry(CONV, USER, "a2")).rejects.toBeInstanceOf(
+      TurnInProgressError,
+    );
   });
 });

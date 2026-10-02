@@ -10,7 +10,12 @@ import { Prisma, type ChatMessage, type ChatMessageStatus } from "@prisma/client
 
 import { config } from "../config.js";
 import { prisma } from "../db/prisma.js";
-import { ChatLimitError, NotFoundError, TurnInProgressError } from "../errors.js";
+import {
+  ChatLimitError,
+  NotFoundError,
+  RetryNotAllowedError,
+  TurnInProgressError,
+} from "../errors.js";
 
 const DEFAULT_TITLE = "New chat";
 const TITLE_FROM_MESSAGE_CHARS = 60;
@@ -18,6 +23,20 @@ const TITLE_FROM_MESSAGE_CHARS = 60;
 const STALE_TURN_MS = 3 * 60 * 1000;
 /** Statuses whose assistant content is a final answer worth sending as context. */
 const CONTEXT_STATUSES: ChatMessageStatus[] = ["complete", "truncated"];
+/** Assistant replies that can be regenerated in place. */
+const RETRYABLE_STATUSES: ChatMessageStatus[] = ["interrupted", "error"];
+
+// A question and its reply are created in one transaction and can share a
+// timestamp; the chat_role enum orders user before assistant, so the role
+// breaks ties.
+const MESSAGE_ORDER_ASC: Prisma.ChatMessageOrderByWithRelationInput[] = [
+  { createdAt: "asc" },
+  { role: "asc" },
+];
+const MESSAGE_ORDER_DESC: Prisma.ChatMessageOrderByWithRelationInput[] = [
+  { createdAt: "desc" },
+  { role: "desc" },
+];
 
 export interface ConversationDto {
   id: string;
@@ -52,6 +71,8 @@ export interface HistoryMessage {
 
 export interface TurnStart {
   turnId: string;
+  /** The question to answer (the new message, or the one being retried). */
+  question: string;
   conversation: ConversationDto;
   userMessage: ChatMessageDto;
   assistantMessageId: string;
@@ -191,7 +212,7 @@ export async function listMessages(
   await getOwnedConversation(conversationId, userId);
   const rows = await prisma.chatMessage.findMany({
     where: { conversationId },
-    orderBy: { createdAt: "asc" },
+    orderBy: MESSAGE_ORDER_ASC,
   });
   return rows.map(toMessageDto);
 }
@@ -203,8 +224,9 @@ export async function getUsage(
 ): Promise<ChatUsage> {
   const { start, resetsAt } = utcDayWindow();
   const limit = isAnonymous ? config.chat.dailyLimitAnon : config.chat.dailyLimit;
-  const used = await prisma.chatMessage.count({
-    where: { userId, role: "user", createdAt: { gte: start } },
+  // Every turn (new message or retry) is one usage event.
+  const used = await prisma.chatUsageEvent.count({
+    where: { userId, createdAt: { gte: start } },
   });
   return {
     used,
@@ -221,7 +243,7 @@ export async function assertWithinLimits(userId: string, isAnonymous: boolean) {
   // Both counts are independent; run them together to keep turn latency low.
   const [usage, globalUsed] = await Promise.all([
     getUsage(userId, isAnonymous),
-    prisma.chatMessage.count({ where: { role: "user", createdAt: { gte: start } } }),
+    prisma.chatUsageEvent.count({ where: { createdAt: { gte: start } } }),
   ]);
   if (usage.remaining <= 0) {
     throw new ChatLimitError(
@@ -255,31 +277,14 @@ export async function beginTurn(
   userId: string,
   content: string,
 ): Promise<TurnStart> {
-  const turnId = randomUUID();
-  const now = new Date();
-  const claimed = await prisma.chatConversation.updateMany({
-    where: {
-      id: conversationId,
-      userId,
-      OR: [
-        { activeTurnId: null },
-        { activeTurnStartedAt: { lt: new Date(now.getTime() - STALE_TURN_MS) } },
-      ],
-    },
-    data: { activeTurnId: turnId, activeTurnStartedAt: now },
-  });
-  if (claimed.count === 0) {
-    await getOwnedConversation(conversationId, userId); // 404 if not theirs
-    throw new TurnInProgressError();
-  }
-
+  const turnId = await claimTurn(conversationId, userId);
   try {
     const prior = await prisma.chatMessage.findMany({
       where: {
         conversationId,
         OR: [{ role: "user" }, { role: "assistant", status: { in: CONTEXT_STATUSES } }],
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: MESSAGE_ORDER_DESC,
       take: config.chat.historyMessages,
       select: { role: true, content: true },
     });
@@ -298,6 +303,7 @@ export async function beginTurn(
         const user = await tx.chatMessage.create({
           data: { conversationId, userId, role: "user", content, status: "complete" },
         });
+        await tx.chatUsageEvent.create({ data: { userId, kind: "message" } });
         const placeholder = await tx.chatMessage.create({
           data: {
             conversationId,
@@ -312,9 +318,97 @@ export async function beginTurn(
     );
     return {
       turnId,
+      question: content,
       conversation: toConversationDto(conversation),
       userMessage: toMessageDto(userMessage),
       assistantMessageId: assistant.id,
+      history: buildHistory(prior.reverse()),
+    };
+  } catch (error) {
+    await releaseTurn(conversationId, turnId);
+    throw error;
+  }
+}
+
+/**
+ * Claim the conversation for a turn with one conditional UPDATE, so two
+ * concurrent requests can't both start one (the loser gets 409).
+ */
+async function claimTurn(conversationId: string, userId: string): Promise<string> {
+  const turnId = randomUUID();
+  const now = new Date();
+  const claimed = await prisma.chatConversation.updateMany({
+    where: {
+      id: conversationId,
+      userId,
+      OR: [
+        { activeTurnId: null },
+        { activeTurnStartedAt: { lt: new Date(now.getTime() - STALE_TURN_MS) } },
+      ],
+    },
+    data: { activeTurnId: turnId, activeTurnStartedAt: now },
+  });
+  if (claimed.count === 0) {
+    await getOwnedConversation(conversationId, userId); // 404 if not theirs
+    throw new TurnInProgressError();
+  }
+  return turnId;
+}
+
+/**
+ * Regenerate the latest stopped/failed reply in place ("Regenerate"): no new
+ * user message, the same assistant row is reset to streaming, and the history
+ * sent to the model excludes the question and the failed attempt. Counts as
+ * a turn for the daily caps.
+ */
+export async function beginRetry(
+  conversationId: string,
+  userId: string,
+  assistantMessageId: string,
+): Promise<TurnStart> {
+  const turnId = await claimTurn(conversationId, userId);
+  try {
+    const recent = await prisma.chatMessage.findMany({
+      where: { conversationId },
+      orderBy: MESSAGE_ORDER_DESC,
+      take: config.chat.historyMessages + 2,
+    });
+    const [target, question, ...older] = recent;
+    if (
+      !target ||
+      target.id !== assistantMessageId ||
+      target.role !== "assistant" ||
+      !RETRYABLE_STATUSES.includes(target.status) ||
+      question?.role !== "user"
+    ) {
+      throw new RetryNotAllowedError();
+    }
+    const conversation = await prisma.$transaction(async (tx) => {
+      await tx.chatMessage.update({
+        where: { id: target.id },
+        data: {
+          content: "",
+          status: "streaming",
+          citations: [],
+          toolCalls: [],
+          errorCode: null,
+          inputTokens: null,
+          outputTokens: null,
+          model: null,
+        },
+      });
+      await tx.chatUsageEvent.create({ data: { userId, kind: "retry" } });
+      return tx.chatConversation.findUniqueOrThrow({ where: { id: conversationId } });
+    });
+    const prior = older.filter(
+      (m) => m.role === "user" || CONTEXT_STATUSES.includes(m.status),
+    );
+    return {
+      turnId,
+      question: question.content,
+      conversation: toConversationDto(conversation),
+      userMessage: toMessageDto(question),
+      assistantMessageId: target.id,
       history: buildHistory(prior.reverse()),
     };
   } catch (error) {

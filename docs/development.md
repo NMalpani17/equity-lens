@@ -167,8 +167,9 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
    "out of credits".
 
 3. **Database.** Conversations live in Postgres. Run the API migrations
-   (`npm --prefix api run prisma:migrate`), which add `chat_conversations` and
-   `chat_messages`.
+   (`npm --prefix api run prisma:migrate`), which add `chat_conversations`,
+   `chat_messages` and `chat_usage_events` (one row per turn — a sent message
+   or a retry — which the daily caps count).
 
 4. **Limits** (in `api/.env`): `CHAT_DAILY_LIMIT` (20), `CHAT_DAILY_LIMIT_ANON`
    (5), `CHAT_GLOBAL_DAILY_LIMIT` (60), `CHAT_MAX_MESSAGE_CHARS` (2000). Per
