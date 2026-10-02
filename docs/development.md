@@ -184,6 +184,27 @@ turn id; tools resolve the user's portfolio and the turn's citation numbering
 from that id, never from model-supplied arguments. The same server is mounted at
 `/mcp/` for other MCP clients (bearer = internal token).
 
+**Transcript search** (`ai-service/app/services/chat/transcripts.py`):
+
+- Out-of-range numeric arguments are clamped (e.g. `top_k` to 1–8) instead of
+  failing the call; the limits are in the tool schema and descriptions.
+- With no period named, it fetches extra candidates, boosts newer calls, makes
+  sure the company's latest call is represented, and lists passages newest
+  first.
+- Share classes of one company (GOOG/GOOGL, BRK.A/BRK.B, …) map to the class
+  that is indexed, so transcript questions never ask which class and never index
+  a duplicate. The agent asks about the class only for prices.
+- If a company isn't indexed yet, the tool waits for on-demand indexing within
+  the turn (`AI_SERVICE_CHAT_INDEX_WAIT_SECONDS`, default 45) and streams a
+  `tool_progress` label such as "Indexing Starbucks transcripts…", then
+  answers; only after that does it say to try again shortly.
+
+**Logs never contain credentials.** Provider keys travel in headers (Finnhub
+uses `X-Finnhub-Token`), HTTP client loggers run at WARNING, and the ai-service
+JSON formatter redacts secret query parameters, bearer tokens and auth headers.
+The API's pino logger censors `authorization`, `cookie`, `x-internal-token` and
+`set-cookie` as `***`.
+
 **Guardrails.** Obvious off-topic requests and instruction-override attempts get
 a short canned reply without calling the model. The system prompt (today's date,
 no secrets) adds the scope rules, untrusted tool data, cite only retrieved

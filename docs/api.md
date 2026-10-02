@@ -175,8 +175,10 @@ conversation is a `404`). Deleting an account deletes its conversations.
 
 ### `POST /api/conversations/:id/messages`
 
-Body: `{ "content": "What did NVIDIA say about Vera Rubin timing last quarter?" }`
-(1–2,000 characters).
+Body: `{ "content": "What did NVIDIA say about Vera Rubin timing last quarter?",
+"timeZone": "America/New_York" }`. `content` is 1–2,000 characters;
+`timeZone` is the browser's IANA zone (optional; unknown values are ignored)
+and makes dates and quote timestamps appear in the user's local time.
 
 Errors before streaming starts are normal JSON errors:
 
@@ -193,14 +195,15 @@ Daily caps (user messages per UTC day, configurable): **20** for signed-in users
 
 On success the response is `text/event-stream`:
 
-| Event        | Data                                                                            |
-| ------------ | ------------------------------------------------------------------------------- |
-| `turn`       | `{ conversation, userMessage, assistantMessageId }` (the saved user message).   |
-| `tool_start` | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.        |
-| `tool_end`   | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                         |
-| `token`      | `{ text }` — answer text as it is generated (reset by the next `tool_start`).   |
-| `error`      | `{ code, message, retryable }`, e.g. `ai_credits_exhausted`, `ai_rate_limited`. |
-| `done`       | `{ message }` — the saved assistant message (always last).                      |
+| Event           | Data                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `turn`          | `{ conversation, userMessage, assistantMessageId }` (the saved user message).               |
+| `tool_start`    | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.                    |
+| `tool_progress` | `{ id, label }` — live status for a running tool, e.g. `"Indexing Starbucks transcripts…"`. |
+| `tool_end`      | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                                     |
+| `token`         | `{ text }` — answer text as it is generated (reset by the next `tool_start`).               |
+| `error`         | `{ code, message, retryable }`, e.g. `ai_credits_exhausted`, `ai_rate_limited`.             |
+| `done`          | `{ message }` — the saved assistant message (always last).                                  |
 
 A saved assistant message:
 
