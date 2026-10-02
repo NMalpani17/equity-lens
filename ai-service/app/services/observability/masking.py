@@ -10,7 +10,8 @@ output and metadata before export. It removes:
   weights, position-math inputs) by key, in dicts and in JSON tool output.
 - **The current turn's portfolio numbers in free text**, e.g. the model
   writing "your $12,345.67 position", using the values registered for the
-  turn with :func:`set_turn_sensitive_values`.
+  turn with :func:`set_turn_sensitive_values` (the holdings) and
+  :func:`add_turn_sensitive_values` (e.g. position-math results).
 
 The masker fails closed: anything it cannot inspect is replaced by a
 placeholder, and Langfuse itself drops data whose masking raised.
@@ -20,6 +21,7 @@ import contextvars
 import dataclasses
 import json
 import re
+import threading
 from collections.abc import Iterable
 from typing import Any
 
@@ -77,9 +79,17 @@ _SHARE_COUNT_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?(?=\s+shares?\b)", re.IGNOREC
 _NUMBER_RE = re.compile(r"(?<![\w.])[-−]?\$?\d[\d,]*(?:\.\d+)?%?")
 _MAX_DEPTH = 12
 
-_turn_values: contextvars.ContextVar[frozenset[float]] = contextvars.ContextVar(
-    "trace_sensitive_values", default=frozenset()
+# A mutable set per turn: context copies (worker threads, the in-process MCP
+# server task) share the same object, so values a tool adds are visible to
+# the masking of every later span in the turn.
+_turn_values: contextvars.ContextVar[set[float] | None] = contextvars.ContextVar(
+    "trace_sensitive_values", default=None
 )
+_values_lock = threading.Lock()
+
+
+def _normalize(values: Iterable[float | None]) -> set[float]:
+    return {round(abs(v), 2) for v in values if v is not None and abs(v) >= 1}
 
 
 def portfolio_values(snapshot: PortfolioSnapshot | None) -> frozenset[float]:
@@ -104,18 +114,57 @@ def portfolio_values(snapshot: PortfolioSnapshot | None) -> frozenset[float]:
     t = snapshot.totals
     values += [t.market_value, t.cost_basis, t.gain_loss, t.gain_loss_percent]
     values += [t.daily_change]
-    return frozenset(round(abs(v), 2) for v in values if v is not None and abs(v) >= 1)
+    return frozenset(_normalize(values))
 
 
-def set_turn_sensitive_values(values: Iterable[float]) -> None:
-    """Register this turn's portfolio numbers (cleared with an empty set).
+def sensitive_numbers(data: Any) -> set[float]:
+    """Numbers stored under portfolio/position keys anywhere in ``data``."""
+    found: list[float] = []
+
+    def walk(value: Any, depth: int = 0) -> None:
+        if depth > _MAX_DEPTH:
+            return
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in SENSITIVE_KEYS and isinstance(item, int | float):
+                    if not isinstance(item, bool):
+                        found.append(float(item))
+                else:
+                    walk(item, depth + 1)
+        elif isinstance(value, list | tuple):
+            for item in value:
+                walk(item, depth + 1)
+
+    walk(data)
+    return _normalize(found)
+
+
+def set_turn_sensitive_values(values: Iterable[float] | None) -> None:
+    """Start (or, with ``None``, end) this turn's set of sensitive numbers.
 
     Uses ``set`` without a reset token on purpose: the chat turn is an async
     generator that may be closed from a different context, where resetting a
     token would raise. Each request runs in its own context copy, so values
     never leak between turns.
     """
-    _turn_values.set(frozenset(values))
+    _turn_values.set(None if values is None else _normalize(values))
+
+
+def add_turn_sensitive_values(values: Iterable[float]) -> None:
+    """Add numbers to the current turn's set (no-op outside a traced turn)."""
+    current = _turn_values.get()
+    if current is None:
+        return
+    with _values_lock:
+        current.update(_normalize(values))
+
+
+def _turn_snapshot() -> frozenset[float]:
+    current = _turn_values.get()
+    if not current:
+        return frozenset()
+    with _values_lock:
+        return frozenset(current)
 
 
 class TraceMasker:
@@ -168,7 +217,7 @@ class TraceMasker:
         text = _EMAIL_RE.sub(MASKED, text)
         text = _PHONE_RE.sub(MASKED, text)
         text = _SHARE_COUNT_RE.sub(MASKED, text)
-        values = _turn_values.get()
+        values = _turn_snapshot()
         if values:
             text = _NUMBER_RE.sub(lambda m: _mask_number(m.group(0), values), text)
         return text

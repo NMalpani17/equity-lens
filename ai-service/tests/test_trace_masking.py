@@ -1,6 +1,8 @@
 """Trace masking: secrets, contact details and portfolio values never leave."""
 
+import contextvars
 import json
+import threading
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -9,7 +11,9 @@ from app.services.chat.tools import calculate_position_tool, get_portfolio
 from app.services.observability.masking import (
     MASKED,
     TraceMasker,
+    add_turn_sensitive_values,
     portfolio_values,
+    sensitive_numbers,
     set_turn_sensitive_values,
 )
 from tests.chat_fakes import portfolio, position, turn
@@ -17,9 +21,9 @@ from tests.chat_fakes import portfolio, position, turn
 
 @pytest.fixture(autouse=True)
 def clear_turn_values():
-    set_turn_sensitive_values(())
+    set_turn_sensitive_values(None)
     yield
-    set_turn_sensitive_values(())
+    set_turn_sensitive_values(None)
 
 
 def test_configured_secrets_and_token_patterns_are_removed() -> None:
@@ -159,3 +163,45 @@ def test_deeply_nested_data_fails_closed() -> None:
 
 def test_masker_matches_the_langfuse_mask_signature() -> None:
     assert TraceMasker()(data={"market_value": 1}) == {"market_value": MASKED}
+
+
+def test_values_added_during_a_turn_are_masked_in_every_context_copy() -> None:
+    result = calculate_position_tool(
+        None,
+        action="buy",
+        shares=10,
+        price=180,
+        current_shares=40,
+        current_avg_cost=95.5,
+    )
+    set_turn_sensitive_values(())
+
+    def tool_thread() -> None:  # e.g. the MCP tool running in a worker thread
+        add_turn_sensitive_values(sensitive_numbers(result.data))
+
+    worker = threading.Thread(
+        target=contextvars.copy_context().run, args=(tool_thread,)
+    )
+    worker.start()
+    worker.join()
+
+    out = TraceMasker().mask("Your new average cost would be $112.40 on 50 shares.")
+    assert "112.40" not in out
+
+
+def test_adding_values_outside_a_traced_turn_is_a_no_op() -> None:
+    set_turn_sensitive_values(None)
+    add_turn_sensitive_values([112.4])
+
+    assert TraceMasker().mask("$112.40") == "$112.40"
+
+
+def test_sensitive_numbers_reads_only_sensitive_keys() -> None:
+    data = {
+        "avg_cost_after": 112.4,
+        "trade_price": 180,
+        "nested": [{"realized_gain": 518.0, "ticker": "AAPL"}],
+        "shares": 0.5,  # too small to match safely
+    }
+
+    assert sensitive_numbers(data) == {112.4, 518.0}

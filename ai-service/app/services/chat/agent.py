@@ -298,7 +298,7 @@ class ChatService:
             state.trace_id = state.trace_id or trace.trace_id
             self._record_status(state)
             if self._tracer.enabled:
-                set_turn_sensitive_values(())
+                set_turn_sensitive_values(None)
             logger.info(
                 "chat turn",
                 extra={

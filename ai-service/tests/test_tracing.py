@@ -324,6 +324,46 @@ def test_exported_spans_are_masked_and_pseudonymous() -> None:
     tracer.shutdown()
 
 
+def test_position_math_the_model_repeats_is_masked_in_exported_spans() -> None:
+    exporter = InMemorySpanExporter()
+    tracer = real_tracer("pk-lf-math-test", exporter)
+    tracer.score = lambda **_: None  # type: ignore[method-assign]
+    snapshot = portfolio(position("NVDA", 40, 95.5, 182))
+    model = ScriptedChatModel(
+        script=[
+            ai(
+                tool_calls=[
+                    {
+                        "name": "calculate_position",
+                        "args": {
+                            "action": "buy",
+                            "shares": 10,
+                            "price": 180,
+                            "ticker": "NVDA",
+                        },
+                        "id": "m1",
+                    }
+                ]
+            ),
+            ai("Your new average cost would be $112.40 (cost basis $5,620.00)."),
+        ]
+    )
+
+    events = run_turn(
+        make_service(model, tracer), "If I buy 10 NVDA at $180?", portfolio=snapshot
+    )
+    tracer.flush()
+
+    assert "$112.40" in events[-1].data["content"]  # the user still sees it
+    exported = json.dumps(
+        [dict(s.attributes or {}) for s in exporter.get_finished_spans()], default=str
+    )
+    assert "calculate_position" in exported
+    for leaked in ("112.4", "5,620", "5620"):
+        assert leaked not in exported, leaked
+    tracer.shutdown()
+
+
 def test_an_unreachable_langfuse_does_not_slow_the_turn() -> None:
     tracer = real_tracer("pk-lf-down-test")
     model = ScriptedChatModel(script=[ai("NVDA reports in November.")])

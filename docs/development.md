@@ -281,7 +281,10 @@ the database URL) plus bearer/token patterns, masks emails, phone numbers and
 "N shares" counts, masks portfolio fields by key (shares, average cost, cost
 basis, market value, gain/loss, weights, position-math inputs and results),
 including inside JSON tool output, and masks the turn's own portfolio numbers
-wherever they appear in text (e.g. the answer saying "your $13,680 position").
+and position-math results wherever they appear in text (e.g. the answer saying
+"your $13,680 position" or "a new average cost of $112.40"). Numbers typed in
+the question itself stay visible unless they match those values or a share
+count.
 Public prices stay visible. User ids are sent as `u_` + HMAC-SHA256 (keyed by
 `AI_SERVICE_TRACE_USER_SALT`; plain SHA-256 if unset), never raw ids or emails.
 If masking fails, Langfuse drops the payload.
