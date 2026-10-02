@@ -33,6 +33,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from app.config import Settings
 from app.localtime import DEFAULT_TIME_ZONE, zone
 from app.models.chat import (
+    ChatChart,
     ChatHistoryMessage,
     ChatTurnRequest,
     Citation,
@@ -40,6 +41,7 @@ from app.models.chat import (
     TurnStatus,
 )
 
+from .charts import MAX_CHARTS_PER_TURN, build_chart, chart_key
 from .citations import validate_citations
 from .context import TURN_META_KEY, TurnContext, TurnRegistry
 from .errors import classify_model_error
@@ -55,7 +57,9 @@ with warnings.catch_warnings():
 
 logger = logging.getLogger(__name__)
 
-EventType = Literal["token", "tool_start", "tool_progress", "tool_end", "done", "error"]
+EventType = Literal[
+    "token", "tool_start", "tool_progress", "tool_end", "chart", "done", "error"
+]
 
 EMPTY_REPLY = (
     "I couldn't produce an answer to that. Please try rephrasing or narrowing "
@@ -83,6 +87,8 @@ _BLOCK_REASONS = {
 }
 _MAX_TOKEN_REASONS = {"MAX_TOKENS", "length", "max_tokens"}
 _HISTORY_MESSAGE_CHARS = 4000
+# Only answers that went through keep the turn's charts.
+_CHART_STATUSES = {"complete", "truncated"}
 
 
 @dataclass(frozen=True)
@@ -95,6 +101,8 @@ class ChatEvent:
 class _TurnState:
     tool_calls: dict[str, ToolCallSummary] = field(default_factory=dict)
     citations: list[Citation] = field(default_factory=list)
+    # Chart key -> chart; a repeated chart replaces the earlier one in place.
+    charts: dict[str, ChatChart] = field(default_factory=dict)
     final: AIMessage | None = None
     ended_on_tool_calls: bool = False
     input_tokens: int = 0
@@ -401,7 +409,7 @@ class ChatService:
         summary.summary = tool_summary(
             summary.name, data, failed=message.status == "error"
         )
-        return [
+        events = [
             ChatEvent(
                 "tool_end",
                 {
@@ -412,6 +420,23 @@ class ChatService:
                 },
             )
         ]
+        chart = self._add_chart(summary, data, state) if summary.ok else None
+        if chart is not None:
+            events.append(ChatEvent("chart", chart.model_dump(mode="json")))
+        return events
+
+    def _add_chart(
+        self, summary: ToolCallSummary, data: Any, state: _TurnState
+    ) -> ChatChart | None:
+        """Chart the tool result if it has a chart (data from the tool only)."""
+        chart = build_chart(summary.name, data, f"chart-{summary.id}")
+        if chart is None:
+            return None
+        key = chart_key(chart)
+        if key not in state.charts and len(state.charts) >= MAX_CHARTS_PER_TURN:
+            return None
+        state.charts[key] = chart
+        return chart
 
     def _finalize(
         self, turn: TurnContext, state: _TurnState, advice_request: bool
@@ -446,6 +471,9 @@ class ChatService:
             "content": content,
             "status": status,
             "citations": [c.model_dump() for c in state.citations],
+            "charts": [c.model_dump(mode="json") for c in state.charts.values()]
+            if status in _CHART_STATUSES
+            else [],
             "tool_calls": [t.model_dump() for t in state.tool_calls.values()],
             "usage": {
                 "input_tokens": state.input_tokens,
