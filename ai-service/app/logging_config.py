@@ -37,3 +37,7 @@ def configure_logging(log_level: str = "INFO") -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(log_level.upper())
+
+    # langchain-google-genai warns once per tool-schema key it drops (e.g.
+    # MCP's additionalProperties) on every model call; it's expected noise.
+    logging.getLogger("langchain_google_genai._function_utils").setLevel(logging.ERROR)
