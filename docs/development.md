@@ -168,8 +168,9 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
 
 3. **Database.** Conversations live in Postgres. Run the API migrations
    (`npm --prefix api run prisma:migrate`), which add `chat_conversations`,
-   `chat_messages` and `chat_usage_events` (one row per turn — a sent message
-   or a retry — which the daily caps count).
+   `chat_messages` (including a `charts` JSONB column for inline charts) and
+   `chat_usage_events` (one row per turn — a sent message or a retry — which
+   the daily caps count).
 
 4. **Limits** (in `api/.env`): `CHAT_DAILY_LIMIT` (20), `CHAT_DAILY_LIMIT_ANON`
    (5), `CHAT_GLOBAL_DAILY_LIMIT` (60), `CHAT_MAX_MESSAGE_CHARS` (2000). Per
@@ -241,8 +242,108 @@ buy…" get facts plus a not-financial-advice note). Answers are validated after
 generation: citations to passages that weren't retrieved are dropped, and empty,
 truncated and blocked responses get explicit messages.
 
+**Inline charts** (`ai-service/app/services/chat/charts.py`): when
+`get_price_history` or `get_portfolio` succeeds, the agent builds a typed chart
+from the tool's structured output (never from the model's text), streams it as
+a `chart` event and attaches the turn's charts to `done`. The API validates
+them with Zod and saves them on the message; the client renders them with
+Recharts (`client/src/components/chat/charts/`), lazy-loaded in its own chunk.
+Charts fill the bubble width (the full row on phones), use the `--chart-1`
+color token (separate light and dark values) and include a "View data" table.
+
 Chat tests need no network: a scripted fake chat model drives the real agent
 and MCP tools (`ai-service/tests/test_chat_agent.py`).
+
+## Tracing (Langfuse, optional)
+
+Set both keys in `ai-service/.env` to trace every chat turn; leave them empty
+to turn tracing off (the SDK isn't even imported):
+
+```bash
+AI_SERVICE_LANGFUSE_PUBLIC_KEY=pk-lf-...
+AI_SERVICE_LANGFUSE_SECRET_KEY=sk-lf-...
+AI_SERVICE_LANGFUSE_BASE_URL=https://cloud.langfuse.com   # or https://us.cloud.langfuse.com / self-hosted
+```
+
+Each turn gets a Langfuse LangChain `CallbackHandler`, so one trace holds the
+agent graph, every model call (tokens and cost; Langfuse prices Gemini models
+from its model table, editable under Project Settings → Models), every MCP tool
+call with its latency, and errors (level `ERROR`). Traces are named
+`chat-turn`, grouped by conversation (session id), tagged `chat` (plus `demo`
+for anonymous users and `eval` for eval runs), and get a `turn_status` score
+(`complete`, `truncated`, `blocked`, `empty`, `refused`, `error`). Guardrail
+refusals, which never reach the model, are recorded as single-span traces.
+
+**Privacy** (`ai-service/app/services/observability/masking.py`): the Langfuse
+client's `mask` hook runs on every input, output and metadata payload before
+export. It removes configured secrets verbatim (internal token, provider keys,
+the database URL) plus bearer/token patterns, masks emails, phone numbers and
+"N shares" counts, masks portfolio fields by key (shares, average cost, cost
+basis, market value, gain/loss, weights, position-math inputs and results),
+including inside JSON tool output, and masks the turn's own portfolio numbers
+wherever they appear in text (e.g. the answer saying "your $13,680 position").
+Public prices stay visible. User ids are sent as `u_` + HMAC-SHA256 (keyed by
+`AI_SERVICE_TRACE_USER_SALT`; plain SHA-256 if unset), never raw ids or emails.
+If masking fails, Langfuse drops the payload.
+
+**Failure isolation** (`ai-service/app/services/observability/tracing.py`):
+spans are exported by a background thread with a short timeout
+(`AI_SERVICE_LANGFUSE_TIMEOUT_SECONDS`, 2); if Langfuse is slow or down, the
+turn doesn't wait. Client start-up errors disable tracing with a warning, every
+SDK call is guarded, LangChain logs (not raises) callback errors, and shutdown
+waits at most 3 seconds. `AI_SERVICE_LANGFUSE_SAMPLE_RATE` (1.0) traces a
+fraction of turns. Tests cover the disabled path, a handler that raises on
+every callback, an unreachable host, and the masked spans the real SDK would
+export (`ai-service/tests/test_tracing.py`, `test_trace_masking.py`).
+
+## Chat evaluation
+
+`ai-service/scripts/eval_chat.py` runs a labeled set of 25 questions
+(`scripts/eval/chat_questions.json`) through the real agent — real tools,
+transcripts and Gemini — with a fixed demo portfolio, for each model compared:
+
+```bash
+cd ai-service
+python -m scripts.eval_chat --estimate   # expected cost, no API calls
+python -m scripts.eval_chat --yes        # run it (spends Gemini credit)
+python -m scripts.eval_chat --yes --cases t01,pm01 --models google_genai:gemini-3.8-flash
+```
+
+Categories: transcript facts, multi-quarter trends, portfolio, position math,
+buy/sell advice, off-topic, prompt injection and ambiguous companies. Each
+answer is scored two ways (`ai-service/app/services/evals/`):
+
+- **Deterministic checks**: expected tools called (and forbidden ones not),
+  every `[n]` marker resolves to a returned passage, citations come from the
+  right company and enough distinct quarters, refusal or redirect when
+  expected, a clarifying question (without searching) for ambiguous names, the
+  not-financial-advice note, expected numbers (position math, portfolio
+  totals) and expected charts.
+- **LLM judge** (rubric 1–5: faithfulness to the answer's own cited passages
+  and tool results, relevance, completeness): one call per question sees every
+  model's answer labeled only "A"/"B" in a seeded random order, each with its
+  evidence. Refusal and clarification cases are scored deterministically only.
+
+The script prints a cost estimate first and refuses to run without `--yes`. The
+judge is `gemini-3.1-pro-preview` when the whole run is estimated under
+`--budget` ($1.50), otherwise `gemini-3.8-flash`. During the run on-demand
+indexing is disabled (no Equibles quota) and the rerank cache is off so models
+pay the same retrieval latency; expect ~40–60 Pinecone rerank requests. Results
+print as Markdown tables and are saved to `scripts/eval/results/` (git-ignored).
+With Langfuse on, eval turns are tagged `eval` and `eval-run:<id>` and get
+`eval_checks_passed` and `judge_*` scores.
+
+**Judge bias.** LLM judges favor answers from their own model family
+(self-preference), longer and more confident answers (verbosity bias), and
+whichever answer comes first (position bias), and they are lenient on numeric
+detail. Mitigations here: the deterministic checks are the primary,
+bias-free signal; the judge never sees model names and answer order is
+shuffled per question; the rubric says length and tone aren't quality and caps
+faithfulness at 2 for any unsupported figure; each answer is judged only
+against its own evidence. Residual risk: with a Gemini judge grading Gemini
+answers, small score gaps (a few tenths of a point) aren't meaningful — read
+the judge columns as a sanity check next to the check pass rates, and
+spot-check the saved rationales.
 
 ## First-time install
 

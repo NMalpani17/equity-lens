@@ -39,6 +39,19 @@ live market data.
   search, quotes, price history, your portfolio, company/period resolution and
   exact position math. Guardrails keep it on topic, refuse prompt-injection and
   avoid personalized buy/sell advice; daily message caps protect the budget.
+- **Charts in answers** — when the agent looks up price history or your
+  portfolio, the reply shows an inline **Recharts** chart (price line or
+  allocation bars) built only from the tool's data, never from numbers the model
+  wrote. Charts stream in as soon as the tool returns, are saved with the
+  message, and work on phones (with a "View data" table).
+- **Tracing (optional)** — with Langfuse keys set, every chat turn is traced
+  (agent steps, tool calls with latency, model calls with tokens and cost,
+  errors). User ids are hashed, and portfolio values, contact details and
+  secrets are masked before anything leaves the service. Without keys tracing
+  is off; a Langfuse outage never slows or breaks a chat.
+- **Evals** — a labeled set of 25 questions runs through the real agent and is
+  scored with deterministic checks and a blind LLM judge, comparing models on
+  quality, latency and cost (see [Evaluation](#evaluation)).
 - **Graceful degradation** — one bad ticker never breaks the batch, unpriced
   holdings are excluded from totals (shown as partial), and the UI reports when
   the AI service is unavailable instead of failing.
@@ -117,6 +130,21 @@ Then open <http://localhost:5173>. Never commit `.env` files — only
 
 More detail: **[docs/development.md](docs/development.md)** (per-service run
 steps, scripts, health checks) and **[docs/api.md](docs/api.md)** (API reference).
+
+Optional: set `AI_SERVICE_LANGFUSE_PUBLIC_KEY` and `AI_SERVICE_LANGFUSE_SECRET_KEY`
+in `ai-service/.env` to trace chat turns in Langfuse.
+
+## Evaluation
+
+`python -m scripts.eval_chat` (in `ai-service/`) runs 25 labeled questions —
+transcript facts, multi-quarter trends, portfolio, position math, buy/sell
+advice, off-topic, prompt injection and ambiguous companies — through the real
+agent with a fixed demo portfolio. Each answer gets deterministic checks
+(expected tools, valid citations, refusal or clarification when expected,
+exact numbers, charts) and a blind LLM-judge rubric (faithfulness to its cited
+passages and tool results, relevance, completeness). Method, cost controls and
+the judge-bias note are in
+[docs/development.md](docs/development.md#chat-evaluation).
 
 ## Contributing
 
