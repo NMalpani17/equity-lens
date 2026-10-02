@@ -205,3 +205,22 @@ def test_sensitive_numbers_reads_only_sensitive_keys() -> None:
     }
 
     assert sensitive_numbers(data) == {112.4, 518.0}
+
+
+def test_ids_and_opaque_blobs_are_not_mangled_by_number_masking() -> None:
+    set_turn_sensitive_values([1335.0, 112.4])
+    masker = TraceMasker()
+
+    message_id = "lc_60b1441a-1335-4e45-8b37-aac8355c"
+    blob = "kmIRYSY/112+abc=="
+    masked = masker.mask(
+        {
+            "id": message_id,
+            "text": f"{blob} gain of $1,335 and -1335",
+            "extras": {"signature": "Q2hhaW4gb2YgdGhvdWdodA=="},
+        }
+    )
+
+    assert masked["id"] == message_id
+    assert masked["text"] == f"{blob} gain of {MASKED} and {MASKED}"
+    assert masked["extras"]["signature"] == "[omitted]"

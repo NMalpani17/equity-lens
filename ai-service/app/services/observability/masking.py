@@ -68,6 +68,8 @@ SENSITIVE_KEYS = frozenset(
 )
 # Keys whose whole value is dropped (identity, never useful in a trace).
 _DROP_KEYS = frozenset({"user_id", "email", "authorization", "x-internal-token"})
+# Opaque provider blobs (e.g. Gemini thought signatures): useless in a trace.
+_OMITTED = "[omitted]"
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # International or US-style phone numbers: +1 (617) 555-0100, 617-555-0100.
@@ -76,7 +78,8 @@ _PHONE_RE = re.compile(
 )
 # "120 shares", "1,250.5 shares" (not "10 million shares" from a transcript).
 _SHARE_COUNT_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?(?=\s+shares?\b)", re.IGNORECASE)
-_NUMBER_RE = re.compile(r"(?<![\w.])[-−]?\$?\d[\d,]*(?:\.\d+)?%?")
+# A standalone amount; digits inside ids, UUIDs or base64 don't count.
+_NUMBER_RE = re.compile(r"(?<![\w.\-−/+=])[-−]?\$?\d[\d,]*(?:\.\d+)?%?(?![\w/+=])")
 _MAX_DEPTH = 12
 
 # A mutable set per turn: context copies (worker threads, the in-process MCP
@@ -203,6 +206,8 @@ class TraceMasker:
         lowered = key.lower()
         if lowered in _DROP_KEYS:
             return MASKED
+        if "signature" in lowered and isinstance(value, str | bytes | list | dict):
+            return _OMITTED
         if key in SENSITIVE_KEYS and value is not None:
             return MASKED
         return self.mask(value, depth + 1)
