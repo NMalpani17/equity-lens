@@ -137,3 +137,69 @@ model RagTranscript {
   @@id([ticker, fiscalYear, fiscalQuarter])
   @@map("rag_transcripts")
 }
+
+// ---------------------------------------------------------------------------
+// AI analyst chat. Written by the API gateway; the ai-service is stateless.
+// ---------------------------------------------------------------------------
+
+enum ChatRole {
+  user
+  assistant
+
+  @@map("chat_role")
+}
+
+/// Lifecycle of a chat message. Assistant messages start as `streaming` and
+/// end in one of the other states.
+enum ChatMessageStatus {
+  streaming
+  complete
+  truncated
+  blocked
+  empty
+  refused
+  interrupted
+  error
+
+  @@map("chat_message_status")
+}
+
+/// A user's chat conversation.
+model ChatConversation {
+  id                  String        @id @default(uuid()) @db.Uuid
+  userId              String        @map("user_id") @db.Uuid
+  title               String        @default("New chat")
+  /// Set while a turn is streaming, so a second concurrent turn gets a 409.
+  activeTurnId        String?       @map("active_turn_id") @db.Uuid
+  activeTurnStartedAt DateTime?     @map("active_turn_started_at")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @default(now()) @updatedAt @map("updated_at")
+  messages            ChatMessage[]
+
+  @@index([userId, updatedAt])
+  @@map("chat_conversations")
+}
+
+/// One message in a conversation, with the citations and tool calls behind it.
+model ChatMessage {
+  id             String            @id @default(uuid()) @db.Uuid
+  conversationId String            @map("conversation_id") @db.Uuid
+  conversation   ChatConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// Owner (denormalized from the conversation) for per-user daily caps.
+  userId         String            @map("user_id") @db.Uuid
+  role           ChatRole
+  content        String            @default("")
+  status         ChatMessageStatus @default(complete)
+  citations      Json              @default("[]")
+  toolCalls      Json              @default("[]") @map("tool_calls")
+  errorCode      String?           @map("error_code")
+  inputTokens    Int?              @map("input_tokens")
+  outputTokens   Int?              @map("output_tokens")
+  model          String?
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@index([conversationId, createdAt])
+  @@index([userId, role, createdAt])
+  @@index([role, createdAt])
+  @@map("chat_messages")
+}
