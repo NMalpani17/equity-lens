@@ -29,6 +29,8 @@ class TurnContext:
     today: date
     portfolio: PortfolioSnapshot | None
     time_zone: str = "UTC"
+    # The user's message, the fallback query when a search omits one.
+    question: str = ""
     turn_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     sources: CitationRegistry = field(default_factory=CitationRegistry)
     created_at: float = field(default_factory=time.monotonic)

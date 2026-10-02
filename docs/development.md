@@ -188,6 +188,10 @@ from that id, never from model-supplied arguments. The same server is mounted at
 
 **Transcript search** (`ai-service/app/services/chat/transcripts.py`):
 
+- `query` is optional: when the model leaves it out (it sometimes does when it
+  wants an overview of a call), the user's question is searched instead (or a
+  broad "results, outlook and management commentary" default), rather than
+  rejecting the call and costing the agent a retry step.
 - Out-of-range numeric arguments are clamped (e.g. `top_k` to 1–8) instead of
   failing the call; the limits are in the tool schema and descriptions.
 - With no period named, it fetches extra candidates, boosts newer calls, makes

@@ -152,13 +152,14 @@ def _result(output: ToolOutput) -> ToolResult:
 def search_transcripts(
     ctx: Context,
     query: Annotated[
-        str,
+        str | None,
         Field(
-            description="What to look for, in natural language or exact terms.",
-            min_length=1,
+            description="What to look for, in natural language or exact terms "
+            "(e.g. 'data center demand'). If omitted, the user's question is "
+            "used, so pass a focused query whenever you can.",
             max_length=500,
         ),
-    ],
+    ] = None,
     ticker: Annotated[
         str | None, Field(description="Restrict to one ticker.", max_length=10)
     ] = None,

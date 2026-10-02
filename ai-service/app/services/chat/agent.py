@@ -258,6 +258,7 @@ class ChatService:
             today=request.today or self._today(zone(request.time_zone)),
             time_zone=request.time_zone or DEFAULT_TIME_ZONE,
             portfolio=request.portfolio,
+            question=request.message,
         )
         self._registry.register(turn)
         state = _TurnState()
