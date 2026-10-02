@@ -308,3 +308,110 @@ def test_trim_history_respects_message_and_token_budgets() -> None:
     assert len(kept) == 6 and kept[0]["role"] == "user"
     assert kept[-1]["content"].startswith("m9")
     assert len(tight) <= 2 and (not tight or tight[0]["role"] == "user")
+
+
+def test_indexing_progress_streams_as_tool_progress(tool_deps) -> None:
+    from datetime import UTC, datetime
+
+    from app.models.rag import RagIndexingResponse
+    from app.services.rag.repository import TickerRecord
+
+    tool_deps.search.side_effect = [
+        RagIndexingResponse(ticker="SBUX", job_id="j", message="m", poll_url="/x"),
+        RagSearchResponse(
+            query="q",
+            filters=RagFilters(ticker="SBUX"),
+            reranked=True,
+            candidate_count=1,
+            results=[search_result(0, ticker="SBUX")],
+            latency_ms=1,
+        ),
+    ]
+    states = [
+        TickerRecord("SBUX", "indexing", None, 0, []),
+        TickerRecord(
+            "SBUX",
+            "indexed",
+            "Starbucks",
+            10,
+            ["FY2027Q2"],
+            indexed_at=datetime(2026, 10, 2, tzinfo=UTC),
+        ),
+    ]
+    resolver = MagicMock()
+    resolver.resolve.return_value = MagicMock(
+        ticker="SBUX", company_name="STARBUCKS CORP"
+    )
+    clock = [0.0]
+    deps = ToolDeps(
+        search=lambda: tool_deps,
+        market=MagicMock,
+        history=MagicMock,
+        resolver=lambda: resolver,
+        ticker_record=lambda _: states.pop(0) if len(states) > 1 else states[0],
+        sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+        clock=lambda: clock[0],
+    )
+    mcp_server.set_tool_deps(lambda: deps)
+    model = ScriptedChatModel(
+        script=[
+            ai(
+                tool_calls=[
+                    {
+                        "name": "search_transcripts",
+                        "args": {"query": "store traffic", "ticker": "SBUX"},
+                        "id": "s1",
+                    }
+                ]
+            ),
+            ai("Traffic improved [1]."),
+        ]
+    )
+
+    events = collect(
+        make_service(model), request("What did Starbucks say about traffic?")
+    )
+
+    progress = [e.data for e in events if e.type == "tool_progress"]
+    assert progress == [
+        {"id": "s1", "label": "Indexing Starbucks transcripts…"},
+        {"id": "s1", "label": "Searching SBUX transcripts…"},
+    ]
+    types = [e.type for e in events]
+    assert (
+        types.index("tool_start")
+        < types.index("tool_progress")
+        < types.index("tool_end")
+    )
+    assert done(events)["status"] == "complete"
+    assert [c["ticker"] for c in done(events)["citations"]] == ["SBUX"]
+
+
+def test_merge_progress_interleaves_and_closes_cleanly() -> None:
+    from app.services.chat.agent import merge_progress
+
+    async def run():
+        labels: asyncio.Queue[str] = asyncio.Queue()
+
+        async def chunks():
+            yield "a"
+            labels.put_nowait("working…")
+            await asyncio.sleep(0.01)
+            yield "b"
+            await asyncio.sleep(10)  # never reached: the consumer stops first
+            yield "c"
+
+        out = []
+        merged = merge_progress(chunks(), labels)
+        async for kind, item in merged:
+            out.append((kind, item))
+            if item == "b":
+                break
+        await merged.aclose()
+        return out
+
+    assert asyncio.run(run()) == [
+        ("chunk", "a"),
+        ("progress", "working…"),
+        ("chunk", "b"),
+    ]

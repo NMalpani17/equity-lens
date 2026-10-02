@@ -10,6 +10,8 @@ If the consumer stops iterating (the client disconnected), the generator is
 closed, which cancels the in-flight model request.
 """
 
+import asyncio
+import contextlib
 import logging
 import time
 import warnings
@@ -50,7 +52,7 @@ with warnings.catch_warnings():
 
 logger = logging.getLogger(__name__)
 
-EventType = Literal["token", "tool_start", "tool_end", "done", "error"]
+EventType = Literal["token", "tool_start", "tool_progress", "tool_end", "done", "error"]
 
 EMPTY_REPLY = (
     "I couldn't produce an answer to that. Please try rephrasing or narrowing "
@@ -99,6 +101,44 @@ class _TurnState:
 async def _decline_elicitation(*_: Any) -> Any:
     """Our tools never ask for input; refuse rather than interrupt the run."""
     raise RuntimeError("elicitation is not supported")
+
+
+async def merge_progress(
+    stream: AsyncIterator[Any], labels: asyncio.Queue[str]
+) -> AsyncIterator[tuple[str, Any]]:
+    """Yield ("chunk", item) from ``stream`` and ("progress", label) as they arrive.
+
+    Ends when the stream ends. Closing this generator cancels the pending
+    stream read, so a client disconnect still cancels the model call.
+    """
+    iterator = stream.__aiter__()
+    next_chunk = asyncio.ensure_future(iterator.__anext__())
+    next_label = asyncio.ensure_future(labels.get())
+    try:
+        while True:
+            done, _ = await asyncio.wait(
+                {next_chunk, next_label}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if next_label in done:
+                yield "progress", next_label.result()
+                next_label = asyncio.ensure_future(labels.get())
+            if next_chunk in done:
+                try:
+                    chunk = next_chunk.result()
+                except StopAsyncIteration:
+                    return
+                yield "chunk", chunk
+                next_chunk = asyncio.ensure_future(iterator.__anext__())
+    finally:
+        next_label.cancel()
+        if not next_chunk.done():
+            next_chunk.cancel()
+            with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                await next_chunk
+        aclose = getattr(iterator, "aclose", None)
+        if aclose is not None:
+            with contextlib.suppress(Exception):
+                await aclose()
 
 
 class TurnClient(Client):
@@ -257,9 +297,24 @@ class ChatService:
                 stream_mode=["messages", "updates"],
                 version="v2",
             )
-            async for chunk in stream:
-                for event in self._handle_chunk(chunk, state):
-                    yield event
+            # Tools report progress (e.g. while waiting for indexing) through
+            # the turn; merge it with the model/tool stream as it happens.
+            loop = asyncio.get_running_loop()
+            labels: asyncio.Queue[str] = asyncio.Queue()
+            turn.progress = lambda label: loop.call_soon_threadsafe(
+                labels.put_nowait, label
+            )
+            try:
+                async for kind, item in merge_progress(stream, labels):
+                    if kind == "progress":
+                        event = self._on_progress(item, state)
+                        if event:
+                            yield event
+                    else:
+                        for event in self._handle_chunk(item, state):
+                            yield event
+            finally:
+                turn.progress = None
 
         content, status = self._finalize(turn, state, advice_request)
         yield ChatEvent("done", self._done(content, status, state))
@@ -319,6 +374,13 @@ class ChatService:
                 )
             )
         return events
+
+    def _on_progress(self, label: str, state: _TurnState) -> ChatEvent | None:
+        """Attach a progress label to the most recently started running tool."""
+        running = [t for t in state.tool_calls.values() if t.ok is None]
+        if not running:
+            return None
+        return ChatEvent("tool_progress", {"id": running[-1].id, "label": label})
 
     def _on_tool_message(
         self, message: ToolMessage, state: _TurnState
