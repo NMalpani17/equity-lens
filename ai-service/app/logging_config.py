@@ -49,3 +49,10 @@ def configure_logging(log_level: str = "INFO") -> None:
     logging.getLogger("langchain_google_genai._function_utils").setLevel(logging.ERROR)
     for name in _QUIET_HTTP_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
+
+    # FastMCP logs to its own console handlers and doesn't propagate. Route it
+    # through ours, so tool failures (logged with tracebacks) are JSON and
+    # redacted like everything else. Clients still get only a masked error.
+    fastmcp_logger = logging.getLogger("fastmcp")
+    fastmcp_logger.handlers.clear()
+    fastmcp_logger.propagate = True

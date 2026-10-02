@@ -211,6 +211,7 @@ On success the response is `text/event-stream`:
 | `tool_start`    | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.                    |
 | `tool_progress` | `{ id, label }` — live status for a running tool, e.g. `"Indexing Starbucks transcripts…"`. |
 | `tool_end`      | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                                     |
+| `chart`         | `{ chart }` — an inline chart built from a tool result (see below), right after `tool_end`. |
 | `token`         | `{ text }` — answer text as it is generated (reset by the next `tool_start`).               |
 | `error`         | `{ code, message, retryable }`, e.g. `ai_credits_exhausted`, `ai_rate_limited`.             |
 | `done`          | `{ message }` — the saved assistant message (always last).                                  |
@@ -249,6 +250,7 @@ A saved assistant message:
       "text": "…the retrieved passage…"
     }
   ],
+  "charts": [],
   "toolCalls": [
     {
       "id": "…",
@@ -271,6 +273,52 @@ A saved assistant message:
   invents are dropped and the rest are renumbered in order.
 - If the client disconnects mid-stream, the gateway aborts the upstream call
   (cancelling the model request) and saves the partial reply as `interrupted`.
+- `charts`: inline charts for the reply (empty for older messages). Every number
+  comes from a tool result, never from the model's text. Two kinds:
+
+  ```json
+  {
+    "id": "chart-call-1",
+    "kind": "price_history",
+    "ticker": "NVDA",
+    "period": "6mo",
+    "currency": "USD",
+    "points": [{ "date": "2026-04-01", "close": 100.0 }, "…"],
+    "firstClose": 100.0,
+    "lastClose": 120.0,
+    "change": 20.0,
+    "changePercent": 20.0,
+    "high": 121.0,
+    "low": 98.0,
+    "asOf": "2026-10-01T20:00:00Z"
+  }
+  ```
+
+  ```json
+  {
+    "id": "chart-call-2",
+    "kind": "portfolio_allocation",
+    "currency": "USD",
+    "slices": [
+      {
+        "ticker": "NVDA",
+        "name": "NVIDIA Corp",
+        "marketValue": 7280,
+        "weightPercent": 23.87
+      }
+    ],
+    "totalMarketValue": 30495,
+    "partial": false,
+    "asOf": "Oct 1, 2026, 4:00 PM EDT"
+  }
+  ```
+
+  `get_price_history` results become `price_history` charts and `get_portfolio`
+  results `portfolio_allocation` charts (largest first; past eight holdings the
+  rest are grouped as "Other"; `partial` means unpriced holdings are left out).
+  A repeated chart (same ticker and period) replaces the earlier one, at most
+  four per reply. Completed and truncated replies keep their charts; blocked
+  and empty ones don't; a stopped reply keeps the charts that had streamed.
 
 ## AI service (`http://localhost:8000`)
 
@@ -302,8 +350,11 @@ Chat and MCP:
 | `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, message, history, portfolio}`. |
 | any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `Authorization: Bearer <internal token>`.                  |
 
-`/chat/stream` emits `token`, `tool_start`, `tool_end`, `done` (`content`,
-`status`, `citations`, `tool_calls`, `usage`, `model`) and `error` events. The
+`/chat/stream` emits `token`, `tool_start`, `tool_progress`, `tool_end`,
+`chart` (snake_case fields), `done` (`content`, `status`, `citations`,
+`charts`, `tool_calls`, `usage`, `model`, `trace_id`) and `error` events.
+`trace_id` is the Langfuse trace id when tracing is on (otherwise `null`); the
+gateway doesn't forward it. The
 user id comes from the gateway's verified JWT; the ai-service never accepts one
 from a browser. History is trimmed to the last 6 final answers (~3K tokens) and
 never includes past tool results.

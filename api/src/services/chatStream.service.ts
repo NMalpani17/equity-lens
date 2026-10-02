@@ -36,6 +36,45 @@ const toolCallSchema = z.object({
   summary: z.string().nullable().optional(),
 });
 
+const pricePointSchema = z.object({ date: z.string(), close: z.number() });
+
+const chartSchema = z.discriminatedUnion("kind", [
+  z.object({
+    id: z.string(),
+    kind: z.literal("price_history"),
+    ticker: z.string(),
+    period: z.string(),
+    currency: z.string(),
+    points: z.array(pricePointSchema).min(2).max(400),
+    first_close: z.number(),
+    last_close: z.number(),
+    change: z.number(),
+    change_percent: z.number(),
+    high: z.number(),
+    low: z.number(),
+    as_of: z.string().nullable().optional(),
+  }),
+  z.object({
+    id: z.string(),
+    kind: z.literal("portfolio_allocation"),
+    currency: z.string(),
+    slices: z
+      .array(
+        z.object({
+          ticker: z.string(),
+          name: z.string().nullable().optional(),
+          market_value: z.number(),
+          weight_percent: z.number(),
+        }),
+      )
+      .min(1)
+      .max(20),
+    total_market_value: z.number(),
+    partial: z.boolean(),
+    as_of: z.string().nullable().optional(),
+  }),
+]);
+
 const eventSchemas = {
   token: z.object({ text: z.string() }),
   tool_start: z.object({
@@ -51,10 +90,12 @@ const eventSchemas = {
     ok: z.boolean(),
     summary: z.string(),
   }),
+  chart: chartSchema,
   done: z.object({
     content: z.string(),
     status: z.enum(["complete", "truncated", "blocked", "empty", "refused"]),
     citations: z.array(citationSchema),
+    charts: z.array(chartSchema).default([]),
     tool_calls: z.array(toolCallSchema),
     usage: z.object({ input_tokens: z.number(), output_tokens: z.number() }).partial(),
     model: z.string().optional(),
@@ -74,6 +115,37 @@ export interface CitationDto {
   section: string;
   text: string;
 }
+
+export type ChartDto =
+  | {
+      id: string;
+      kind: "price_history";
+      ticker: string;
+      period: string;
+      currency: string;
+      points: { date: string; close: number }[];
+      firstClose: number;
+      lastClose: number;
+      change: number;
+      changePercent: number;
+      high: number;
+      low: number;
+      asOf: string | null;
+    }
+  | {
+      id: string;
+      kind: "portfolio_allocation";
+      currency: string;
+      slices: {
+        ticker: string;
+        name: string | null;
+        marketValue: number;
+        weightPercent: number;
+      }[];
+      totalMarketValue: number;
+      partial: boolean;
+      asOf: string | null;
+    };
 
 export interface ToolCallDto {
   id: string;
@@ -95,11 +167,13 @@ export type AiChatEvent =
     }
   | { type: "tool_progress"; id: string; label: string }
   | { type: "tool_end"; id: string; name: string; ok: boolean; summary: string }
+  | { type: "chart"; chart: ChartDto }
   | {
       type: "done";
       content: string;
       status: "complete" | "truncated" | "blocked" | "empty" | "refused";
       citations: CitationDto[];
+      charts: ChartDto[];
       toolCalls: ToolCallDto[];
       inputTokens: number | null;
       outputTokens: number | null;
@@ -133,6 +207,41 @@ function toCitation(c: z.infer<typeof citationSchema>): CitationDto {
   };
 }
 
+/** Chart from upstream (snake_case) to the API's camelCase shape. */
+export function toChart(c: z.infer<typeof chartSchema>): ChartDto {
+  if (c.kind === "price_history") {
+    return {
+      id: c.id,
+      kind: c.kind,
+      ticker: c.ticker,
+      period: c.period,
+      currency: c.currency,
+      points: c.points.map((p) => ({ date: p.date, close: p.close })),
+      firstClose: c.first_close,
+      lastClose: c.last_close,
+      change: c.change,
+      changePercent: c.change_percent,
+      high: c.high,
+      low: c.low,
+      asOf: c.as_of ?? null,
+    };
+  }
+  return {
+    id: c.id,
+    kind: c.kind,
+    currency: c.currency,
+    slices: c.slices.map((s) => ({
+      ticker: s.ticker,
+      name: s.name ?? null,
+      marketValue: s.market_value,
+      weightPercent: s.weight_percent,
+    })),
+    totalMarketValue: c.total_market_value,
+    partial: c.partial,
+    asOf: c.as_of ?? null,
+  };
+}
+
 /** Map a validated upstream event to the camelCase shape used by the API. */
 export function mapEvent(type: string, data: unknown): AiChatEvent | null {
   switch (type) {
@@ -144,6 +253,10 @@ export function mapEvent(type: string, data: unknown): AiChatEvent | null {
       const parsed = eventSchemas[type].safeParse(data);
       return parsed.success ? ({ type, ...parsed.data } as AiChatEvent) : null;
     }
+    case "chart": {
+      const parsed = eventSchemas.chart.safeParse(data);
+      return parsed.success ? { type: "chart", chart: toChart(parsed.data) } : null;
+    }
     case "done": {
       const parsed = eventSchemas.done.safeParse(data);
       if (!parsed.success) return null;
@@ -153,6 +266,7 @@ export function mapEvent(type: string, data: unknown): AiChatEvent | null {
         content: d.content,
         status: d.status,
         citations: d.citations.map(toCitation),
+        charts: d.charts.map(toChart),
         toolCalls: d.tool_calls.map((t) => ({ ...t, args: t.args ?? {} })),
         inputTokens: d.usage.input_tokens ?? null,
         outputTokens: d.usage.output_tokens ?? null,

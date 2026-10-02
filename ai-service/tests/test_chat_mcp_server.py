@@ -12,6 +12,7 @@ from app.models.rag import RagFilters, RagSearchResponse
 from app.services.chat import mcp_server
 from app.services.chat.context import TURN_META_KEY, turn_registry
 from app.services.chat.tools import ToolDeps
+from app.services.chat.transcripts import DEFAULT_QUERY
 from tests.chat_fakes import portfolio, position, search_result, turn
 
 EXPECTED_TOOLS = {
@@ -103,9 +104,24 @@ def test_search_numbers_passages_within_the_turn(search) -> None:
 
 
 def test_invalid_arguments_are_rejected_by_the_schema(search) -> None:
-    result = run(call("search_transcripts", {"query": ""}))
+    result = run(call("search_transcripts", {"query": "x" * 501}))
 
     assert result.is_error
+
+
+def test_search_without_a_query_uses_the_question_instead_of_failing(search) -> None:
+    ctx = turn()
+    ctx.question = "What did Costco say on its latest earnings call?"
+    turn_registry.register(ctx)
+    try:
+        with_turn = run(call("search_transcripts", {"ticker": "COST"}, ctx.turn_id))
+        without_turn = run(call("search_transcripts", {"ticker": "COST", "top_k": 5}))
+    finally:
+        turn_registry.discard(ctx.turn_id)
+
+    assert not with_turn.is_error and not without_turn.is_error
+    queries = [c.args[0].query for c in search.search.call_args_list]
+    assert queries == [ctx.question, DEFAULT_QUERY]
 
 
 def test_mcp_http_endpoint_requires_the_internal_token(monkeypatch) -> None:

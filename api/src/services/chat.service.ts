@@ -51,6 +51,7 @@ export interface ChatMessageDto {
   content: string;
   status: ChatMessageStatus;
   citations: unknown[];
+  charts: unknown[];
   toolCalls: unknown[];
   errorCode: string | null;
   createdAt: string;
@@ -83,6 +84,7 @@ export interface TurnOutcome {
   content: string;
   status: ChatMessageStatus;
   citations?: unknown[];
+  charts?: unknown[];
   toolCalls?: unknown[];
   errorCode?: string | null;
   inputTokens?: number | null;
@@ -111,6 +113,7 @@ export function toMessageDto(m: ChatMessage): ChatMessageDto {
     content: m.content,
     status: m.status,
     citations: Array.isArray(m.citations) ? m.citations : [],
+    charts: Array.isArray(m.charts) ? m.charts : [],
     toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls : [],
     errorCode: m.errorCode,
     createdAt: m.createdAt.toISOString(),
@@ -394,6 +397,7 @@ export async function beginRetry(
           content: "",
           status: "streaming",
           citations: [],
+          charts: [],
           toolCalls: [],
           errorCode: null,
           inputTokens: null,
@@ -442,6 +446,7 @@ export async function finishTurn(
         content: outcome.content,
         status: outcome.status,
         citations: (outcome.citations ?? []) as Prisma.InputJsonValue,
+        charts: (outcome.charts ?? []) as Prisma.InputJsonValue,
         toolCalls: (outcome.toolCalls ?? []) as Prisma.InputJsonValue,
         errorCode: outcome.errorCode ?? null,
         inputTokens: outcome.inputTokens ?? null,

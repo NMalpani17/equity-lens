@@ -91,6 +91,7 @@ function placeholder(content = ""): ChatMessage {
     content,
     status: "streaming",
     citations: [],
+    charts: [],
     toolCalls: [],
     errorCode: null,
     createdAt: new Date().toISOString(),
@@ -261,6 +262,22 @@ export function useChat() {
           ),
         );
         break;
+      case "chart": {
+        // Charts appear as soon as their tool returns; same id replaces.
+        const id = replyIdRef.current;
+        const { chart } = event;
+        setMessages((list) =>
+          list.map((m) =>
+            m.id === id
+              ? {
+                  ...m,
+                  charts: [...(m.charts ?? []).filter((c) => c.id !== chart.id), chart],
+                }
+              : m,
+          ),
+        );
+        break;
+      }
       case "error":
         setBanner(bannerForStreamError(event.code, event.message));
         break;

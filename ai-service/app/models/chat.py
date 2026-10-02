@@ -96,3 +96,54 @@ class ToolCallSummary(BaseModel):
 
 
 TurnStatus = Literal["complete", "truncated", "blocked", "empty", "refused"]
+
+
+# --- Inline charts -------------------------------------------------------------
+# Built only from tool results (never from model-written numbers) and rendered
+# by the client next to the answer.
+
+
+class ChartPoint(BaseModel):
+    date: date
+    close: float
+
+
+class PriceChart(BaseModel):
+    """A ticker's closing prices over a period (from get_price_history)."""
+
+    id: str
+    kind: Literal["price_history"] = "price_history"
+    ticker: str
+    period: str
+    currency: str = "USD"
+    points: list[ChartPoint] = Field(min_length=2)
+    first_close: float
+    last_close: float
+    change: float
+    change_percent: float
+    high: float
+    low: float
+    as_of: str | None = None
+
+
+class AllocationSlice(BaseModel):
+    ticker: str
+    name: str | None = None
+    market_value: float
+    weight_percent: float
+
+
+class AllocationChart(BaseModel):
+    """The user's holdings by market value (from get_portfolio)."""
+
+    id: str
+    kind: Literal["portfolio_allocation"] = "portfolio_allocation"
+    currency: str = "USD"
+    slices: list[AllocationSlice] = Field(min_length=1)
+    total_market_value: float
+    # True when some positions had no price and are left out.
+    partial: bool = False
+    as_of: str | None = None
+
+
+ChatChart = Annotated[PriceChart | AllocationChart, Field(discriminator="kind")]

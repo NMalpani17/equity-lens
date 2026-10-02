@@ -8,6 +8,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.config import Settings, get_settings
 from app.errors import AppError
+from app.services.observability.tracing import get_tracer
 
 from .agent import ChatService
 from .context import turn_registry
@@ -35,4 +36,10 @@ def get_chat_service() -> ChatService:
         raise AppError(
             503, "chat_not_configured", "chat is not configured", {"missing": missing}
         )
-    return ChatService(settings, lambda: build_chat_model(settings), mcp, turn_registry)
+    return ChatService(
+        settings,
+        lambda: build_chat_model(settings),
+        mcp,
+        turn_registry,
+        tracer=get_tracer(),
+    )

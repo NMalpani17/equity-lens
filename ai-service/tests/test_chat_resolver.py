@@ -178,3 +178,28 @@ def test_record_without_a_name_uses_the_listing_name_not_the_ticker() -> None:
     result = resolver.resolve("NKE")
 
     assert result.ticker == "NKE" and result.company_name == "NIKE INC -CL B"
+
+
+def test_index_status_is_unknown_when_the_index_cannot_be_loaded() -> None:
+    def broken_index():
+        raise ConnectionError("server closed the connection unexpectedly")
+
+    resolver = CompanyResolver(
+        broken_index,
+        lambda _q: [{"symbol": "AMD", "description": "ADVANCED MICRO DEVICES"}],
+    )
+
+    result = resolver.resolve("AMD")
+
+    assert result.status == "resolved" and result.ticker == "AMD"
+    assert result.indexed is None  # not False: AMD may well be indexed
+    data = result.as_dict()
+    assert data["transcripts_indexed"] is None
+    assert "couldn't be checked" in data["message"]
+
+
+def test_a_loaded_index_still_reports_true_or_false() -> None:
+    assert make_resolver().resolve("AAPL").indexed is True
+    hits = [{"symbol": "SBUX", "description": "STARBUCKS CORP"}]
+    unindexed = make_resolver(hits).resolve("SBUX")
+    assert unindexed.indexed is False and "message" not in unindexed.as_dict()

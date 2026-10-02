@@ -22,6 +22,10 @@ from app.config import get_settings
 from app.models.price_history import HistoryPeriod
 from app.services.market_data.history import get_price_history_service
 from app.services.market_data.service import get_market_data_service
+from app.services.observability.masking import (
+    add_turn_sensitive_values,
+    sensitive_numbers,
+)
 from app.services.rag.container import get_rag_components
 from app.services.rag.repository import TickerRecord
 
@@ -148,13 +152,14 @@ def _result(output: ToolOutput) -> ToolResult:
 def search_transcripts(
     ctx: Context,
     query: Annotated[
-        str,
+        str | None,
         Field(
-            description="What to look for, in natural language or exact terms.",
-            min_length=1,
+            description="What to look for, in natural language or exact terms "
+            "(e.g. 'data center demand'). If omitted, the user's question is "
+            "used, so pass a focused query whenever you can.",
             max_length=500,
         ),
-    ],
+    ] = None,
     ticker: Annotated[
         str | None, Field(description="Restrict to one ticker.", max_length=10)
     ] = None,
@@ -301,15 +306,25 @@ def calculate_position(
     """Exact math for a hypothetical trade: new share count, new average cost,
     cost basis, realized gain on sells, and unrealized gain at a market price.
     Always use this instead of doing arithmetic yourself."""
-    return _result(
-        tools.calculate_position_tool(
-            _turn(ctx),
-            action=action,
-            shares=shares,
-            price=price,
-            ticker=ticker,
-            current_shares=current_shares,
-            current_avg_cost=current_avg_cost,
-            market_price=market_price,
+    output = tools.calculate_position_tool(
+        _turn(ctx),
+        action=action,
+        shares=shares,
+        price=price,
+        ticker=ticker,
+        current_shares=current_shares,
+        current_avg_cost=current_avg_cost,
+        market_price=market_price,
+    )
+    # The model will repeat these figures; mask them in this turn's traces.
+    add_turn_sensitive_values(
+        sensitive_numbers(
+            {
+                **output.data,
+                "shares": shares,
+                "current_shares": current_shares,
+                "current_avg_cost": current_avg_cost,
+            }
         )
     )
+    return _result(output)

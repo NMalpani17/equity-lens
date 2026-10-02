@@ -121,6 +121,25 @@ class Settings(BaseSettings):
     # How long search_transcripts waits for on-demand indexing within a turn.
     chat_index_wait_seconds: float = 45.0
 
+    # --- Tracing (Langfuse, optional) ---
+    # Tracing is on only when both keys are set. Payloads are masked (portfolio
+    # values, contact details, secrets) and user ids hashed before export.
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+    # Fraction of turns traced (1.0 = all).
+    langfuse_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Export timeout (whole seconds); export runs in a background thread.
+    langfuse_timeout_seconds: int = Field(default=2, ge=1)
+    langfuse_flush_interval_seconds: float = 5.0
+    # HMAC key for hashing user ids in traces (plain SHA-256 if empty).
+    trace_user_salt: str = ""
+
+    @property
+    def tracing_enabled(self) -> bool:
+        """True when Langfuse credentials are configured."""
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
     @property
     def cors_origin_list(self) -> list[str]:
         """CORS origins as a list."""

@@ -15,7 +15,7 @@ import contextlib
 import logging
 import time
 import warnings
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Literal
@@ -33,13 +33,20 @@ from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from app.config import Settings
 from app.localtime import DEFAULT_TIME_ZONE, zone
 from app.models.chat import (
+    ChatChart,
     ChatHistoryMessage,
     ChatTurnRequest,
     Citation,
     ToolCallSummary,
     TurnStatus,
 )
+from app.services.observability.masking import (
+    portfolio_values,
+    set_turn_sensitive_values,
+)
+from app.services.observability.tracing import NoopTracer, Tracer, TurnTrace
 
+from .charts import MAX_CHARTS_PER_TURN, build_chart, chart_key
 from .citations import validate_citations
 from .context import TURN_META_KEY, TurnContext, TurnRegistry
 from .errors import classify_model_error
@@ -55,7 +62,9 @@ with warnings.catch_warnings():
 
 logger = logging.getLogger(__name__)
 
-EventType = Literal["token", "tool_start", "tool_progress", "tool_end", "done", "error"]
+EventType = Literal[
+    "token", "tool_start", "tool_progress", "tool_end", "chart", "done", "error"
+]
 
 EMPTY_REPLY = (
     "I couldn't produce an answer to that. Please try rephrasing or narrowing "
@@ -83,6 +92,8 @@ _BLOCK_REASONS = {
 }
 _MAX_TOKEN_REASONS = {"MAX_TOKENS", "length", "max_tokens"}
 _HISTORY_MESSAGE_CHARS = 4000
+# Only answers that went through keep the turn's charts.
+_CHART_STATUSES = {"complete", "truncated"}
 
 
 @dataclass(frozen=True)
@@ -95,10 +106,15 @@ class ChatEvent:
 class _TurnState:
     tool_calls: dict[str, ToolCallSummary] = field(default_factory=dict)
     citations: list[Citation] = field(default_factory=list)
+    # Chart key -> chart; a repeated chart replaces the earlier one in place.
+    charts: dict[str, ChatChart] = field(default_factory=dict)
     final: AIMessage | None = None
     ended_on_tool_calls: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
+    # Final status for tracing ("error" if the turn raised).
+    status: str | None = None
+    trace_id: str | None = None
 
 
 async def _decline_elicitation(*_: Any) -> Any:
@@ -142,6 +158,54 @@ async def merge_progress(
         if aclose is not None:
             with contextlib.suppress(Exception):
                 await aclose()
+
+
+_STREAM_BUFFER = 64
+
+
+async def iterate_in_scope(
+    stream: AsyncIterator[Any], scope: Callable[[], contextlib.AbstractContextManager]
+) -> AsyncIterator[Any]:
+    """Drive ``stream`` from one producer task that holds ``scope``.
+
+    Callbacks and graph nodes copy the context of the task running the graph,
+    so entering the trace scope there gives every span of the run the trace
+    attributes. Entering and leaving it in that one task keeps context tokens
+    out of this generator, which yields across tasks. Closing this generator
+    cancels the producer, which closes the stream (cancelling the model call).
+    """
+    queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue(maxsize=_STREAM_BUFFER)
+
+    async def produce() -> None:
+        try:
+            with scope():
+                async for item in stream:
+                    await queue.put(("item", item))
+            await queue.put(("end", None))
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:  # handed to the consumer to re-raise
+            await queue.put(("error", exc))
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if aclose is not None:
+                with contextlib.suppress(Exception):
+                    await aclose()
+
+    producer = asyncio.create_task(produce())
+    try:
+        while True:
+            kind, value = await queue.get()
+            if kind == "end":
+                return
+            if kind == "error":
+                raise value
+            yield value
+    finally:
+        if not producer.done():
+            producer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await producer
 
 
 class TurnClient(Client):
@@ -203,22 +267,37 @@ class ChatService:
         mcp_server: FastMCP,
         registry: TurnRegistry,
         today: Callable[[ZoneInfo], date] = lambda tz: datetime.now(tz).date(),
+        tracer: Tracer | None = None,
     ) -> None:
         self._settings = settings
         self._model_factory = model_factory
         self._mcp = mcp_server
         self._registry = registry
         self._today = today
+        self._tracer: Tracer = tracer or NoopTracer()
 
-    async def stream_turn(self, request: ChatTurnRequest) -> AsyncIterator[ChatEvent]:
+    async def stream_turn(
+        self, request: ChatTurnRequest, *, trace_tags: Sequence[str] = ()
+    ) -> AsyncIterator[ChatEvent]:
+        """Run one turn. ``trace_tags`` are added to the trace (e.g. evals)."""
         started = time.perf_counter()
+        tags = ["chat", *(["demo"] if request.is_anonymous else []), *trace_tags]
         guard = check_message(request.message)
         if guard.verdict is not Verdict.ALLOW:
             logger.info("chat guard: %s", guard.verdict.value)
-            yield ChatEvent("token", {"text": guard.reply})
-            yield ChatEvent(
-                "done", self._done(guard.reply or "", "refused", _TurnState())
+            state = _TurnState(status="refused")
+            state.trace_id = self._tracer.record_event(
+                user_id=request.user_id,
+                session_id=request.conversation_id,
+                name="chat-turn",
+                input=request.message,
+                output=guard.reply,
+                tags=[*tags, "guardrail"],
+                metadata={"guard": guard.verdict.value},
             )
+            self._record_status(state)
+            yield ChatEvent("token", {"text": guard.reply})
+            yield ChatEvent("done", self._done(guard.reply or "", "refused", state))
             return
 
         turn = TurnContext(
@@ -227,15 +306,31 @@ class ChatService:
             today=request.today or self._today(zone(request.time_zone)),
             time_zone=request.time_zone or DEFAULT_TIME_ZONE,
             portfolio=request.portfolio,
+            question=request.message,
         )
         self._registry.register(turn)
         state = _TurnState()
+        if self._tracer.enabled:
+            set_turn_sensitive_values(portfolio_values(request.portfolio))
+        trace = self._tracer.start_turn(
+            user_id=request.user_id,
+            session_id=request.conversation_id,
+            tags=tags,
+            metadata={
+                "model": self._settings.chat_model,
+                "has_portfolio": str(
+                    bool(request.portfolio and request.portfolio.positions)
+                ),
+                "history_messages": str(len(request.history)),
+            },
+        )
         try:
             async for event in self._run_agent(
-                request, turn, state, guard.advice_request
+                request, turn, state, guard.advice_request, trace
             ):
                 yield event
         except Exception as exc:  # model/provider failures end the turn cleanly
+            state.status = "error"
             error = classify_model_error(exc)
             log = logger.warning if error.expected else logger.exception
             log("chat turn failed (%s): %s", error.code, exc)
@@ -249,6 +344,10 @@ class ChatService:
             )
         finally:
             self._registry.discard(turn.turn_id)
+            state.trace_id = state.trace_id or trace.trace_id
+            self._record_status(state)
+            if self._tracer.enabled:
+                set_turn_sensitive_values(None)
             logger.info(
                 "chat turn",
                 extra={
@@ -258,6 +357,8 @@ class ChatService:
                         "input_tokens": state.input_tokens,
                         "output_tokens": state.output_tokens,
                         "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                        "status": state.status,
+                        "trace_id": state.trace_id,
                     }
                 },
             )
@@ -268,6 +369,7 @@ class ChatService:
         turn: TurnContext,
         state: _TurnState,
         advice_request: bool,
+        trace: TurnTrace,
     ) -> AsyncIterator[ChatEvent]:
         settings = self._settings
         messages = trim_history(
@@ -301,6 +403,7 @@ class ChatService:
                 {"messages": messages},
                 stream_mode=["messages", "updates"],
                 version="v2",
+                config=trace.config,  # tracing callbacks + trace attributes
             )
             # Tools report progress (e.g. while waiting for indexing) through
             # the turn; merge it with the model/tool stream as it happens.
@@ -310,7 +413,9 @@ class ChatService:
                 labels.put_nowait, label
             )
             try:
-                async for kind, item in merge_progress(stream, labels):
+                # The producer task holds the trace scope for the whole run.
+                chunks = iterate_in_scope(stream, trace.scope)
+                async for kind, item in merge_progress(chunks, labels):
                     if kind == "progress":
                         event = self._on_progress(item, state)
                         if event:
@@ -322,6 +427,8 @@ class ChatService:
                 turn.progress = None
 
         content, status = self._finalize(turn, state, advice_request)
+        state.status = status
+        state.trace_id = trace.trace_id
         yield ChatEvent("done", self._done(content, status, state))
 
     def _handle_chunk(
@@ -401,7 +508,7 @@ class ChatService:
         summary.summary = tool_summary(
             summary.name, data, failed=message.status == "error"
         )
-        return [
+        events = [
             ChatEvent(
                 "tool_end",
                 {
@@ -412,6 +519,32 @@ class ChatService:
                 },
             )
         ]
+        chart = self._add_chart(summary, data, state) if summary.ok else None
+        if chart is not None:
+            events.append(ChatEvent("chart", chart.model_dump(mode="json")))
+        return events
+
+    def _add_chart(
+        self, summary: ToolCallSummary, data: Any, state: _TurnState
+    ) -> ChatChart | None:
+        """Chart the tool result if it has a chart (data from the tool only)."""
+        chart = build_chart(summary.name, data, f"chart-{summary.id}")
+        if chart is None:
+            return None
+        key = chart_key(chart)
+        if key not in state.charts and len(state.charts) >= MAX_CHARTS_PER_TURN:
+            return None
+        state.charts[key] = chart
+        return chart
+
+    def _record_status(self, state: _TurnState) -> None:
+        """Tag the trace with how the turn ended (complete, blocked, error…)."""
+        self._tracer.score(
+            trace_id=state.trace_id,
+            name="turn_status",
+            value=state.status or "interrupted",
+            data_type="CATEGORICAL",
+        )
 
     def _finalize(
         self, turn: TurnContext, state: _TurnState, advice_request: bool
@@ -446,10 +579,15 @@ class ChatService:
             "content": content,
             "status": status,
             "citations": [c.model_dump() for c in state.citations],
+            "charts": [c.model_dump(mode="json") for c in state.charts.values()]
+            if status in _CHART_STATUSES
+            else [],
             "tool_calls": [t.model_dump() for t in state.tool_calls.values()],
             "usage": {
                 "input_tokens": state.input_tokens,
                 "output_tokens": state.output_tokens,
             },
             "model": self._settings.chat_model,
+            # Internal: lets evals attach scores; the gateway ignores it.
+            "trace_id": state.trace_id,
         }

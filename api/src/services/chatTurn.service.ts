@@ -4,7 +4,7 @@
  * partial text with an `interrupted` status.
  */
 import type { TurnOutcome } from "./chat.service.js";
-import type { AiChatEvent, ToolCallDto } from "./chatStream.service.js";
+import type { AiChatEvent, ChartDto, ToolCallDto } from "./chatStream.service.js";
 import { getPortfolioSummary } from "./portfolio.service.js";
 import { logger } from "../logger.js";
 import type { PortfolioSummary } from "../types.js";
@@ -52,11 +52,14 @@ export async function relayEvents(
   // a "let me look that up" preamble isn't kept as the answer.
   let text = "";
   const toolCalls = new Map<string, ToolCallDto>();
+  // Charts streamed so far, kept with a stopped reply (same id replaces).
+  const charts = new Map<string, ChartDto>();
   const interrupted = (): RelayResult => ({
     kind: "interrupted",
     outcome: {
       content: text.trim(),
       status: "interrupted",
+      charts: [...charts.values()],
       toolCalls: [...toolCalls.values()],
     },
   });
@@ -98,6 +101,10 @@ export async function relayEvents(
           });
           break;
         }
+        case "chart":
+          charts.set(event.chart.id, event.chart);
+          sink.send("chart", { chart: event.chart });
+          break;
         case "done":
           return {
             kind: "done",
@@ -105,6 +112,7 @@ export async function relayEvents(
               content: event.content,
               status: event.status,
               citations: event.citations,
+              charts: event.charts,
               toolCalls: event.toolCalls,
               inputTokens: event.inputTokens,
               outputTokens: event.outputTokens,

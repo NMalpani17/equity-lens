@@ -12,6 +12,9 @@ Behavior on top of the Phase 4 search service:
 - With ``quarters`` (trends "over the last year", "quarter by quarter"), each
   of the company's latest N quarters is searched separately, and quarters
   with nothing relevant are reported explicitly.
+- The query is optional: models sometimes ask for "everything about a call"
+  without one, and a rejected call costs a whole agent step. A missing query
+  becomes the user's question (or a broad default).
 """
 
 import json
@@ -56,6 +59,9 @@ _LATEST_TOP_UP = 2
 # Per-quarter search ("quarters"): passages per quarter by number of quarters,
 # keeping the total near a normal search (at most 8 passages).
 PER_QUARTER_PASSAGES = {1: 4, 2: 3, 3: 2, 4: 2}
+# Used when the model omits the query and the user's question isn't known.
+DEFAULT_QUERY = "financial results, outlook and key management commentary"
+MAX_QUERY_CHARS = 500
 # Reranker scores (0-1) below this mean a passage doesn't address the query,
 # so its quarter is reported as having nothing relevant.
 MIN_QUARTER_RELEVANCE = 0.02
@@ -225,17 +231,27 @@ def _await_index(
     )
 
 
+def effective_query(query: str | None, turn: TurnContext | None) -> str:
+    """The model's query, else the user's question, else a broad default."""
+    for candidate in (query, turn.question if turn else None):
+        text = " ".join((candidate or "").split())
+        if text:
+            return text[:MAX_QUERY_CHARS]
+    return DEFAULT_QUERY
+
+
 def search_transcripts(
     deps: SearchDeps,
     turn: TurnContext | None,
     *,
-    query: str,
+    query: str | None = None,
     ticker: str | None = None,
     fiscal_year: int | None = None,
     fiscal_quarter: int | None = None,
     top_k: int | None = None,
     quarters: int | None = None,
 ) -> SearchOutput:
+    query = effective_query(query, turn)
     registry = turn.sources if turn else CitationRegistry()
     k = max(1, min(top_k or deps.search_top_k, 8))
     ticker, class_note = transcript_ticker(ticker, deps.ticker_record)

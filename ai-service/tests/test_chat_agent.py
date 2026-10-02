@@ -451,3 +451,30 @@ def test_today_is_computed_in_the_users_time_zone() -> None:
         "Today's date is 2026-10-01 in the user's time zone (America/Los_Angeles)"
         in system
     )
+
+
+def test_a_search_without_a_query_succeeds_without_a_retry(tool_deps) -> None:
+    # Seen in real traces: the model asked for a quarter overview with no query,
+    # the call was rejected, and it spent another step retrying.
+    question = "Quarter by quarter, how has Nvidia talked about demand?"
+    model = ScriptedChatModel(
+        script=[
+            ai(
+                tool_calls=[
+                    {
+                        "name": "search_transcripts",
+                        "args": {"ticker": "NVDA"},
+                        "id": "s1",
+                    }
+                ]
+            ),
+            ai("Demand grew strongly [1]."),
+        ]
+    )
+
+    events = collect(make_service(model), request(question))
+
+    end = next(e.data for e in events if e.type == "tool_end")
+    assert end["ok"] is True and model.calls == 2
+    assert tool_deps.search.call_args.args[0].query == question
+    assert done(events)["status"] == "complete"

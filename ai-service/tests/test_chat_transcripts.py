@@ -7,7 +7,10 @@ import pytest
 
 from app.models.rag import RagFilters, RagIndexingResponse, RagSearchResponse
 from app.services.chat.transcripts import (
+    DEFAULT_QUERY,
+    MAX_QUERY_CHARS,
     SearchDeps,
+    effective_query,
     prioritize_recent,
     search_transcripts,
     transcript_ticker,
@@ -414,3 +417,31 @@ def test_quarters_without_a_ticker_runs_a_normal_search() -> None:
 
     search.search.assert_called_once()
     search.retrieve_by_quarter.assert_not_called()
+
+
+# --- missing query ------------------------------------------------------------
+
+
+def test_a_missing_query_falls_back_to_the_question_then_a_default() -> None:
+    asked = turn()
+    asked.question = "  How has Tesla talked about\n robotaxi?  "
+
+    assert effective_query("FSD adoption", asked) == "FSD adoption"
+    assert effective_query(None, asked) == "How has Tesla talked about robotaxi?"
+    assert effective_query("   ", asked) == "How has Tesla talked about robotaxi?"
+    assert effective_query(None, turn()) == DEFAULT_QUERY
+    assert effective_query(None, None) == DEFAULT_QUERY
+    assert len(effective_query("x" * 2000, None)) == MAX_QUERY_CHARS
+
+
+def test_quarters_without_a_query_searches_for_the_users_question() -> None:
+    search = quarter_search({(2026, 4): [result(1, 2026, 4, 0.9, "MSFT")]})
+    deps, _ = make_deps(search, records={"MSFT": indexed("MSFT", MSFT_QUARTERS)})
+    asked = turn()
+    asked.question = "How did Azure growth trend over the past year?"
+
+    out = search_transcripts(deps, asked, ticker="MSFT", quarters=4)
+
+    query = search.retrieve_by_quarter.call_args.args[0]
+    assert query == "How did Azure growth trend over the past year?"
+    assert out.data["query"] == query

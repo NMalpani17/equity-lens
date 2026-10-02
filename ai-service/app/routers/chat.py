@@ -39,8 +39,9 @@ async def stream_chat(body: ChatTurnRequest, service: ChatDep) -> StreamingRespo
     """Run one chat turn and stream it as server-sent events.
 
     Events: ``token`` {text}, ``tool_start`` {id, name, label, args},
-    ``tool_end`` {id, name, ok, summary}, ``done`` {content, status, citations,
-    tool_calls, usage, model}, ``error`` {code, message, retryable}. If the
+    ``tool_end`` {id, name, ok, summary}, ``chart`` (a price or allocation
+    chart built from a tool result), ``done`` {content, status, citations,
+    charts, tool_calls, usage, model}, ``error`` {code, message, retryable}. If the
     client disconnects, the generator is cancelled and so is the model call.
     """
     limit = get_settings().chat_max_message_chars

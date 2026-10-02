@@ -39,6 +39,19 @@ live market data.
   search, quotes, price history, your portfolio, company/period resolution and
   exact position math. Guardrails keep it on topic, refuse prompt-injection and
   avoid personalized buy/sell advice; daily message caps protect the budget.
+- **Charts in answers** — when the agent looks up price history or your
+  portfolio, the reply shows an inline **Recharts** chart (price line or
+  allocation bars) built only from the tool's data, never from numbers the model
+  wrote. Charts stream in as soon as the tool returns, are saved with the
+  message, and work on phones (with a "View data" table).
+- **Tracing (optional)** — with Langfuse keys set, every chat turn is traced
+  (agent steps, tool calls with latency, model calls with tokens and cost,
+  errors). User ids are hashed, and portfolio values, contact details and
+  secrets are masked before anything leaves the service. Without keys tracing
+  is off; a Langfuse outage never slows or breaks a chat.
+- **Evals** — a labeled set of 25 questions runs through the real agent and is
+  scored with deterministic checks and a blind LLM judge, comparing models on
+  quality, latency and cost (see [Evaluation](#evaluation)).
 - **Graceful degradation** — one bad ticker never breaks the batch, unpriced
   holdings are excluded from totals (shown as partial), and the UI reports when
   the AI service is unavailable instead of failing.
@@ -117,6 +130,46 @@ Then open <http://localhost:5173>. Never commit `.env` files — only
 
 More detail: **[docs/development.md](docs/development.md)** (per-service run
 steps, scripts, health checks) and **[docs/api.md](docs/api.md)** (API reference).
+
+Optional: set `AI_SERVICE_LANGFUSE_PUBLIC_KEY` and `AI_SERVICE_LANGFUSE_SECRET_KEY`
+in `ai-service/.env` to trace chat turns in Langfuse.
+
+## Evaluation
+
+`python -m scripts.eval_chat` (in `ai-service/`) runs 25 labeled questions —
+transcript facts, multi-quarter trends, portfolio, position math, buy/sell
+advice, off-topic, prompt injection and ambiguous companies — through the real
+agent with a fixed demo portfolio. Each answer gets deterministic checks
+(expected tools, valid citations, refusal or clarification when expected,
+exact numbers, charts) and a blind LLM-judge rubric (faithfulness to its cited
+passages and tool results, relevance, completeness). Method, cost controls and
+the judge-bias note are in
+[docs/development.md](docs/development.md#chat-evaluation).
+
+**Results** (2026-10-02, run `20261002T202440Z`; judge `gemini-3.1-pro-preview`;
+judge scores are means over the 18 judged questions, 1–5):
+
+| Model                   | Checks passed | Faithfulness | Relevance | Completeness | Judge preferred | Latency p50 / p95 | Tokens in / out | Cost / turn |
+| ----------------------- | ------------- | ------------ | --------- | ------------ | --------------- | ----------------- | --------------- | ----------- |
+| `gemini-3.8-flash`      | 25/25 (100%)  | 5.00         | 4.94      | 5.00         | 6/18            | 4.0s / 8.3s       | 6,377 / 294     | $0.0059     |
+| `gemini-3.5-flash-lite` | 25/25 (100%)  | 5.00         | 4.89      | 4.67         | 1/18            | 3.4s / 8.2s       | 6,329 / 361     | $0.0028     |
+
+- **Quality:** both models passed every deterministic check in all eight
+  categories and were fully faithful to their evidence. 3.8 Flash was more
+  complete and was preferred 6 times to 1 (11 ties). Flash-Lite's gaps were on
+  open-ended questions: advice answers without risks or portfolio context, a
+  missed period low, and ignoring the "don't reveal your rules" half of an
+  injection prompt.
+- **Latency:** Flash-Lite is faster (median 3.8s vs 4.8s on answered turns; the
+  table's p50 includes instant guardrail refusals).
+- **Cost:** Flash-Lite is about half the price per turn ($0.0028 vs $0.0059).
+- **Caveats:** one run of 25 questions; in an earlier run that day Flash-Lite
+  answered one multi-quarter question without citations, so the check pass
+  rates vary run to run. Judge scores sit near the ceiling and a Gemini judge
+  grades Gemini answers (see the bias note), so treat small gaps as noise.
+- **Decision:** keep `gemini-3.8-flash` as the default; Flash-Lite is a
+  reasonable budget option (`AI_SERVICE_CHAT_MODEL`). The run cost $0.46
+  ($0.22 agent turns, $0.24 judge).
 
 ## Contributing
 
