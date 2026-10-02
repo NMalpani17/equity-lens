@@ -22,16 +22,36 @@ describe("DemoBanner", () => {
         /You're exploring a demo\. Sign up to save your own portfolio\./,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign up" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Sign up" })).toHaveLength(2);
   });
 
-  it("signs out and flags sign-up intent when Sign up is clicked", async () => {
+  it("collapses to a single slim line on small screens", () => {
     render(<DemoBanner />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
-
-    // Intent is recorded synchronously; sign-out follows.
-    expect(hasSignupIntent()).toBe(true);
-    await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
+    const banner = screen.getByRole("status");
+    // Phones: "Demo mode · Sign up" on one line; desktop keeps the full banner.
+    expect(banner).toHaveTextContent(/^Demo mode ·\s*Sign up/);
+    expect(banner.className).toContain("whitespace-nowrap");
+    expect(banner.className).toContain("md:whitespace-normal");
+    expect(screen.getByText("Demo mode ·").className).toContain("md:hidden");
+    const [compact, full] = screen.getAllByRole("button", { name: "Sign up" });
+    expect(compact!.className).toContain("md:hidden");
+    expect(full!.className).toContain("hidden md:inline-flex");
+    expect(screen.getByText(/You're exploring a demo/).className).toContain(
+      "hidden md:inline",
+    );
   });
+
+  it.each([0, 1])(
+    "signs out and flags sign-up intent when Sign up is clicked (button %i)",
+    async (index) => {
+      render(<DemoBanner />);
+
+      fireEvent.click(screen.getAllByRole("button", { name: "Sign up" })[index]!);
+
+      // Intent is recorded synchronously; sign-out follows.
+      expect(hasSignupIntent()).toBe(true);
+      await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
+    },
+  );
 });

@@ -7,8 +7,8 @@
  */
 import { z } from "zod";
 
-import { config } from "../config.js";
 import { logger } from "../logger.js";
+import { aiServiceFetch, aiServiceUrl } from "./aiServiceClient.js";
 
 export const quoteSchema = z.object({
   ticker: z.string(),
@@ -79,11 +79,11 @@ export async function getQuotes(tickers: string[]): Promise<QuotesResult> {
     return { quotes: {}, errors: {} };
   }
 
-  const url = new URL("/quotes", config.aiServiceUrl);
+  const url = aiServiceUrl("/quotes");
   url.searchParams.set("symbols", tickers.join(","));
 
   try {
-    const response = await fetch(url, {
+    const response = await aiServiceFetch(url, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
@@ -140,10 +140,10 @@ export type TickerCheck = "ok" | "not_found" | "unavailable";
  * decide whether a transient outage should block the user).
  */
 export async function verifyTicker(ticker: string): Promise<TickerCheck> {
-  const url = new URL(`/quotes/${encodeURIComponent(ticker)}`, config.aiServiceUrl);
+  const url = aiServiceUrl(`/quotes/${encodeURIComponent(ticker)}`);
 
   try {
-    const response = await fetch(url, {
+    const response = await aiServiceFetch(url, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 

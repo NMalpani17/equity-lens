@@ -60,7 +60,9 @@ class FinnhubProvider(MarketDataProvider):
         try:
             response = httpx.get(
                 url,
-                params={**params, "token": self._api_key},
+                params=params,
+                # Header auth keeps the key out of URLs (and request logs).
+                headers={"X-Finnhub-Token": self._api_key},
                 timeout=self._timeout,
             )
         except httpx.HTTPError as exc:

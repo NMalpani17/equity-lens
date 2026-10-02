@@ -8,9 +8,9 @@
  */
 import { z } from "zod";
 
-import { config } from "../config.js";
 import { HttpError, UpstreamError } from "../errors.js";
 import { logger } from "../logger.js";
+import { aiServiceFetch, aiServiceUrl } from "./aiServiceClient.js";
 import type { RagSearchInput } from "../schemas/rag.schema.js";
 
 // Embedding + vector query + rerank, plus a cold start, can take a few seconds.
@@ -211,10 +211,10 @@ async function requestAiService(
   path: string,
   init: RequestInit = {},
 ): Promise<{ status: number; body: unknown }> {
-  const url = new URL(path, config.aiServiceUrl);
+  const url = aiServiceUrl(path);
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await aiServiceFetch(url, {
       ...init,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });

@@ -5,8 +5,8 @@
  */
 import { z } from "zod";
 
-import { config } from "../config.js";
 import { logger } from "../logger.js";
+import { aiServiceFetch, aiServiceUrl } from "./aiServiceClient.js";
 import type { ServiceHealth } from "../types.js";
 
 const aiHealthSchema = z.object({
@@ -23,9 +23,9 @@ const REQUEST_TIMEOUT_MS = 3000;
  * `unreachable` status so the caller can report degraded health.
  */
 export async function getAiServiceHealth(): Promise<ServiceHealth> {
-  const url = `${config.aiServiceUrl}/health`;
+  const url = aiServiceUrl("/health");
   try {
-    const response = await fetch(url, {
+    const response = await aiServiceFetch(url, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 

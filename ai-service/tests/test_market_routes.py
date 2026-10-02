@@ -13,6 +13,7 @@ from app.services.market_data.base import (
     QuoteNotFoundError,
 )
 from app.services.market_data.service import get_market_data_service
+from tests.conftest import INTERNAL_HEADERS
 
 
 class StubService:
@@ -42,7 +43,7 @@ class StubService:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app.dependency_overrides[get_market_data_service] = lambda: StubService()
-    yield TestClient(app)
+    yield TestClient(app, headers=INTERNAL_HEADERS)
     app.dependency_overrides.clear()
 
 

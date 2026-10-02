@@ -11,6 +11,7 @@ export default defineConfig({
       DIRECT_URL: "postgresql://user:pass@localhost:5432/equitylens_test",
       SUPABASE_URL: "https://project-ref.supabase.co",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
+      AI_SERVICE_INTERNAL_TOKEN: "test-internal-token",
     },
   },
 });

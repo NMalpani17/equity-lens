@@ -28,10 +28,12 @@ class YFinanceProvider(MarketDataProvider):
     def get_quote(self, ticker: str) -> Quote:
         symbol = ticker.upper()
         try:
+            # Attribute access: yfinance 1.x keys the mapping in camelCase, so
+            # fast_info.get("last_price") returns None.
             fast_info = yf.Ticker(symbol).fast_info
-            price = fast_info.get("last_price")
-            previous_close = fast_info.get("previous_close")
-            currency = fast_info.get("currency") or "USD"
+            price = getattr(fast_info, "last_price", None)
+            previous_close = getattr(fast_info, "previous_close", None)
+            currency = getattr(fast_info, "currency", None) or "USD"
         except Exception as exc:  # yfinance raises assorted network/parse errors
             raise ProviderUnavailableError(f"yfinance request failed: {exc}") from exc
 

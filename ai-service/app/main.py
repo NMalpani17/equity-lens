@@ -4,15 +4,19 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastmcp.utilities.lifespan import combine_lifespans
+from starlette.middleware import Middleware
 
 from app.config import get_settings
 from app.errors import AppError
 from app.logging_config import configure_logging
-from app.routers import health, market, rag
+from app.routers import chat, health, market, rag
+from app.security import InternalTokenMiddleware, require_internal_token
+from app.services.chat.mcp_server import mcp
 from app.services.rag.container import shutdown_rag_components
 
 logger = logging.getLogger(__name__)
@@ -29,11 +33,19 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
 
+    # The MCP tool server, mounted for MCP clients behind the internal token.
+    # Its session manager needs the sub-app lifespan to run.
+    mcp_app = mcp.http_app(
+        path="/",
+        stateless_http=True,
+        middleware=[Middleware(InternalTokenMiddleware)],
+    )
+
     app = FastAPI(
         title="Equity Lens AI Service",
         version="0.1.0",
         description="LLM / LangChain / MCP layer for Equity Lens.",
-        lifespan=lifespan,
+        lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
     )
 
     app.add_middleware(
@@ -43,9 +55,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Only /health is public. Every other route serves the API gateway alone
+    # and requires the internal token (checked before the body is parsed).
     app.include_router(health.router)
-    app.include_router(market.router)
-    app.include_router(rag.router)
+    internal_only = [Depends(require_internal_token)]
+    for router in (market.router, rag.router, chat.router):
+        app.include_router(router, dependencies=internal_only)
+    app.mount("/mcp", mcp_app)
     _register_error_handlers(app)
 
     logger.info("ai-service started in %s environment", settings.environment)

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { LogOut, Settings } from "lucide-react";
 
 import {
@@ -18,7 +18,12 @@ import {
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/context/auth-context";
 
-/** App header: brand and an avatar user menu (account settings + logout). */
+const NAV_ITEMS = [
+  { to: "/", label: "Portfolio", end: true },
+  { to: "/chat", label: "AI analyst", end: false },
+];
+
+/** App header: brand, main navigation, and an avatar user menu. */
 export function Header() {
   const { user, isDemo, signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
@@ -46,6 +51,23 @@ export function Header() {
         >
           Equity Lens
         </Link>
+
+        <nav aria-label="Main" className="mr-auto flex items-center gap-1">
+          {NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                `rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  isActive ? "bg-accent font-medium" : "text-muted-foreground"
+                }`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
 
         <TooltipProvider>
           <Tooltip>

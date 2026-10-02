@@ -26,12 +26,16 @@ cp ai-service/.env.example ai-service/.env
 - `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY` (your Finnhub key). For
   transcript search also `DATABASE_URL`, `AI_SERVICE_EQUIBLES_API_KEY`,
   `AI_SERVICE_GEMINI_API_KEY` and `AI_SERVICE_PINECONE_API_KEY` (see below).
+  Always `AI_SERVICE_INTERNAL_TOKEN` (required by every route except
+  `/health`; see the chat setup below).
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
   (**Project Settings → Database → Connection string**). Keep `?pgbouncer=true`
   on the pooled URL. Also set `SUPABASE_URL` (**Project Settings → Data API →
   Project URL**), used to verify user JWTs, and `SUPABASE_SERVICE_ROLE_KEY`
   (**Project Settings → API Keys → service_role**) — server-side only, used to
   delete a user's auth account. Never expose the service-role key to the client.
+  Also `AI_SERVICE_INTERNAL_TOKEN` (the same value as in `ai-service/.env`);
+  without it quotes, transcript search and chat are unavailable.
 - `client/.env` → `VITE_SUPABASE_URL` (same Project URL) and
   `VITE_SUPABASE_PUBLISHABLE_KEY` (**Project Settings → API Keys → publishable /
   anon key**).
@@ -128,6 +132,117 @@ filters, candidate count, whether reranking applied, and per-stage latency.
 Repository integration tests (advisory-lock dedupe, daily cap) run only when
 `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a direct,
 non-pooled URL); they apply the migration into a throwaway schema and drop it.
+
+## AI analyst chat setup
+
+The chat is a LangGraph tool-calling agent in the ai-service. Express
+authenticates the user, enforces limits, stores conversations, and proxies the
+reply stream (SSE) to the browser.
+
+```
+Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token── ai-service
+                                                                       │
+                LangGraph agent ── MCP client (langchain.mcp) ── FastMCP server (read-only tools)
+```
+
+1. **Internal token.** Generate one secret and put it in both
+   `ai-service/.env` and `api/.env` as `AI_SERVICE_INTERNAL_TOKEN`:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   Every ai-service route except `/health` (quotes, transcript search, chat
+   and `/mcp/`) rejects requests without it with `401`, and fails closed
+   with `503` if the ai-service has no token configured. The gateway sends it
+   on every call (`api/src/services/aiServiceClient.ts`), so the ai-service
+   only trusts requests, and user ids, that come from the gateway.
+
+2. **Model.** Reuses `AI_SERVICE_GEMINI_API_KEY` (with billing enabled).
+   Defaults: `gemini-3.8-flash` with `low` thinking and a 2,048-token output cap
+   (thinking included). The provider is swappable: `AI_SERVICE_CHAT_MODEL` is a
+   LangChain `provider:model` string for `init_chat_model`. A typical turn uses
+   ~6–7K input and ~0.5K output tokens, about $0.006 at 3.8 Flash's 2026 prices.
+   When prepaid credits run out Gemini returns HTTP 402, shown to users as
+   "out of credits".
+
+3. **Database.** Conversations live in Postgres. Run the API migrations
+   (`npm --prefix api run prisma:migrate`), which add `chat_conversations`,
+   `chat_messages` and `chat_usage_events` (one row per turn — a sent message
+   or a retry — which the daily caps count).
+
+4. **Limits** (in `api/.env`): `CHAT_DAILY_LIMIT` (20), `CHAT_DAILY_LIMIT_ANON`
+   (5), `CHAT_GLOBAL_DAILY_LIMIT` (60), `CHAT_MAX_MESSAGE_CHARS` (2000). Per
+   turn (in `ai-service/.env`): `AI_SERVICE_CHAT_MAX_MODEL_CALLS` (6) and
+   `AI_SERVICE_CHAT_MAX_TOOL_CALLS` (8).
+
+**Tools** are defined once on the FastMCP server
+(`ai-service/app/services/chat/mcp_server.py`) and are all read-only:
+`search_transcripts`, `get_quote`, `get_price_history`, `get_portfolio`,
+`resolve_company` and `calculate_position`. The agent loads them through
+`langchain.mcp.MCPAdapter` with a per-turn client that tags each call with a
+turn id; tools resolve the user's portfolio and the turn's citation numbering
+from that id, never from model-supplied arguments. The same server is mounted at
+`/mcp/` for other MCP clients (bearer = internal token).
+
+**Transcript search** (`ai-service/app/services/chat/transcripts.py`):
+
+- Out-of-range numeric arguments are clamped (e.g. `top_k` to 1–8) instead of
+  failing the call; the limits are in the tool schema and descriptions.
+- With no period named, it fetches extra candidates, boosts newer calls, makes
+  sure the company's latest call is represented, and lists passages newest
+  first.
+- For trends across quarters ("over the last year", "quarter by quarter") the
+  agent passes `quarters` (1–4): each of the company's latest N indexed
+  quarters gets its own filtered retrieval, so no quarter is crowded out, and
+  the union is reranked in **one** request (one rerank call per company, not
+  per quarter). Passages are grouped by quarter; a quarter with no passages,
+  or none scoring at least `MIN_QUARTER_RELEVANCE` (0.02) after reranking, is
+  marked "NO RELEVANT PASSAGES" so the answer says so explicitly.
+- Share classes of one company (GOOG/GOOGL, BRK.A/BRK.B, …) map to the class
+  that is indexed, so transcript questions never ask which class and never index
+  a duplicate. The agent asks about the class only for prices.
+- If a company isn't indexed yet, the tool waits for on-demand indexing within
+  the turn (`AI_SERVICE_CHAT_INDEX_WAIT_SECONDS`, default 45) and streams a
+  `tool_progress` label such as "Indexing Starbucks transcripts…", then
+  answers; only after that does it say to try again shortly.
+
+**Stop, errors and Retry** (`client/src/hooks/useChat.ts`): a turn that ends
+without the server's final message (Stop, an error, a dropped connection) is
+marked stopped or failed at once and the thread is re-synced from the server,
+which supplies the saved message ids that Retry needs, final statuses and the
+conversation title (set from the first question even if that turn was stopped).
+A reply the server still reports as `streaming` is re-checked briefly, then
+shown as stopped, so the UI never waits on "Thinking…". Retry is offered only
+on the latest reply; a question the server never saved is simply sent again.
+Errors are shown as plain sentences (`client/src/lib/chatErrors.ts`), never
+status codes. The API watches for a client disconnect from the very start of a
+turn, so a Stop during setup is saved as `interrupted` immediately.
+
+**Answer clean-up** (`ai-service/app/services/chat/formatting.py`): the final
+answer gets a deterministic pass after citation validation. Double negatives
+are removed ("down -$13,457" becomes "down $13,457"), whole share counts lose their
+decimals ("42.0 shares" becomes "42 shares"; fractional shares are kept), and lists
+inside Markdown table cells are flattened to "a; b". Tools also report whole
+share counts as integers.
+
+**Logs never contain credentials.** Provider keys travel in headers (Finnhub
+uses `X-Finnhub-Token`), HTTP client loggers run at WARNING, and the ai-service
+JSON formatter redacts secret query parameters, bearer tokens and auth headers.
+The API's pino logger censors `authorization`, `cookie`, `x-internal-token` and
+`set-cookie` as `***`.
+
+**Guardrails.** Obvious off-topic requests and instruction-override attempts get
+a short canned reply without calling the model. The system prompt (today's date,
+no secrets) adds the scope rules, untrusted tool data, cite only retrieved
+passages, numbers only from tools, ask when a company is ambiguous, report tool
+status honestly, and no personalized buy/sell advice (answers to "should I
+buy…" get facts plus a not-financial-advice note). Answers are validated after
+generation: citations to passages that weren't retrieved are dropped, and empty,
+truncated and blocked responses get explicit messages.
+
+Chat tests need no network: a scripted fake chat model drives the real agent
+and MCP tools (`ai-service/tests/test_chat_agent.py`).
 
 ## First-time install
 

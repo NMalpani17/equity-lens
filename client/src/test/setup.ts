@@ -14,3 +14,10 @@ if (!Element.prototype.releasePointerCapture) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// vitest.config.ts pins TZ; fail loudly if a runner ever drops it, rather
+// than letting time-dependent tests pass or fail by machine.
+const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+if (zone !== "America/New_York") {
+  throw new Error(`Tests must run with TZ=America/New_York (got ${zone}).`);
+}

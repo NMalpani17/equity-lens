@@ -41,3 +41,36 @@ export class InvalidTickerError extends HttpError {
     super(422, "invalid_ticker", message);
   }
 }
+
+/** 409 — the conversation already has a turn in progress. */
+export class TurnInProgressError extends HttpError {
+  constructor(message = "a reply is still being generated in this conversation") {
+    super(409, "turn_in_progress", message);
+  }
+}
+
+/** 409 — only the latest stopped or failed reply can be retried. */
+export class RetryNotAllowedError extends HttpError {
+  constructor(message = "Only the latest stopped or failed reply can be retried.") {
+    super(409, "retry_not_allowed", message);
+  }
+}
+
+/** 429 — a chat message cap (per user or global) has been reached. */
+export class ChatLimitError extends HttpError {
+  constructor(
+    scope: "user" | "global",
+    limit: number,
+    resetsAt: string,
+    message: string,
+  ) {
+    super(429, "chat_limit_reached", message, { scope, limit, resetsAt });
+  }
+}
+
+/** 503 — a feature's upstream dependency is not configured or unavailable. */
+export class ServiceUnavailableError extends HttpError {
+  constructor(code: string, message: string) {
+    super(503, code, message);
+  }
+}
