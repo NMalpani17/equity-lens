@@ -207,6 +207,18 @@ from that id, never from model-supplied arguments. The same server is mounted at
   `tool_progress` label such as "Indexing Starbucks transcripts…", then
   answers; only after that does it say to try again shortly.
 
+**Stop, errors and Retry** (`client/src/hooks/useChat.ts`): a turn that ends
+without the server's final message (Stop, an error, a dropped connection) is
+marked stopped or failed at once and the thread is re-synced from the server,
+which supplies the saved message ids that Retry needs, final statuses and the
+conversation title (set from the first question even if that turn was stopped).
+A reply the server still reports as `streaming` is re-checked briefly, then
+shown as stopped, so the UI never waits on "Thinking…". Retry is offered only
+on the latest reply; a question the server never saved is simply sent again.
+Errors are shown as plain sentences (`client/src/lib/chatErrors.ts`), never
+status codes. The API watches for a client disconnect from the very start of a
+turn, so a Stop during setup is saved as `interrupted` immediately.
+
 **Answer clean-up** (`ai-service/app/services/chat/formatting.py`): the final
 answer gets a deterministic pass after citation validation. Double negatives
 are removed ("down -$13,457" becomes "down $13,457"), whole share counts lose their

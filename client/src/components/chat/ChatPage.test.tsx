@@ -316,6 +316,189 @@ describe("ChatPage", () => {
     expect(screen.getAllByText("What did NVDA say?")).toHaveLength(1);
   });
 
+  describe("Stop, errors and Retry never get stuck", () => {
+    const SAVED = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    const question = msg({ id: "u1", role: "user", content: "What did NVDA say?" });
+    const untilAborted = (signal?: AbortSignal) =>
+      new Promise<void>((_, reject) =>
+        signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        ),
+      );
+    // Re-query each time: the re-sync swaps the bubble for the saved message.
+    const enabledRetry = () =>
+      waitFor(() => {
+        const button = screen.getByRole("button", { name: "Retry" });
+        expect(button).not.toBeDisabled(); // re-sync done
+        return button;
+      });
+
+    it("Stop then Retry retries the saved reply id, not the browser placeholder", async () => {
+      api.streamMessage.mockImplementation(async (_id, _content, onEvent, signal) => {
+        onEvent({
+          type: "turn",
+          conversation: { ...CONV, title: "What did NVDA say?" },
+          userMessage: question,
+          assistantMessageId: SAVED,
+        });
+        onEvent({ type: "token", text: "Demand was" });
+        await untilAborted(signal);
+      });
+      api.listMessages.mockResolvedValue([
+        question,
+        msg({ id: SAVED, status: "interrupted", content: "Demand was" }),
+      ]);
+      api.streamRetry.mockImplementation(async (_id, messageId, onEvent) => {
+        onEvent({ type: "done", message: msg({ id: messageId, content: "Strong." }) });
+      });
+      renderPage();
+      await screen.findByText("Ask the AI analyst");
+
+      sendViaComposer("What did NVDA say?");
+      await screen.findByText("Demand was");
+      fireEvent.click(screen.getByRole("button", { name: "Stop generating" }));
+      fireEvent.click(await enabledRetry());
+
+      await waitFor(() => expect(api.streamRetry).toHaveBeenCalled());
+      expect(api.streamRetry.mock.calls[0]!.slice(0, 2)).toEqual(["c1", SAVED]);
+      expect(await screen.findByText("Strong.")).toBeInTheDocument();
+      expect(
+        screen.getAllByText("What did NVDA say?", { selector: "div" }),
+      ).toHaveLength(1);
+    });
+
+    it("Stop before the reply starts: no Thinking…, the title and saved id arrive", async () => {
+      api.streamMessage.mockImplementation(async (_id, _content, _onEvent, signal) => {
+        await untilAborted(signal); // stopped before the server's turn event
+      });
+      api.listConversations
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ ...CONV, title: "What did NVDA say?" }]);
+      api.listMessages.mockResolvedValue([
+        question,
+        msg({ id: SAVED, status: "interrupted" }),
+      ]);
+      api.streamRetry.mockResolvedValue(undefined);
+      renderPage();
+      await screen.findByText("Ask the AI analyst");
+
+      sendViaComposer("What did NVDA say?");
+      expect(await screen.findByText("Thinking…")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Stop generating" }));
+      const retry = await enabledRetry(); // re-synced with the server
+      expect(
+        screen.getByText("Stopped before an answer was written."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+      const sidebar = screen.getByRole("complementary", { name: "Conversations" });
+      expect(
+        await within(sidebar).findByRole("button", { name: "What did NVDA say?" }),
+      ).toBeInTheDocument();
+      fireEvent.click(retry);
+      await waitFor(() => expect(api.streamRetry).toHaveBeenCalled());
+      expect(api.streamRetry.mock.calls[0]![1]).toBe(SAVED);
+    });
+
+    it("a failed retry shows a friendly message and the failed reply with Retry", async () => {
+      await openEarlierChat([question, msg({ id: SAVED, status: "error" })]);
+      api.streamRetry.mockRejectedValue(
+        new ApiError(422, "invalid message id", "validation_error"),
+      );
+      fireEvent.click(await enabledRetry());
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Couldn't retry that message. Please try again.",
+      );
+      expect(screen.getByRole("alert")).not.toHaveTextContent(/422|Request failed/);
+      expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+      expect(
+        screen.getByText("This reply failed. Please try again."),
+      ).toBeInTheDocument();
+      expect(await enabledRetry()).toBeInTheDocument();
+    });
+
+    it("a dropped connection marks the reply failed instead of Thinking…", async () => {
+      api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
+        onEvent({
+          type: "turn",
+          conversation: CONV,
+          userMessage: question,
+          assistantMessageId: SAVED,
+        });
+        onEvent({ type: "token", text: "Demand was" });
+        // The stream ends without a done event.
+      });
+      api.listMessages.mockResolvedValue([
+        question,
+        msg({ id: SAVED, status: "error", content: "Demand was" }),
+      ]);
+      renderPage();
+      await screen.findByText("Ask the AI analyst");
+
+      sendViaComposer("What did NVDA say?");
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The connection dropped before the reply finished.",
+      );
+      expect(screen.queryByText("Thinking…")).not.toBeInTheDocument();
+      expect(await enabledRetry()).toBeInTheDocument();
+    });
+
+    it("waits out a 409 while the stopped turn is still saving", async () => {
+      await openEarlierChat([question, msg({ id: SAVED, status: "interrupted" })]);
+      api.streamRetry
+        .mockRejectedValueOnce(new ApiError(409, "busy", "turn_in_progress"))
+        .mockImplementation(async (_id, messageId, onEvent) => {
+          onEvent({
+            type: "done",
+            message: msg({ id: messageId, content: "Strong." }),
+          });
+        });
+
+      fireEvent.click(await enabledRetry());
+
+      expect(await screen.findByText("Strong.")).toBeInTheDocument();
+      expect(api.streamRetry).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("keeps a question the server never saved, and Retry sends it again", async () => {
+      api.streamMessage
+        .mockRejectedValueOnce(
+          new ApiError(0, "Could not reach the API. Is it running?"),
+        )
+        .mockImplementation(async (_id, content, onEvent) => {
+          onEvent({
+            type: "turn",
+            conversation: CONV,
+            userMessage: msg({ id: "u9", role: "user", content }),
+            assistantMessageId: SAVED,
+          });
+          onEvent({ type: "done", message: msg({ id: SAVED, content: "Strong." }) });
+        });
+      api.listMessages.mockResolvedValue([]); // nothing was saved
+      renderPage();
+      await screen.findByText("Ask the AI analyst");
+
+      sendViaComposer("What did NVDA say?");
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Couldn't reach Equity Lens",
+      );
+      expect(
+        await screen.findByText("This reply failed. Please try again."),
+      ).toBeInTheDocument();
+      fireEvent.click(await enabledRetry());
+
+      expect(await screen.findByText("Strong.")).toBeInTheDocument();
+      expect(api.streamMessage).toHaveBeenCalledTimes(2);
+      expect(api.streamMessage.mock.calls[1]![1]).toBe("What did NVDA say?");
+      expect(
+        screen.getAllByText("What did NVDA say?", { selector: "div" }),
+      ).toHaveLength(1);
+    });
+  });
+
   it("auto-scrolls only near the bottom and offers Jump to latest", async () => {
     const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
     let emit: (event: ChatStreamEvent) => void = () => {};

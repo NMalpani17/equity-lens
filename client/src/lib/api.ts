@@ -20,7 +20,8 @@ export class ApiError extends Error {
 
 /** Build an ApiError from a non-OK response, preferring the API's message. */
 export async function apiErrorFrom(response: Response): Promise<ApiError> {
-  let message = `Request failed (${response.status})`;
+  // Never show a bare status code; the status stays on ApiError.status.
+  let message = "Something went wrong. Please try again.";
   let code: string | undefined;
   let details: Record<string, unknown> = {};
   try {

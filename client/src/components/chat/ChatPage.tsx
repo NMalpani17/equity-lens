@@ -118,7 +118,7 @@ export function ChatPage() {
                     tools={chat.tools}
                     onCite={setCitation}
                     onRetry={isLatest ? () => void chat.retry(message.id) : undefined}
-                    retryDisabled={chat.streaming || outOfMessages}
+                    retryDisabled={chat.streaming || chat.syncing || outOfMessages}
                   />
                 );
               })
