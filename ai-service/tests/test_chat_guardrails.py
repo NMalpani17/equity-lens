@@ -112,3 +112,16 @@ def test_system_prompt_has_date_and_rules_but_no_secrets() -> None:
     assert "not financial advice" in prompt and "demo account" in prompt
     for secret_word in ("api_key", "token", "password", "AI_SERVICE_"):
         assert secret_word not in prompt.lower().replace("tokens", "")
+
+
+def test_system_prompt_sets_answer_style_recency_and_share_class_rules() -> None:
+    prompt = build_system_prompt(
+        date(2026, 10, 1), advice_request=False, is_anonymous=False
+    )
+
+    assert "one-line summary" in prompt
+    assert "compact Markdown table" in prompt
+    assert "one key insight" in prompt
+    assert "Don't dump tool fields" in prompt
+    assert "lead with the most recent call" in prompt
+    assert "Ask which class only when it changes" in prompt
