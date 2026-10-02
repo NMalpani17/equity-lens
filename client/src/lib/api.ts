@@ -1,27 +1,49 @@
 /** Typed client for the Equity Lens API gateway. */
 import { supabase } from "./supabase";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
 /** Error thrown for non-OK API responses, carrying the HTTP status. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Machine-readable error code from the API (e.g. "chat_limit_reached"). */
+    public readonly code?: string,
+    /** Extra fields from the error body (e.g. resetsAt for rate limits). */
+    public readonly details: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
+/** Build an ApiError from a non-OK response, preferring the API's message. */
+export async function apiErrorFrom(response: Response): Promise<ApiError> {
+  let message = `Request failed (${response.status})`;
+  let code: string | undefined;
+  let details: Record<string, unknown> = {};
+  try {
+    const body = (await response.json()) as Record<string, unknown>;
+    if (typeof body?.message === "string" && body.message.length > 0) {
+      message = body.message;
+    }
+    if (typeof body?.error === "string") code = body.error;
+    details = body ?? {};
+  } catch {
+    // Non-JSON or empty body: keep the generic message.
+  }
+  return new ApiError(response.status, message, code, details);
+}
+
 /** The Authorization header for the current session, or empty when signed out. */
-async function authHeaders(): Promise<Record<string, string>> {
+export async function authHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const auth = await authHeaders();
   let response: Response;
   try {
@@ -36,16 +58,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     // Prefer the API's human-readable error message (e.g. an invalid ticker)
     // so callers can surface it directly; fall back to a generic message.
-    let message = `Request failed (${response.status})`;
-    try {
-      const body = (await response.json()) as { message?: unknown };
-      if (typeof body?.message === "string" && body.message.length > 0) {
-        message = body.message;
-      }
-    } catch {
-      // Non-JSON or empty body: keep the generic message.
-    }
-    throw new ApiError(response.status, message);
+    throw await apiErrorFrom(response);
   }
 
   if (response.status === 204) {
