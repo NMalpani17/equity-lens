@@ -138,6 +138,11 @@ describe("limits", () => {
 
     expect(error).toBeInstanceOf(ChatLimitError);
     expect(error).toMatchObject({ status: 429, details: { scope: "user", limit: 20 } });
+    // The client shows the reset on the user's clock from resetsAt.
+    expect((error as { details: { resetsAt: string } }).details.resetsAt).toMatch(
+      /T00:00:00\.000Z$/,
+    );
+    expect((error as Error).message).not.toMatch(/UTC|midnight/);
   });
 
   it("blocks a demo user at 5 messages with a sign-up hint", async () => {

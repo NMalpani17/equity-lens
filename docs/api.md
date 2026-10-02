@@ -199,7 +199,9 @@ Errors before streaming starts are normal JSON errors:
 
 Daily caps (turns per UTC day — sent messages plus retries, configurable):
 **20** for signed-in users, **5** for demo (anonymous) users, and **60** across
-all users.
+all users. The window is the UTC day; limit messages don't name a time, and the
+client shows `resetsAt` (from `429` bodies and `GET /api/chat/usage`) in the
+user's local time zone, e.g. "It resets at 8:00 PM EDT".
 
 On success the response is `text/event-stream`:
 

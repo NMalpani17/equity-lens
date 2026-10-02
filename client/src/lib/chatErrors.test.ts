@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/lib/api";
 import { bannerForError } from "@/lib/chatErrors";
+import { describeReset } from "@/lib/format";
 
 describe("bannerForError", () => {
   it("words generic failures for what the user was doing, without status codes", () => {
@@ -34,7 +35,8 @@ describe("bannerForError", () => {
       ),
     ).toEqual({
       kind: "limit",
-      message: "You've reached today's limit of 5 messages.",
+      message:
+        "You've reached today's limit of 5 messages. Please try again after the daily reset.",
     });
     expect(bannerForError(new ApiError(0, "x"), "send").message).toMatch(
       /Couldn't reach Equity Lens/,
@@ -42,5 +44,25 @@ describe("bannerForError", () => {
     expect(
       bannerForError(new ApiError(503, "x", "chat_unavailable"), "retry").message,
     ).toMatch(/unavailable right now/);
+  });
+});
+
+describe("daily limit banner", () => {
+  it("shows the reset time on the user's clock, never in UTC", () => {
+    const resetsAt = "2026-10-02T00:00:00.000Z";
+    const limit = new ApiError(
+      429,
+      "You've reached today's limit of 20 messages.",
+      "chat_limit_reached",
+      { scope: "user", limit: 20, resetsAt },
+    );
+
+    const { kind, message } = bannerForError(limit, "send");
+
+    expect(kind).toBe("limit");
+    expect(message).toBe(
+      `You've reached today's limit of 20 messages. It resets ${describeReset(resetsAt)}.`,
+    );
+    expect(message).not.toMatch(/midnight UTC/);
   });
 });

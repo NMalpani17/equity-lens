@@ -13,6 +13,7 @@ import { useAuth } from "@/context/auth-context";
 import { useChat } from "@/hooks/useChat";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
 import type { Citation } from "@/lib/chatApi";
+import { describeReset } from "@/lib/format";
 
 /** The AI analyst chat: conversation list, streaming thread and composer. */
 export function ChatPage() {
@@ -139,7 +140,7 @@ export function ChatPage() {
             <p className="px-4 text-xs text-muted-foreground" data-testid="chat-usage">
               {chat.usage.remaining > 0
                 ? `${chat.usage.remaining} of ${chat.usage.limit} messages left today${chat.usage.isDemo ? " (demo)" : ""}.`
-                : `You've used all ${chat.usage.limit} messages for today. They reset at midnight UTC.`}
+                : `You've used all ${chat.usage.limit} messages for today. They reset ${describeReset(chat.usage.resetsAt)}.`}
             </p>
           )}
           <ChatComposer

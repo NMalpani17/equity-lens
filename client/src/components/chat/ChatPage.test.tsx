@@ -18,6 +18,7 @@ import { useAuth } from "@/context/auth-context";
 import { ApiError } from "@/lib/api";
 import * as chatApi from "@/lib/chatApi";
 import type { ChatMessage, ChatStreamEvent, Citation } from "@/lib/chatApi";
+import { describeReset } from "@/lib/format";
 import { ChatPage } from "./ChatPage";
 
 const api = vi.mocked(chatApi);
@@ -682,6 +683,11 @@ describe("ChatPage", () => {
     expect(await screen.findByTestId("chat-usage")).toHaveTextContent(
       "used all 5 messages",
     );
+    // The reset time is on the user's clock (midnight UTC is 8 PM in New York).
+    expect(screen.getByTestId("chat-usage")).toHaveTextContent(
+      `They reset ${describeReset("2026-10-02T00:00:00.000Z")}.`,
+    );
+    expect(screen.getByTestId("chat-usage")).not.toHaveTextContent("UTC");
     expect(screen.getByRole("textbox")).toBeDisabled();
   });
 

@@ -1,5 +1,6 @@
 /** Friendly, user-facing messages for chat failures (never raw status codes). */
 import { ApiError } from "./api";
+import { describeReset } from "./format";
 
 export interface ChatBannerState {
   kind: "limit" | "credits" | "busy" | "error";
@@ -22,12 +23,18 @@ export const DROPPED_MESSAGE =
 export function bannerForError(error: unknown, action: ChatAction): ChatBannerState {
   if (!(error instanceof ApiError)) return { kind: "error", message: FALLBACK[action] };
   if (error.status === 429) {
+    const base =
+      error.code === "chat_limit_reached"
+        ? error.message
+        : "You've reached today's message limit.";
+    const resetsAt = error.details.resetsAt;
+    // The server sends the reset as a timestamp; show it on the user's clock.
     return {
       kind: "limit",
       message:
-        error.code === "chat_limit_reached"
-          ? error.message
-          : "You've reached today's message limit. Please try again tomorrow.",
+        typeof resetsAt === "string"
+          ? `${base} It resets ${describeReset(resetsAt)}.`
+          : `${base} Please try again after the daily reset.`,
     };
   }
   switch (error.code) {

@@ -237,7 +237,11 @@ export async function getUsage(
   };
 }
 
-/** Throw 429 if the user's or the global daily cap is reached. */
+/**
+ * Throw 429 if the user's or the global daily cap is reached. Messages don't
+ * name a time: the body's `resetsAt` lets the client show the reset on the
+ * user's own clock.
+ */
 export async function assertWithinLimits(userId: string, isAnonymous: boolean) {
   const { start } = utcDayWindow();
   // Both counts are independent; run them together to keep turn latency low.
@@ -251,8 +255,8 @@ export async function assertWithinLimits(userId: string, isAnonymous: boolean) {
       usage.limit,
       usage.resetsAt,
       isAnonymous
-        ? `Demo accounts can send ${usage.limit} messages a day. Sign up for more, or come back tomorrow.`
-        : `You've reached today's limit of ${usage.limit} messages. It resets at midnight UTC.`,
+        ? `Demo accounts can send ${usage.limit} messages a day. Sign up for more.`
+        : `You've reached today's limit of ${usage.limit} messages.`,
     );
   }
   if (globalUsed >= config.chat.globalDailyLimit) {
@@ -260,7 +264,7 @@ export async function assertWithinLimits(userId: string, isAnonymous: boolean) {
       "global",
       config.chat.globalDailyLimit,
       usage.resetsAt,
-      "The AI analyst has reached its daily capacity. Please try again tomorrow.",
+      "The AI analyst has reached its daily capacity.",
     );
   }
 }

@@ -67,3 +67,29 @@ export function changeColor(value: number): string {
   if (value < 0) return "text-destructive";
   return "text-muted-foreground";
 }
+
+function calendarDay(date: Date, timeZone?: string): string {
+  // en-CA formats as YYYY-MM-DD, which compares as a plain string.
+  return date.toLocaleDateString("en-CA", { timeZone });
+}
+
+/**
+ * When the daily chat allowance resets, in the user's local time zone, e.g.
+ * "at 8:00 PM EDT" or "tomorrow at 5:30 AM GMT+5:30". `timeZone` defaults to
+ * the browser's zone; it is a parameter so tests can pin one.
+ */
+export function describeReset(
+  resetsAt: string,
+  { now = new Date(), timeZone }: { now?: Date; timeZone?: string } = {},
+): string {
+  const reset = new Date(resetsAt);
+  if (Number.isNaN(reset.getTime())) return "at midnight";
+  const time = reset.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    timeZone,
+  });
+  const sameDay = calendarDay(reset, timeZone) === calendarDay(now, timeZone);
+  return sameDay ? `at ${time}` : `tomorrow at ${time}`;
+}
