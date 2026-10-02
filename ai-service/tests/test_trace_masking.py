@@ -216,7 +216,7 @@ def test_ids_and_opaque_blobs_are_not_mangled_by_number_masking() -> None:
     masked = masker.mask(
         {
             "id": message_id,
-            "text": f"{blob} gain of $1,335 and -1335",
+            "text": f"{blob} gain of $1,335 and -$1,335",
             "extras": {"signature": "Q2hhaW4gb2YgdGhvdWdodA=="},
         }
     )
@@ -224,3 +224,33 @@ def test_ids_and_opaque_blobs_are_not_mangled_by_number_masking() -> None:
     assert masked["id"] == message_id
     assert masked["text"] == f"{blob} gain of {MASKED} and {MASKED}"
     assert masked["extras"]["signature"] == "[omitted]"
+
+
+def test_small_numbers_and_times_are_left_alone_but_amounts_are_masked() -> None:
+    # The demo portfolio holds 6 TSLA, 10 AAPL, 8 MSFT... so 6, 8 and 10 are
+    # registered values; they must not mask a clock time or a count.
+    snapshot = portfolio(
+        position("TSLA", 6, 248.5, 433.12),
+        position("AAPL", 10, 172.4, 232.0),
+        position("MSFT", 8, 402.75, 505.0),
+    )
+    set_turn_sensitive_values(portfolio_values(snapshot))
+    masker = TraceMasker()
+
+    kept = (
+        "Quote as of Oct 2, 2026, 6:07 PM EDT. Q4 FY2026 had 10 analysts "
+        "asking about 8 regions over 6 quarters."
+    )
+    assert masker.mask(kept) == kept
+
+    position_value = snapshot.positions[0].market_value  # 2,598.72
+    gain_percent = snapshot.positions[0].gain_loss_percent  # 74.29
+    out = masker.mask(
+        f"You hold 6 shares of TSLA worth ${position_value:,.2f} "
+        f"(up {gain_percent}%), i.e. {position_value:,.0f} dollars, "
+        f"bought at 248.50 each."
+    )
+    assert "6 shares" not in out  # the share-count rule
+    assert f"{position_value:,.2f}" not in out and f"{position_value:,.0f}" not in out
+    assert f"{gain_percent}%" not in out and "248.50" not in out
+    assert "TSLA" in out

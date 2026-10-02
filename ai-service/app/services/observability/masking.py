@@ -8,7 +8,8 @@ output and metadata before export. It removes:
 - **Contact details**: email addresses and phone numbers in any text.
 - **Portfolio values**: holdings fields (shares, cost, value, gain/loss,
   weights, position-math inputs) by key, in dicts and in JSON tool output.
-- **The current turn's portfolio numbers in free text**, e.g. the model
+- **The current turn's portfolio numbers in free text** when written as an
+  amount (money, a percentage, a decimal or a grouped number), e.g. the model
   writing "your $12,345.67 position", using the values registered for the
   turn with :func:`set_turn_sensitive_values` (the holdings) and
   :func:`add_turn_sensitive_values` (e.g. position-math results).
@@ -240,7 +241,19 @@ def _json_container(text: str) -> Any:
     return parsed if isinstance(parsed, dict | list) else None
 
 
+def _looks_like_an_amount(token: str) -> bool:
+    """Money ($), a percentage, a decimal, or a thousands-grouped amount.
+
+    Bare small integers ("6:07 PM", "Q4", "10 analysts") are left alone even
+    when they equal a holding's share count; share counts are covered by the
+    "N shares" rule instead.
+    """
+    return any(mark in token for mark in "$%.,")
+
+
 def _mask_number(token: str, values: frozenset[float]) -> str:
+    if not _looks_like_an_amount(token):
+        return token
     try:
         number = float(re.sub(r"[^\d.]", "", token))
     except ValueError:

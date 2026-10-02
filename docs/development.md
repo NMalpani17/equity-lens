@@ -293,7 +293,9 @@ the database URL) plus bearer/token patterns, masks emails, phone numbers and
 "N shares" counts, masks portfolio fields by key (shares, average cost, cost
 basis, market value, gain/loss, weights, position-math inputs and results),
 including inside JSON tool output, and masks the turn's own portfolio numbers
-and position-math results wherever they appear in text (e.g. the answer saying
+and position-math results wherever they appear in text as amounts (money,
+percentages, decimals or grouped numbers; bare small numbers such as "6:07 PM"
+are left alone) (e.g. the answer saying
 "your $13,680 position" or "a new average cost of $112.40"). Numbers typed in
 the question itself stay visible unless they match those values or a share
 count.
