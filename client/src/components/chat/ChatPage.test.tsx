@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   fireEvent,
@@ -106,6 +106,11 @@ function sendViaComposer(text: string) {
   fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 }
+
+// Charts are lazy-loaded; load the chunk once so findBy timeouts don't race it.
+beforeAll(async () => {
+  await import("./charts/ChartView");
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

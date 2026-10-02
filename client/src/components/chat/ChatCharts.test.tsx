@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
 import type { AllocationChart, ChatChart, PriceChart } from "@/lib/chatApi";
@@ -43,6 +43,12 @@ async function figure(name: string) {
 }
 
 describe("ChatCharts", () => {
+  // Load the lazy Recharts chunk once up front; on a busy runner its first
+  // import can outlast findBy's default timeout.
+  beforeAll(async () => {
+    await import("./charts/ChartView");
+  });
+
   it("renders a price chart with its headline, an SVG and a data table", async () => {
     render(<ChatCharts charts={[priceChart]} />);
 
