@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
@@ -18,7 +25,6 @@ import { useAuth } from "@/context/auth-context";
 import { ApiError } from "@/lib/api";
 import * as chatApi from "@/lib/chatApi";
 import type { ChatMessage, ChatStreamEvent, Citation } from "@/lib/chatApi";
-import { describeReset } from "@/lib/format";
 import { ChatPage } from "./ChatPage";
 
 const api = vi.mocked(chatApi);
@@ -75,6 +81,8 @@ function renderPage() {
   );
 }
 
+// Stream events are pushed from test code, outside React; tests wrap them in
+// act() (emit = (event) => act(() => onEvent(event))) so updates flush cleanly.
 function sendViaComposer(text: string) {
   fireEvent.change(screen.getByRole("textbox"), { target: { value: text } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
@@ -107,7 +115,7 @@ describe("ChatPage", () => {
     let emit: (event: ChatStreamEvent) => void = () => {};
     let finish: () => void = () => {};
     api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
-      emit = onEvent;
+      emit = (event) => act(() => onEvent(event));
       await new Promise<void>((resolve) => (finish = resolve));
     });
     renderPage();
@@ -165,7 +173,7 @@ describe("ChatPage", () => {
         ],
       }),
     });
-    finish();
+    await act(async () => finish());
 
     const cite = await screen.findByRole("button", {
       name: /Source 1: NVDA Q2 FY2027/,
@@ -190,7 +198,7 @@ describe("ChatPage", () => {
   it("updates a running tool's label from tool_progress events", async () => {
     let emit: (event: ChatStreamEvent) => void = () => {};
     api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
-      emit = onEvent;
+      emit = (event) => act(() => onEvent(event));
       await new Promise<void>(() => {});
     });
     renderPage();
@@ -254,7 +262,7 @@ describe("ChatPage", () => {
     let emit: (event: ChatStreamEvent) => void = () => {};
     let finish: () => void = () => {};
     api.streamRetry.mockImplementation(async (_id, _messageId, onEvent) => {
-      emit = onEvent;
+      emit = (event) => act(() => onEvent(event));
       await new Promise<void>((resolve) => (finish = resolve));
     });
     await screen.findByText("Demand was");
@@ -282,7 +290,7 @@ describe("ChatPage", () => {
       type: "done",
       message: msg({ id: "a1", content: "Demand stayed strong." }),
     });
-    finish();
+    await act(async () => finish());
 
     await waitFor(() => expect(screen.getByRole("textbox")).not.toBeDisabled());
     expect(screen.getAllByText("What did NVDA say about demand?")).toHaveLength(1);
@@ -504,7 +512,7 @@ describe("ChatPage", () => {
     const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
     let emit: (event: ChatStreamEvent) => void = () => {};
     api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
-      emit = onEvent;
+      emit = (event) => act(() => onEvent(event));
       await new Promise<void>(() => {});
     });
     renderPage();
@@ -678,17 +686,20 @@ describe("ChatPage", () => {
       resetsAt: "2026-10-02T00:00:00.000Z",
       isDemo: true,
     });
-    renderPage();
+    // Fake only the clock (timers stay real for findBy/waitFor). Tests run in
+    // America/New_York (vitest.config.ts), where midnight UTC is 8 PM EDT.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-01T15:00:00.000Z"));
+    try {
+      renderPage();
 
-    expect(await screen.findByTestId("chat-usage")).toHaveTextContent(
-      "used all 5 messages",
-    );
-    // The reset time is on the user's clock (midnight UTC is 8 PM in New York).
-    expect(screen.getByTestId("chat-usage")).toHaveTextContent(
-      `They reset ${describeReset("2026-10-02T00:00:00.000Z")}.`,
-    );
-    expect(screen.getByTestId("chat-usage")).not.toHaveTextContent("UTC");
-    expect(screen.getByRole("textbox")).toBeDisabled();
+      expect(await screen.findByTestId("chat-usage")).toHaveTextContent(
+        "You've used all 5 messages for today. They reset at 8:00 PM EDT.",
+      );
+      expect(screen.getByRole("textbox")).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders model markdown without raw HTML and opens links safely", async () => {

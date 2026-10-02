@@ -58,7 +58,8 @@ describe("describeReset", () => {
   });
 
   it("uses the browser's zone by default and survives bad input", () => {
-    expect(describeReset(RESET)).toMatch(/^(tomorrow )?at \d{1,2}:\d{2} [AP]M \S+$/);
+    // The run's zone is pinned to America/New_York in vitest.config.ts.
+    expect(describeReset(RESET, { now: NOW })).toBe("at 8:00 PM EDT");
     expect(describeReset("not a date")).toBe("at midnight");
   });
 });

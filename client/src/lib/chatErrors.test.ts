@@ -1,8 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api";
 import { bannerForError } from "@/lib/chatErrors";
-import { describeReset } from "@/lib/format";
 
 describe("bannerForError", () => {
   it("words generic failures for what the user was doing, without status codes", () => {
@@ -57,12 +56,15 @@ describe("daily limit banner", () => {
       { scope: "user", limit: 20, resetsAt },
     );
 
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-01T15:00:00.000Z"));
     const { kind, message } = bannerForError(limit, "send");
+    vi.useRealTimers();
 
+    // Tests run in America/New_York (vitest.config.ts): midnight UTC is 8 PM EDT.
     expect(kind).toBe("limit");
     expect(message).toBe(
-      `You've reached today's limit of 20 messages. It resets ${describeReset(resetsAt)}.`,
+      "You've reached today's limit of 20 messages. It resets at 8:00 PM EDT.",
     );
-    expect(message).not.toMatch(/midnight UTC/);
   });
 });
