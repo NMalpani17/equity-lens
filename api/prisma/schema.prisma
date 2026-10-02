@@ -192,6 +192,8 @@ model ChatMessage {
   status         ChatMessageStatus @default(complete)
   citations      Json              @default("[]")
   toolCalls      Json              @default("[]") @map("tool_calls")
+  /// Inline charts built from tool results (price history, allocation).
+  charts         Json              @default("[]")
   errorCode      String?           @map("error_code")
   inputTokens    Int?              @map("input_tokens")
   outputTokens   Int?              @map("output_tokens")

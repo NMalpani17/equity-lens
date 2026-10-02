@@ -66,6 +66,7 @@ function message(overrides: Record<string, unknown> = {}) {
     content: "hi",
     status: "complete",
     citations: [],
+    charts: [],
     toolCalls: [],
     errorCode: null,
     inputTokens: null,

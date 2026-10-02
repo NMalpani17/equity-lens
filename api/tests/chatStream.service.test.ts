@@ -102,6 +102,79 @@ describe("mapEvent", () => {
   });
 });
 
+describe("mapEvent chart", () => {
+  const price = {
+    id: "chart-h1",
+    kind: "price_history",
+    ticker: "NVDA",
+    period: "6mo",
+    currency: "USD",
+    points: [
+      { date: "2026-04-01", close: 100 },
+      { date: "2026-10-01", close: 120 },
+    ],
+    first_close: 100,
+    last_close: 120,
+    change: 20,
+    change_percent: 20,
+    high: 121,
+    low: 98,
+    as_of: "2026-10-01T20:00:00Z",
+  };
+  const allocation = {
+    id: "chart-p1",
+    kind: "portfolio_allocation",
+    currency: "USD",
+    slices: [{ ticker: "NVDA", name: null, market_value: 1500, weight_percent: 100 }],
+    total_market_value: 1500,
+    partial: false,
+  };
+
+  it("maps price and allocation charts to camelCase", () => {
+    expect(mapEvent("chart", price)).toEqual({
+      type: "chart",
+      chart: {
+        id: "chart-h1",
+        kind: "price_history",
+        ticker: "NVDA",
+        period: "6mo",
+        currency: "USD",
+        points: price.points,
+        firstClose: 100,
+        lastClose: 120,
+        change: 20,
+        changePercent: 20,
+        high: 121,
+        low: 98,
+        asOf: "2026-10-01T20:00:00Z",
+      },
+    });
+    expect(mapEvent("chart", allocation)).toMatchObject({
+      chart: {
+        kind: "portfolio_allocation",
+        slices: [{ ticker: "NVDA", marketValue: 1500, weightPercent: 100 }],
+        totalMarketValue: 1500,
+        asOf: null,
+      },
+    });
+  });
+
+  it("attaches charts to done and rejects malformed charts", () => {
+    const done = mapEvent("done", {
+      content: "x",
+      status: "complete",
+      citations: [],
+      charts: [allocation],
+      tool_calls: [],
+      usage: {},
+    });
+    expect(done).toMatchObject({ charts: [{ id: "chart-p1" }] });
+    expect(mapEvent("chart", { ...price, points: [price.points[0]] })).toBeNull();
+    expect(mapEvent("chart", { ...price, kind: "pie" })).toBeNull();
+    expect(mapEvent("chart", { ...allocation, slices: [] })).toBeNull();
+  });
+});
+
 describe("openChatStream", () => {
   it("sends the internal token and user context, then yields events", async () => {
     const fetchSpy = vi

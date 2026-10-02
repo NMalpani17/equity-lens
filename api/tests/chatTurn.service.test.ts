@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AiChatEvent } from "../src/services/chatStream.service.js";
+import type { AiChatEvent, ChartDto } from "../src/services/chatStream.service.js";
 import { relayEvents } from "../src/services/chatTurn.service.js";
 
 function sink() {
@@ -17,6 +17,7 @@ const DONE: AiChatEvent = {
   content: "NVDA guided higher [1].",
   status: "complete",
   citations: [],
+  charts: [],
   toolCalls: [],
   inputTokens: 100,
   outputTokens: 20,
@@ -123,6 +124,7 @@ describe("relayEvents", () => {
       outcome: {
         content: "Demand was strong",
         status: "interrupted",
+        charts: [],
         toolCalls: [
           { id: "t1", name: "search_transcripts", label: "Searching…", args: {} },
         ],
@@ -168,6 +170,58 @@ describe("tool progress", () => {
     expect(out.sent[1]).toEqual({
       event: "tool_progress",
       data: { id: "t1", label: "Indexing Starbucks transcripts…" },
+    });
+  });
+});
+
+describe("charts", () => {
+  const CHART: Extract<ChartDto, { kind: "price_history" }> = {
+    id: "chart-h1",
+    kind: "price_history",
+    ticker: "NVDA",
+    period: "6mo",
+    currency: "USD",
+    points: [
+      { date: "2026-04-01", close: 100 },
+      { date: "2026-10-01", close: 120 },
+    ],
+    firstClose: 100,
+    lastClose: 120,
+    change: 20,
+    changePercent: 20,
+    high: 121,
+    low: 98,
+    asOf: null,
+  };
+
+  it("relays chart events and saves the final charts with the answer", async () => {
+    const out = sink();
+
+    const result = await relayEvents(
+      events({ type: "chart", chart: CHART }, { ...DONE, charts: [CHART] }),
+      out,
+      new AbortController().signal,
+    );
+
+    expect(out.sent).toEqual([{ event: "chart", data: { chart: CHART } }]);
+    expect(result).toMatchObject({ kind: "done", outcome: { charts: [CHART] } });
+  });
+
+  it("keeps charts already streamed when the client disconnects", async () => {
+    const abort = new AbortController();
+    async function* stopped(): AsyncGenerator<AiChatEvent> {
+      yield { type: "chart", chart: { ...CHART, lastClose: 110 } };
+      yield { type: "chart", chart: CHART }; // same chart again: replaces
+      yield { type: "token", text: "NVDA rose" };
+      abort.abort();
+      yield DONE;
+    }
+
+    const result = await relayEvents(stopped(), sink(), abort.signal);
+
+    expect(result).toMatchObject({
+      kind: "interrupted",
+      outcome: { content: "NVDA rose", charts: [CHART] },
     });
   });
 });
