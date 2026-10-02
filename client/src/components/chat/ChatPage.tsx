@@ -12,16 +12,7 @@ import { StarterQuestions } from "@/components/chat/StarterQuestions";
 import { useAuth } from "@/context/auth-context";
 import { useChat } from "@/hooks/useChat";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
-import type { ChatMessage, Citation } from "@/lib/chatApi";
-
-/** The user question an assistant reply answered (for Retry). */
-function questionBefore(messages: ChatMessage[], index: number): string | null {
-  if (messages[index]?.role !== "assistant") return null;
-  for (let i = index - 1; i >= 0; i--) {
-    if (messages[i]!.role === "user") return messages[i]!.content;
-  }
-  return null;
-}
+import type { Citation } from "@/lib/chatApi";
 
 /** The AI analyst chat: conversation list, streaming thread and composer. */
 export function ChatPage() {
@@ -117,7 +108,8 @@ export function ChatPage() {
               />
             ) : (
               chat.messages.map((message, index) => {
-                const question = questionBefore(chat.messages, index);
+                // Only the latest reply can be regenerated (it replaces itself).
+                const isLatest = index === chat.messages.length - 1;
                 return (
                   <MessageBubble
                     key={message.id}
@@ -125,7 +117,7 @@ export function ChatPage() {
                     streamText={chat.streamText}
                     tools={chat.tools}
                     onCite={setCitation}
-                    onRetry={question ? () => send(question) : undefined}
+                    onRetry={isLatest ? () => void chat.retry(message.id) : undefined}
                     retryDisabled={chat.streaming || outOfMessages}
                   />
                 );

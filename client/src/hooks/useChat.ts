@@ -13,6 +13,7 @@ import {
   listMessages,
   renameConversation as apiRenameConversation,
   streamMessage,
+  streamRetry,
   type ChatMessage,
   type ChatStreamEvent,
   type ChatUsage,
@@ -36,6 +37,9 @@ const STREAMING_ID = "streaming-reply";
 function bannerFor(error: unknown): ChatBannerState {
   if (error instanceof ApiError) {
     if (error.status === 429) return { kind: "limit", message: error.message };
+    if (error.code === "retry_not_allowed") {
+      return { kind: "error", message: error.message };
+    }
     if (error.status === 409) {
       return { kind: "busy", message: "A reply is still being written. Please wait." };
     }
@@ -184,6 +188,47 @@ export function useChat() {
     }
   }, []);
 
+  /** Stream one turn into the STREAMING_ID placeholder already in the list. */
+  const runTurn = useCallback(
+    async (
+      conversationId: string,
+      start: (
+        onEvent: (event: ChatStreamEvent) => void,
+        signal: AbortSignal,
+      ) => Promise<void>,
+    ) => {
+      streamTextRef.current = "";
+      setStreamText("");
+      setTools([]);
+      setStreaming(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        await start(handleEvent, controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setBanner(bannerFor(error));
+          // The server is the source of truth (it may not have saved anything).
+          try {
+            setMessages(await listMessages(conversationId));
+          } catch {
+            setMessages((list) =>
+              list.filter((m) => m.id !== STREAMING_ID && m.id !== "pending-user"),
+            );
+          }
+        }
+      } finally {
+        abortRef.current = null;
+        setStreaming(false);
+        setStreamText("");
+        setTools([]);
+        void refreshUsage();
+      }
+    },
+    [handleEvent, refreshUsage],
+  );
+
   const send = useCallback(
     async (content: string) => {
       const text = content.trim();
@@ -209,36 +254,29 @@ export function useChat() {
         status: "complete",
       };
       setMessages((list) => [...list, pendingUser, placeholder()]);
-      streamTextRef.current = "";
-      setStreamText("");
-      setTools([]);
-      setStreaming(true);
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      try {
-        await streamMessage(conversationId, text, handleEvent, controller.signal);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setBanner(bannerFor(error));
-          // The server is the source of truth (it may not have saved anything).
-          try {
-            setMessages(await listMessages(conversationId));
-          } catch {
-            setMessages((list) =>
-              list.filter((m) => m.id !== STREAMING_ID && m.id !== "pending-user"),
-            );
-          }
-        }
-      } finally {
-        abortRef.current = null;
-        setStreaming(false);
-        setStreamText("");
-        setTools([]);
-        void refreshUsage();
-      }
+      const id = conversationId;
+      await runTurn(id, (onEvent, signal) => streamMessage(id, text, onEvent, signal));
     },
-    [activeId, handleEvent, refreshUsage],
+    [activeId, runTurn],
+  );
+
+  /**
+   * Regenerate a stopped/failed reply in place ("Regenerate"): the reply is
+   * replaced by the new stream; the question is not sent or shown again.
+   */
+  const retry = useCallback(
+    async (assistantMessageId: string) => {
+      const conversationId = activeId;
+      if (!conversationId || abortRef.current) return;
+      setBanner(null);
+      setMessages((list) =>
+        list.map((m) => (m.id === assistantMessageId ? placeholder() : m)),
+      );
+      await runTurn(conversationId, (onEvent, signal) =>
+        streamRetry(conversationId, assistantMessageId, onEvent, signal),
+      );
+    },
+    [activeId, runTurn],
   );
 
   /** Stop generating. The server keeps the partial reply as "interrupted". */
@@ -270,6 +308,7 @@ export function useChat() {
     renameConversation,
     deleteConversation,
     send,
+    retry,
     stop,
   };
 }

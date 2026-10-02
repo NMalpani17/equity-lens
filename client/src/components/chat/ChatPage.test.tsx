@@ -11,6 +11,7 @@ vi.mock("@/lib/chatApi", () => ({
   listMessages: vi.fn(),
   getChatUsage: vi.fn(),
   streamMessage: vi.fn(),
+  streamRetry: vi.fn(),
 }));
 
 import { useAuth } from "@/context/auth-context";
@@ -212,35 +213,107 @@ describe("ChatPage", () => {
     expect(screen.queryByText("Searching SBUX transcripts…")).not.toBeInTheDocument();
   });
 
-  it("offers Retry on stopped and failed replies and re-sends the question", async () => {
+  async function openEarlierChat(messages: ChatMessage[]) {
     api.listConversations.mockResolvedValue([{ ...CONV, title: "Earlier chat" }]);
-    api.listMessages.mockResolvedValue([
-      msg({ id: "u1", role: "user", content: "What did NVDA say about demand?" }),
-      msg({ id: "a1", status: "interrupted", content: "Demand was" }),
-      msg({ id: "u2", role: "user", content: "And AMD?" }),
-      msg({ id: "a2", status: "error", errorCode: "ai_rate_limited" }),
-      msg({ id: "u3", role: "user", content: "Thanks" }),
-      msg({ id: "a3", status: "complete", content: "You're welcome." }),
-    ]);
-    api.streamMessage.mockResolvedValue(undefined);
+    api.listMessages.mockResolvedValue(messages);
     renderPage();
     const sidebar = screen.getByRole("complementary", { name: "Conversations" });
     fireEvent.click(
       await within(sidebar).findByRole("button", { name: "Earlier chat" }),
     );
+  }
+
+  it("offers Retry only on the latest stopped or failed reply", async () => {
+    await openEarlierChat([
+      msg({ id: "u1", role: "user", content: "What did NVDA say about demand?" }),
+      msg({ id: "a1", status: "interrupted", content: "Demand was" }),
+      msg({ id: "u2", role: "user", content: "And AMD?" }),
+      msg({ id: "a2", status: "error", errorCode: "ai_rate_limited" }),
+    ]);
+    await screen.findByText("Demand was");
+
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+  });
+
+  it("does not offer Retry on a complete reply", async () => {
+    await openEarlierChat([
+      msg({ id: "u1", role: "user", content: "Thanks" }),
+      msg({ id: "a1", status: "complete", content: "You're welcome." }),
+    ]);
     await screen.findByText("You're welcome.");
 
-    const retries = screen.getAllByRole("button", { name: "Retry" });
-    expect(retries).toHaveLength(2); // not on the complete reply
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(retries[0]!);
-    await waitFor(() => expect(api.streamMessage).toHaveBeenCalledTimes(1));
-    expect(api.streamMessage.mock.calls[0]![1]).toBe("What did NVDA say about demand?");
+  it("retries in place: no repeated question and only one answer", async () => {
+    await openEarlierChat([
+      msg({ id: "u1", role: "user", content: "What did NVDA say about demand?" }),
+      msg({ id: "a1", status: "interrupted", content: "Demand was" }),
+    ]);
+    let emit: (event: ChatStreamEvent) => void = () => {};
+    let finish: () => void = () => {};
+    api.streamRetry.mockImplementation(async (_id, _messageId, onEvent) => {
+      emit = onEvent;
+      await new Promise<void>((resolve) => (finish = resolve));
+    });
+    await screen.findByText("Demand was");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(api.streamRetry).toHaveBeenCalled());
+    expect(api.streamRetry.mock.calls[0]!.slice(0, 2)).toEqual(["c1", "a1"]);
+    expect(api.streamMessage).not.toHaveBeenCalled();
+    // The stopped text is replaced by the new stream, not kept alongside it.
+    expect(screen.queryByText("Demand was")).not.toBeInTheDocument();
+
+    emit({
+      type: "turn",
+      conversation: CONV,
+      userMessage: msg({
+        id: "u1",
+        role: "user",
+        content: "What did NVDA say about demand?",
+      }),
+      assistantMessageId: "a1",
+    });
+    emit({ type: "token", text: "Demand stayed strong." });
+    expect(await screen.findByText("Demand stayed strong.")).toBeInTheDocument();
+    emit({
+      type: "done",
+      message: msg({ id: "a1", content: "Demand stayed strong." }),
+    });
+    finish();
 
     await waitFor(() => expect(screen.getByRole("textbox")).not.toBeDisabled());
-    fireEvent.click(screen.getAllByRole("button", { name: "Retry" })[1]!);
-    await waitFor(() => expect(api.streamMessage).toHaveBeenCalledTimes(2));
-    expect(api.streamMessage.mock.calls[1]![1]).toBe("And AMD?");
+    expect(screen.getAllByText("What did NVDA say about demand?")).toHaveLength(1);
+    expect(screen.getAllByText("Demand stayed strong.")).toHaveLength(1);
+    // One question bubble and one reply bubble (plus the scroll anchor).
+    const region = screen.getByRole("region", { name: "Messages" });
+    expect(region.querySelectorAll(":scope > div.flex")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("reloads the thread if a retry is refused", async () => {
+    const thread = [
+      msg({ id: "u1", role: "user", content: "What did NVDA say?" }),
+      msg({ id: "a1", status: "error" }),
+    ];
+    await openEarlierChat(thread);
+    api.streamRetry.mockRejectedValue(
+      new ApiError(
+        409,
+        "Only the latest stopped or failed reply can be retried.",
+        "retry_not_allowed",
+      ),
+    );
+    await screen.findByText("This reply failed. Please try again.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Only the latest stopped or failed reply",
+    );
+    expect(api.listMessages).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByText("What did NVDA say?")).toHaveLength(1);
   });
 
   it("auto-scrolls only near the bottom and offers Jump to latest", async () => {

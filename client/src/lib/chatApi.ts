@@ -140,15 +140,47 @@ export function getChatUsage(): Promise<ChatUsage> {
  * before streaming starts (429 limits, 409 overlap, 422 validation, 503).
  * Aborting `signal` stops the stream; the server saves the partial reply.
  */
-export async function streamMessage(
+export function streamMessage(
   conversationId: string,
   content: string,
   onEvent: (event: ChatStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  return postStream(
+    `/api/conversations/${conversationId}/messages`,
+    { content, timeZone: browserTimeZone() },
+    onEvent,
+    signal,
+  );
+}
+
+/**
+ * Regenerate the latest stopped/failed reply in place. Same event stream as
+ * streamMessage; no new user message is created.
+ */
+export function streamRetry(
+  conversationId: string,
+  assistantMessageId: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return postStream(
+    `/api/conversations/${conversationId}/messages/${assistantMessageId}/retry`,
+    { timeZone: browserTimeZone() },
+    onEvent,
+    signal,
+  );
+}
+
+async function postStream(
+  path: string,
+  body: Record<string, unknown>,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api/conversations/${conversationId}/messages`, {
+    response = await fetch(`${API_URL}${path}`, {
       method: "POST",
       signal,
       headers: {
@@ -157,7 +189,7 @@ export async function streamMessage(
         ...(await authHeaders()),
       },
       // The server shows dates and times in the user's own time zone.
-      body: JSON.stringify({ content, timeZone: browserTimeZone() }),
+      body: JSON.stringify(body),
     });
   } catch (error) {
     if (signal?.aborted) throw error;
