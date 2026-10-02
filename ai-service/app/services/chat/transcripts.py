@@ -9,6 +9,9 @@ Behavior on top of the Phase 4 search service:
   relevant passages. Passages are presented newest first.
 - If a company needs indexing, the tool waits for it (reporting progress)
   for up to ``index_wait_seconds`` before falling back to "try again soon".
+- With ``quarters`` (trends "over the last year", "quarter by quarter"), each
+  of the company's latest N quarters is searched separately, and quarters
+  with nothing relevant are reported explicitly.
 """
 
 import json
@@ -27,7 +30,7 @@ from app.services.rag.errors import (
 from app.services.rag.repository import TickerRecord
 from app.services.rag.search import RagSearchService
 
-from .citations import CitationRegistry, format_passage
+from .citations import CitationRegistry, Source, format_passage
 from .context import TurnContext
 from .resolver import CompanyResolver, display_name
 
@@ -50,6 +53,12 @@ _GROUP_BY_TICKER = {t: group for group in SHARE_CLASS_GROUPS for t in group}
 RECENCY_BONUS = (0.15, 0.08, 0.03)
 _MAX_CANDIDATES = 20
 _LATEST_TOP_UP = 2
+# Per-quarter search ("quarters"): passages per quarter by number of quarters,
+# keeping the total near a normal search (at most 8 passages).
+PER_QUARTER_PASSAGES = {1: 4, 2: 3, 3: 2, 4: 2}
+# Reranker scores (0-1) below this mean a passage doesn't address the query,
+# so its quarter is reported as having nothing relevant.
+MIN_QUARTER_RELEVANCE = 0.02
 
 
 @dataclass(kw_only=True)
@@ -108,6 +117,15 @@ def _quarter_rank(
     )
 
 
+def _parse_period(label: str) -> tuple[int, int] | None:
+    """ "FY2026Q2" -> (2026, 2)."""
+    try:
+        year, quarter = label.removeprefix("FY").split("Q")
+        return int(year), int(quarter)
+    except ValueError:
+        return None
+
+
 def _indexed_quarters(
     tickers: set[str], ticker_record: Callable[[str], TickerRecord | None]
 ) -> dict[str, dict[tuple[int, int], int]]:
@@ -115,14 +133,13 @@ def _indexed_quarters(
     out: dict[str, dict[tuple[int, int], int]] = {}
     for ticker in tickers:
         record = ticker_record(ticker)
-        ranks: dict[tuple[int, int], int] = {}
-        for rank, label in enumerate(record.quarters if record else []):
-            try:
-                year, quarter = label.removeprefix("FY").split("Q")
-                ranks[(int(year), int(quarter))] = rank
-            except ValueError:
-                continue
-        out[ticker] = ranks
+        periods = [
+            _parse_period(label) for label in (record.quarters if record else [])
+        ]
+        out[ticker] = {
+            period: rank
+            for rank, period in enumerate(p for p in periods if p is not None)
+        }
     return out
 
 
@@ -188,6 +205,26 @@ def _run_search(
     return list(response.results)
 
 
+def _await_index(
+    deps: SearchDeps, turn: TurnContext | None, ticker: str
+) -> SearchOutput | None:
+    """Wait for indexing; None once searchable, else the result to return."""
+    status = wait_for_index(deps, turn, ticker)
+    if status == "unavailable":
+        raise TickerUnavailableError(ticker)
+    if status == "indexed":
+        return None
+    return _of(
+        {
+            "status": "indexing",
+            "ticker": ticker,
+            "message": f"{ticker} earnings call transcripts are still being "
+            "indexed. Tell the user to try again shortly (usually within a "
+            "minute). Do not answer from memory.",
+        }
+    )
+
+
 def search_transcripts(
     deps: SearchDeps,
     turn: TurnContext | None,
@@ -197,10 +234,24 @@ def search_transcripts(
     fiscal_year: int | None = None,
     fiscal_quarter: int | None = None,
     top_k: int | None = None,
+    quarters: int | None = None,
 ) -> SearchOutput:
     registry = turn.sources if turn else CitationRegistry()
     k = max(1, min(top_k or deps.search_top_k, 8))
     ticker, class_note = transcript_ticker(ticker, deps.ticker_record)
+    if quarters and ticker:
+        return _guarded(
+            lambda: _search_each_quarter(
+                deps,
+                turn,
+                registry,
+                query=query,
+                ticker=ticker,
+                count=max(1, min(quarters, 4)),
+                class_note=class_note,
+            ),
+            ticker,
+        )
     no_period = fiscal_year is None and fiscal_quarter is None
     fetch_k = min(max(k * 2, k), _MAX_CANDIDATES) if no_period else k
 
@@ -215,25 +266,64 @@ def search_transcripts(
         }
         return RagSearchRequest(**fields)
 
-    try:
+    def run() -> SearchOutput | list[RagSearchResult]:
         outcome = _run_search(deps, request())
         if isinstance(outcome, RagIndexingResponse):
-            status = wait_for_index(deps, turn, outcome.ticker)
-            if status == "unavailable":
-                raise TickerUnavailableError(outcome.ticker)
-            if status != "indexed":
-                return _of(
-                    {
-                        "status": "indexing",
-                        "ticker": outcome.ticker,
-                        "message": f"{outcome.ticker} earnings call transcripts are "
-                        "still being indexed. Tell the user to try again shortly "
-                        "(usually within a minute). Do not answer from memory.",
-                    }
-                )
+            waiting = _await_index(deps, turn, outcome.ticker)
+            if waiting is not None:
+                return waiting
             outcome = _run_search(deps, request())
             if isinstance(outcome, RagIndexingResponse):  # pragma: no cover - race
                 return _of({"status": "indexing", "ticker": outcome.ticker})
+        return outcome
+
+    outcome = _guarded(run, ticker)
+    if isinstance(outcome, SearchOutput):
+        return outcome
+    results = outcome
+    if no_period and results:
+        quarters = _indexed_quarters({r.ticker for r in results}, deps.ticker_record)
+        results = prioritize_recent(results, k, quarters)
+        results = _ensure_latest(deps, request, results, quarters, ticker, k)
+    else:
+        results = results[:k]
+
+    sources = [registry.add(result) for result in results]
+    data = {
+        "status": "ok" if sources else "no_results",
+        "query": query,
+        "ticker": ticker,
+        "filters": {
+            key: value
+            for key, value in {
+                "ticker": ticker,
+                "fiscal_year": fiscal_year,
+                "fiscal_quarter": fiscal_quarter,
+            }.items()
+            if value is not None
+        },
+        "passages": [_passage_data(s) for s in sources],
+    }
+    if class_note:
+        data["note"] = class_note
+    if not sources:
+        return SearchOutput(
+            text="No matching passages were found for this query and filters.",
+            data=data,
+        )
+    header = f"{UNTRUSTED_NOTE}\nCite passages by their id, e.g. [{sources[0].id}]."
+    if no_period:
+        header += " Passages are ordered newest call first."
+    if class_note:
+        header += f"\nNote: {class_note}"
+    passages = "\n\n".join(format_passage(s) for s in sources)
+    return SearchOutput(text=f"{header}\n\n{passages}", data=data)
+
+
+def _guarded[T](run: Callable[[], T], ticker: str | None) -> T | SearchOutput:
+    """Run a search, turning expected failures into results the model can relay."""
+    try:
+        return run()
     except IngestionCapReachedError as exc:
         return _of(
             {
@@ -261,57 +351,112 @@ def search_transcripts(
             }
         )
 
-    results = outcome
-    if no_period and results:
-        quarters = _indexed_quarters({r.ticker for r in results}, deps.ticker_record)
-        results = prioritize_recent(results, k, quarters)
-        results = _ensure_latest(deps, request, results, quarters, ticker, k)
-    else:
-        results = results[:k]
 
-    sources = [registry.add(result) for result in results]
-    data = {
+def _passage_data(source: Source) -> dict:
+    return {
+        "id": source.id,
+        "ticker": source.ticker,
+        "company_name": source.company_name,
+        "fiscal_year": source.fiscal_year,
+        "fiscal_quarter": source.fiscal_quarter,
+        "call_date": source.call_date,
+        "speaker": source.speaker,
+        "role": source.role,
+        "section": source.section,
+    }
+
+
+def _search_each_quarter(
+    deps: SearchDeps,
+    turn: TurnContext | None,
+    registry: CitationRegistry,
+    *,
+    query: str,
+    ticker: str,
+    count: int,
+    class_note: str | None,
+) -> SearchOutput:
+    """Search each of the company's latest ``count`` quarters separately.
+
+    For "over the last year" / "quarter by quarter" questions: every quarter
+    gets its own passages, and a quarter with nothing relevant is reported as
+    such instead of silently missing from the answer.
+    """
+    pending = deps.search().ensure_indexed(ticker)
+    if pending is not None:
+        waiting = _await_index(deps, turn, pending.ticker)
+        if waiting is not None:
+            return waiting
+    record = deps.ticker_record(ticker)
+    parsed = [_parse_period(label) for label in (record.quarters if record else [])]
+    periods = sorted({p for p in parsed if p is not None}, reverse=True)[:count]
+    if not periods:
+        return _of(
+            {
+                "status": "no_results",
+                "ticker": ticker,
+                "message": f"No indexed earnings calls were found for {ticker}.",
+            }
+        )
+    per_quarter = PER_QUARTER_PASSAGES[len(periods)]
+    by_quarter, reranked = deps.search().retrieve_by_quarter(
+        query, ticker, periods, per_quarter
+    )
+
+    sections: list[str] = []
+    coverage: list[dict] = []
+    sources: list[Source] = []
+    for year, quarter in periods:  # newest first
+        relevant = [
+            r
+            for r in by_quarter.get((year, quarter), [])
+            if not reranked or r.score >= MIN_QUARTER_RELEVANCE
+        ]
+        added = [registry.add(r) for r in relevant]
+        sources.extend(added)
+        coverage.append(
+            {
+                "fiscal_year": year,
+                "fiscal_quarter": quarter,
+                "passages": [s.id for s in added],
+            }
+        )
+        call = f", call {added[0].call_date}" if added and added[0].call_date else ""
+        body = (
+            "\n\n".join(format_passage(s) for s in added)
+            if added
+            else "NO RELEVANT PASSAGES: this call did not discuss the topic."
+        )
+        sections.append(f"### Q{quarter} FY{year}{call}\n{body}")
+
+    missing = [c for c in coverage if not c["passages"]]
+    data: dict = {
         "status": "ok" if sources else "no_results",
         "query": query,
         "ticker": ticker,
-        "filters": {
-            key: value
-            for key, value in {
-                "ticker": ticker,
-                "fiscal_year": fiscal_year,
-                "fiscal_quarter": fiscal_quarter,
-            }.items()
-            if value is not None
-        },
-        "passages": [
-            {
-                "id": s.id,
-                "ticker": s.ticker,
-                "company_name": s.company_name,
-                "fiscal_year": s.fiscal_year,
-                "fiscal_quarter": s.fiscal_quarter,
-                "call_date": s.call_date,
-                "speaker": s.speaker,
-                "role": s.role,
-                "section": s.section,
-            }
-            for s in sources
-        ],
+        "quarters_searched": len(periods),
+        "coverage": coverage,
+        "passages": [_passage_data(s) for s in sources],
     }
+    notes = []
+    if len(periods) < count:
+        notes.append(f"Only {len(periods)} quarter(s) are indexed for {ticker}.")
     if class_note:
-        data["note"] = class_note
-    if not sources:
-        return SearchOutput(
-            text="No matching passages were found for this query and filters.",
-            data=data,
-        )
-    header = f"{UNTRUSTED_NOTE}\nCite passages by their id, e.g. [{sources[0].id}]."
-    if no_period:
-        header += " Passages are ordered newest call first."
-    if class_note:
-        header += f"\nNote: {class_note}"
-    passages = "\n\n".join(format_passage(s) for s in sources)
-    return SearchOutput(text=f"{header}\n\n{passages}", data=data)
+        notes.append(class_note)
+    if notes:
+        data["note"] = " ".join(notes)
+    header = (
+        f"{UNTRUSTED_NOTE}\nSearched each of {ticker}'s {len(periods)} most recent "
+        "indexed quarters separately, newest first. Cover every quarter below; "
+        "for a quarter marked NO RELEVANT PASSAGES, say explicitly that the call "
+        "had nothing on this topic. Cite passages by their id"
+    )
+    header += f", e.g. [{sources[0].id}]." if sources else "."
+    if missing:
+        header += f" Quarters with nothing relevant: {len(missing)}."
+    if notes:
+        header += "\nNote: " + " ".join(notes)
+    return SearchOutput(text=header + "\n\n" + "\n\n".join(sections), data=data)
 
 
 def _ensure_latest(

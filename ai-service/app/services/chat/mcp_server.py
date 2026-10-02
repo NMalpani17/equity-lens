@@ -187,12 +187,26 @@ def search_transcripts(
         ),
         _clamped(1, 8),
     ] = 5,
+    quarters: Annotated[
+        int | None,
+        Field(
+            description="For trends across quarters ('over the last year', "
+            "'quarter by quarter', 'each quarter'): search each of the "
+            "company's N most recent quarters separately, 1-4 (4 = a year), "
+            "so no quarter is missed. Requires ticker (call once per company); "
+            "fiscal_year, fiscal_quarter and top_k are ignored when set.",
+            ge=1,
+            le=4,
+        ),
+        _clamped(1, 4),
+    ] = None,
 ) -> ToolResult:
     """Search earnings call transcripts (last four calls per company).
 
     Returns numbered passages with ticker, fiscal quarter, call date and
-    speaker; cite them as [n]. If the company isn't indexed yet, indexing
-    starts and the result says to retry shortly.
+    speaker; cite them as [n]. With `quarters`, passages are grouped by
+    quarter and quarters with nothing relevant are marked. If the company
+    isn't indexed yet, indexing starts and the result says to retry shortly.
     """
     return _result(
         tools.search_transcripts(
@@ -203,6 +217,7 @@ def search_transcripts(
             fiscal_year=fiscal_year,
             fiscal_quarter=fiscal_quarter,
             top_k=top_k,
+            quarters=quarters,
         )
     )
 

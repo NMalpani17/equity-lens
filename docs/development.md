@@ -192,6 +192,13 @@ from that id, never from model-supplied arguments. The same server is mounted at
 - With no period named, it fetches extra candidates, boosts newer calls, makes
   sure the company's latest call is represented, and lists passages newest
   first.
+- For trends across quarters ("over the last year", "quarter by quarter") the
+  agent passes `quarters` (1–4): each of the company's latest N indexed
+  quarters gets its own filtered retrieval, so no quarter is crowded out, and
+  the union is reranked in **one** request (one rerank call per company, not
+  per quarter). Passages are grouped by quarter; a quarter with no passages,
+  or none scoring at least `MIN_QUARTER_RELEVANCE` (0.02) after reranking, is
+  marked "NO RELEVANT PASSAGES" so the answer says so explicitly.
 - Share classes of one company (GOOG/GOOGL, BRK.A/BRK.B, …) map to the class
   that is indexed, so transcript questions never ask which class and never index
   a duplicate. The agent asks about the class only for prices.

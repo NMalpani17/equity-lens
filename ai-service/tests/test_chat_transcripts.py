@@ -12,6 +12,7 @@ from app.services.chat.transcripts import (
     search_transcripts,
     transcript_ticker,
 )
+from app.services.rag.errors import SearchUpstreamError
 from app.services.rag.repository import TickerRecord
 from tests.chat_fakes import search_result, turn
 
@@ -276,3 +277,140 @@ def test_indexing_that_finds_no_transcripts_reports_unavailable() -> None:
     out = search_transcripts(deps, turn(), query="q", ticker="SBUX")
 
     assert out.data["status"] == "unavailable"
+
+
+# --- per-quarter search ("over the last year") ---------------------------------
+
+MSFT_QUARTERS = ["FY2026Q4", "FY2026Q3", "FY2026Q2", "FY2026Q1"]
+
+
+def quarter_search(by_quarter, reranked=True) -> MagicMock:
+    search = MagicMock()
+    search.ensure_indexed.return_value = None
+    search.retrieve_by_quarter.return_value = (by_quarter, reranked)
+    return search
+
+
+def test_quarters_covers_every_quarter_not_just_the_top_matches() -> None:
+    # A plain search for MSFT surfaced only Q2 and Q4; per-quarter search
+    # gets passages from all four calls.
+    by_quarter = {
+        (2026, 4): [result(1, 2026, 4, 0.9, "MSFT"), result(2, 2026, 4, 0.8, "MSFT")],
+        (2026, 3): [result(3, 2026, 3, 0.6, "MSFT")],
+        (2026, 2): [result(4, 2026, 2, 0.85, "MSFT")],
+        (2026, 1): [result(5, 2026, 1, 0.4, "MSFT")],
+    }
+    search = quarter_search(by_quarter)
+    deps, _ = make_deps(search, records={"MSFT": indexed("MSFT", MSFT_QUARTERS)})
+
+    out = search_transcripts(
+        deps, turn(), query="Azure growth", ticker="MSFT", quarters=4
+    )
+
+    search.retrieve_by_quarter.assert_called_once_with(
+        "Azure growth",
+        "MSFT",
+        [(2026, 4), (2026, 3), (2026, 2), (2026, 1)],
+        2,
+    )
+    search.search.assert_not_called()
+    coverage = [(c["fiscal_year"], c["fiscal_quarter"]) for c in out.data["coverage"]]
+    assert coverage == [(2026, 4), (2026, 3), (2026, 2), (2026, 1)]
+    assert all(c["passages"] for c in out.data["coverage"])
+    assert out.data["quarters_searched"] == 4
+    assert [p["id"] for p in out.data["passages"]] == [1, 2, 3, 4, 5]
+    text = out.text
+    for heading in ("### Q4 FY2026", "### Q3 FY2026", "### Q2 FY2026", "### Q1 FY2026"):
+        assert heading in text
+    assert text.index("### Q4 FY2026") < text.index("### Q1 FY2026")  # newest first
+    assert "Cover every quarter below" in text
+    assert "NO RELEVANT PASSAGES" in text  # the instruction, even with none missing
+    assert "Quarters with nothing relevant" not in text
+
+
+def test_quarters_reports_a_quarter_with_nothing_relevant_explicitly() -> None:
+    by_quarter = {
+        (2026, 4): [result(1, 2026, 4, 0.9, "MSFT")],
+        (2026, 3): [],  # nothing retrieved
+        (2026, 2): [result(2, 2026, 2, 0.01, "MSFT")],  # below relevance floor
+        (2026, 1): [result(3, 2026, 1, 0.5, "MSFT")],
+    }
+    deps, _ = make_deps(
+        quarter_search(by_quarter), records={"MSFT": indexed("MSFT", MSFT_QUARTERS)}
+    )
+
+    out = search_transcripts(deps, turn(), query="layoffs", ticker="MSFT", quarters=4)
+
+    empty = [
+        (c["fiscal_year"], c["fiscal_quarter"])
+        for c in out.data["coverage"]
+        if not c["passages"]
+    ]
+    assert empty == [(2026, 3), (2026, 2)]
+    q3 = out.text.split("### Q3 FY2026")[1].split("###")[0]
+    assert "NO RELEVANT PASSAGES: this call did not discuss the topic." in q3
+    assert "Quarters with nothing relevant: 2." in out.text
+    assert out.data["status"] == "ok"
+
+
+def test_quarters_keeps_low_scores_when_not_reranked() -> None:
+    by_quarter = {(2026, 4): [result(1, 2026, 4, 0.01, "MSFT")]}
+    deps, _ = make_deps(
+        quarter_search(by_quarter, reranked=False),
+        records={"MSFT": indexed("MSFT", MSFT_QUARTERS)},
+    )
+
+    out = search_transcripts(deps, turn(), query="q", ticker="MSFT", quarters=1)
+
+    assert len(out.data["passages"]) == 1
+    assert out.data["coverage"] == [
+        {"fiscal_year": 2026, "fiscal_quarter": 4, "passages": [1]}
+    ]
+
+
+def test_quarters_notes_when_fewer_quarters_are_indexed() -> None:
+    search = quarter_search({(2026, 4): [result(1, 2026, 4, 0.9, "MSFT")]})
+    deps, _ = make_deps(search, records={"MSFT": indexed("MSFT", ["FY2026Q4"])})
+
+    out = search_transcripts(deps, turn(), query="q", ticker="MSFT", quarters=4)
+
+    assert search.retrieve_by_quarter.call_args.args[2] == [(2026, 4)]
+    assert search.retrieve_by_quarter.call_args.args[3] == 4  # more per quarter
+    assert "Only 1 quarter(s) are indexed for MSFT" in out.data["note"]
+
+
+def test_quarters_waits_for_indexing_before_searching() -> None:
+    search = quarter_search({(2026, 3): [result(1, 2026, 3, 0.9, "SBUX")]})
+    search.ensure_indexed.return_value = indexing()
+    states = [indexed("SBUX", status="indexing"), indexed("SBUX", ["FY2026Q3"])]
+    deps, _ = make_deps(
+        search,
+        records=lambda _: states.pop(0) if len(states) > 1 else states[0],
+        resolver=resolver_for("STARBUCKS CORP"),
+    )
+
+    out = search_transcripts(deps, turn(), query="traffic", ticker="SBUX", quarters=4)
+
+    assert out.data["status"] == "ok"
+    search.retrieve_by_quarter.assert_called_once()
+
+
+def test_quarters_relays_search_outages() -> None:
+    search = quarter_search({})
+    search.retrieve_by_quarter.side_effect = SearchUpstreamError("down")
+    deps, _ = make_deps(search, records={"MSFT": indexed("MSFT", MSFT_QUARTERS)})
+
+    out = search_transcripts(deps, turn(), query="q", ticker="MSFT", quarters=4)
+
+    assert out.data["status"] == "error"
+
+
+def test_quarters_without_a_ticker_runs_a_normal_search() -> None:
+    search = MagicMock()
+    search.search.return_value = response([result(1, 2026, 2, 0.9)])
+    deps, _ = make_deps(search)
+
+    search_transcripts(deps, turn(), query="AI capex", quarters=4)
+
+    search.search.assert_called_once()
+    search.retrieve_by_quarter.assert_not_called()

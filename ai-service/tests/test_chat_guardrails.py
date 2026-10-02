@@ -125,3 +125,16 @@ def test_system_prompt_sets_answer_style_recency_and_share_class_rules() -> None
     assert "Don't dump tool fields" in prompt
     assert "lead with the most recent call" in prompt
     assert "Ask which class only when it changes" in prompt
+
+
+def test_system_prompt_covers_quarters_and_tables() -> None:
+    prompt = build_system_prompt(
+        date(2026, 10, 1), advice_request=False, is_anonymous=False
+    )
+
+    assert "quarters=4" in prompt and "once per company" in prompt
+    assert "never drop a quarter silently" in prompt
+    assert "NO RELEVANT PASSAGES" in prompt
+    assert "actual results" in prompt and "label it as guidance" in prompt
+    assert "never put bullets, lists or line breaks inside a cell" in prompt
+    assert "one row per company per quarter" in prompt

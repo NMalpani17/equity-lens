@@ -164,3 +164,48 @@ def test_limits_are_stated_in_the_tool_schema() -> None:
     assert props["top_k"]["maximum"] == 8 and props["top_k"]["minimum"] == 1
     assert "1-8" in props["top_k"]["description"]
     assert "1-4" in str(props["fiscal_quarter"])
+
+
+def test_quarters_is_clamped_and_searches_each_quarter() -> None:
+    from app.services.rag.repository import TickerRecord
+
+    search = MagicMock()
+    search.ensure_indexed.return_value = None
+    search.retrieve_by_quarter.return_value = ({}, True)
+    record = TickerRecord(
+        "MSFT", "indexed", "Microsoft Corp", 100, ["FY2026Q4", "FY2026Q3"]
+    )
+    deps = ToolDeps(
+        search=lambda: search,
+        market=MagicMock,
+        history=MagicMock,
+        resolver=MagicMock,
+        ticker_record=lambda t: record if t == "MSFT" else None,
+    )
+    mcp_server.set_tool_deps(lambda: deps)
+    try:
+        result = run(
+            call(
+                "search_transcripts",
+                {"query": "Azure", "ticker": "MSFT", "quarters": 9},
+            )
+        )
+    finally:
+        mcp_server.set_tool_deps(mcp_server.default_tool_deps)
+
+    assert not result.is_error
+    periods = search.retrieve_by_quarter.call_args.args[2]
+    assert periods == [(2026, 4), (2026, 3)]  # clamped to 4; only 2 indexed
+    assert result.structured_content["quarters_searched"] == 2
+
+
+def test_quarters_limits_are_in_the_schema() -> None:
+    async def schema():
+        async with Client(mcp_server.mcp) as client:
+            tools = await client.list_tools()
+        return next(t for t in tools if t.name == "search_transcripts").input_schema
+
+    quarters = str(run(schema())["properties"]["quarters"])
+
+    assert "'maximum': 4" in quarters and "'minimum': 1" in quarters
+    assert "over the last year" in quarters
