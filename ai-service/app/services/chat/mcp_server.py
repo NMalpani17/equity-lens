@@ -208,9 +208,15 @@ def search_transcripts(
 
 
 @mcp.tool(annotations=READ_ONLY)
-def get_quote(ticker: Ticker) -> ToolResult:
-    """Latest price, previous close and daily change for a ticker, with timestamp."""
-    return _result(tools.get_quote(_deps_provider(), ticker=ticker))
+def get_quote(ctx: Context, ticker: Ticker) -> ToolResult:
+    """Latest price, previous close and daily change for a ticker, with the
+    timestamp in the user's local time."""
+    turn = _turn(ctx)
+    return _result(
+        tools.get_quote(
+            _deps_provider(), ticker=ticker, time_zone=turn.time_zone if turn else None
+        )
+    )
 
 
 @mcp.tool(annotations=READ_ONLY)

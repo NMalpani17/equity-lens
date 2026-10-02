@@ -17,8 +17,9 @@ import time
 import warnings
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastmcp import Client, FastMCP
 from langchain.agents import create_agent
@@ -30,6 +31,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
 from app.config import Settings
+from app.localtime import DEFAULT_TIME_ZONE, zone
 from app.models.chat import (
     ChatHistoryMessage,
     ChatTurnRequest,
@@ -199,7 +201,7 @@ class ChatService:
         model_factory: Callable[[], BaseChatModel],
         mcp_server: FastMCP,
         registry: TurnRegistry,
-        today: Callable[[], date] = lambda: datetime.now(UTC).date(),
+        today: Callable[[ZoneInfo], date] = lambda tz: datetime.now(tz).date(),
     ) -> None:
         self._settings = settings
         self._model_factory = model_factory
@@ -221,7 +223,8 @@ class ChatService:
         turn = TurnContext(
             user_id=request.user_id,
             is_anonymous=request.is_anonymous,
-            today=request.today or self._today(),
+            today=request.today or self._today(zone(request.time_zone)),
+            time_zone=request.time_zone or DEFAULT_TIME_ZONE,
             portfolio=request.portfolio,
         )
         self._registry.register(turn)
@@ -280,6 +283,7 @@ class ChatService:
                 tools,
                 system_prompt=build_system_prompt(
                     turn.today,
+                    time_zone=turn.time_zone,
                     advice_request=advice_request,
                     is_anonymous=request.is_anonymous,
                 ),

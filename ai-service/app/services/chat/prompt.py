@@ -2,7 +2,9 @@
 
 from datetime import date
 
-_BASE = """You are Equity Lens's AI research analyst. Today's date is {today}.
+_BASE = """You are Equity Lens's AI research analyst. Today's date is {today} \
+in the user's time zone ({time_zone}). Give times in that zone; tool timestamps \
+are already converted to it.
 
 SCOPE
 - Help only with stocks, earnings calls, markets, the user's portfolio, and \
@@ -81,9 +83,13 @@ The user is trying a demo account; their portfolio is sample data."""
 
 
 def build_system_prompt(
-    today: date, *, advice_request: bool, is_anonymous: bool
+    today: date,
+    *,
+    advice_request: bool,
+    is_anonymous: bool,
+    time_zone: str = "UTC",
 ) -> str:
-    prompt = _BASE.format(today=today.isoformat())
+    prompt = _BASE.format(today=today.isoformat(), time_zone=time_zone)
     if advice_request:
         prompt += _ADVICE_TURN
     if is_anonymous:

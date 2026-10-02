@@ -28,6 +28,7 @@ class TurnContext:
     is_anonymous: bool
     today: date
     portfolio: PortfolioSnapshot | None
+    time_zone: str = "UTC"
     turn_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     sources: CitationRegistry = field(default_factory=CitationRegistry)
     created_at: float = field(default_factory=time.monotonic)

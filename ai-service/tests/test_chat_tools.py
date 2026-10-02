@@ -109,7 +109,7 @@ def test_quote_includes_timestamp_and_handles_errors() -> None:
     market.get_quote.side_effect = ProviderUnavailableError("x")
     down = tools.get_quote(deps(market=market), ticker="AAPL")
 
-    assert ok.data["price"] == 230.5 and ok.data["as_of"].startswith("2026-10-01T14:30")
+    assert ok.data["price"] == 230.5 and ok.data["as_of"] == "Oct 1, 2026, 2:30 PM UTC"
     assert missing.data["status"] == "not_found"
     assert down.data["status"] == "error"
 
@@ -145,3 +145,20 @@ def test_calculator_reports_invalid_trades() -> None:
     )
 
     assert out.data["status"] == "invalid" and "only 5" in out.data["message"]
+
+
+def test_quote_timestamp_uses_the_users_time_zone() -> None:
+    market = MagicMock()
+    market.get_quote.return_value = Quote.build(
+        ticker="AAPL",
+        price=230.5,
+        previous_close=228.0,
+        provider="finnhub",
+        as_of=datetime(2026, 10, 2, 15, 10, tzinfo=UTC),
+    )
+
+    out = tools.get_quote(
+        deps(market=market), ticker="AAPL", time_zone="America/New_York"
+    )
+
+    assert out.data["as_of"] == "Oct 2, 2026, 11:10 AM EDT"

@@ -3,7 +3,9 @@
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
+
+from app.localtime import valid_time_zone
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -60,6 +62,13 @@ class ChatTurnRequest(BaseModel):
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=50)
     portfolio: PortfolioSnapshot | None = None
     today: date | None = None
+    # The user's IANA time zone from the browser; invalid values fall back to UTC.
+    time_zone: str | None = Field(default=None, max_length=64)
+
+    @field_validator("time_zone", mode="before")
+    @classmethod
+    def _known_zone(cls, value: object) -> str | None:
+        return valid_time_zone(value)
 
 
 class Citation(BaseModel):

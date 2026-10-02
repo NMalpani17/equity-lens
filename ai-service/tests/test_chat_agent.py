@@ -68,7 +68,7 @@ def make_service(model: ScriptedChatModel, registry: TurnRegistry | None = None,
         lambda: model,
         mcp_server.mcp,
         registry or turn_registry,
-        today=lambda: date(2026, 10, 1),
+        today=lambda _tz: date(2026, 10, 1),
     )
 
 
@@ -415,3 +415,25 @@ def test_merge_progress_interleaves_and_closes_cleanly() -> None:
         ("progress", "working…"),
         ("chunk", "b"),
     ]
+
+
+def test_today_is_computed_in_the_users_time_zone() -> None:
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 10, 2, 3, 30, tzinfo=UTC)  # still Oct 1 in Los Angeles
+    model = ScriptedChatModel(script=[ai("Hi! Ask me about a stock.")])
+    service = ChatService(
+        settings(),
+        lambda: model,
+        mcp_server.mcp,
+        turn_registry,
+        today=lambda tz: now.astimezone(tz).date(),
+    )
+
+    collect(service, request("hi, any market news?", time_zone="America/Los_Angeles"))
+
+    system = model.seen[0][0].content
+    assert (
+        "Today's date is 2026-10-01 in the user's time zone (America/Los_Angeles)"
+        in system
+    )

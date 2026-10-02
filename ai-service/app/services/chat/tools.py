@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from app.localtime import format_local
 from app.models.price_history import HistoryPeriod
 from app.services.market_data.base import ProviderUnavailableError, QuoteNotFoundError
 from app.services.market_data.history import PriceHistoryService
@@ -46,7 +47,9 @@ class ToolDeps(SearchDeps):
     history: Callable[[], PriceHistoryService]
 
 
-def get_quote(deps: ToolDeps, *, ticker: str) -> ToolOutput:
+def get_quote(
+    deps: ToolDeps, *, ticker: str, time_zone: str | None = None
+) -> ToolOutput:
     symbol = ticker.strip().upper()
     try:
         quote = deps.market().get_quote(symbol)
@@ -76,7 +79,7 @@ def get_quote(deps: ToolDeps, *, ticker: str) -> ToolOutput:
             "change": round(quote.change, 4),
             "change_percent": round(quote.change_percent, 2),
             "currency": quote.currency,
-            "as_of": quote.as_of.isoformat(timespec="minutes"),
+            "as_of": format_local(quote.as_of, time_zone),
         }
     )
 
@@ -133,7 +136,7 @@ def get_portfolio(turn: TurnContext | None) -> ToolOutput:
     return ToolOutput.of(
         {
             "status": "ok",
-            "as_of": snapshot.as_of.isoformat(timespec="minutes")
+            "as_of": format_local(snapshot.as_of, turn.time_zone)
             if snapshot.as_of
             else None,
             "positions": positions,
