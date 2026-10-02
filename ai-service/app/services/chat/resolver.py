@@ -80,6 +80,7 @@ class Resolution:
     indexed: bool = False
     period: dict[str, Any] | None = None
     message: str | None = None
+    share_classes: list[Candidate] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"status": self.status, "query": self.query}
@@ -91,6 +92,8 @@ class Resolution:
             )
         if self.candidates:
             out["candidates"] = [c.as_dict() for c in self.candidates]
+        if self.share_classes:
+            out["share_classes"] = [c.as_dict() for c in self.share_classes]
         if self.period:
             out["period"] = self.period
         if self.message:
@@ -239,7 +242,23 @@ class CompanyResolver:
             if len(candidates) == 1:
                 c = candidates[0]
                 return Resolution("resolved", query, c.ticker, c.name)
-            return self._ambiguous(query, candidates)
+            # Share classes of one company: resolve to the indexed (or primary)
+            # class for company-level questions; list the classes so the agent
+            # can ask only when the class matters (prices).
+            primary = next((c for c in candidates if c.ticker in names), candidates[0])
+            return Resolution(
+                "resolved",
+                query,
+                primary.ticker,
+                names.get(primary.ticker) or primary.name,
+                share_classes=candidates,
+                message=(
+                    f"{' and '.join(c.ticker for c in candidates)} are share classes "
+                    f"of one company with the same earnings calls; use "
+                    f"{primary.ticker} for transcripts and company questions. Only "
+                    "for prices or quotes, ask which class unless the user named one."
+                ),
+            )
 
         exact = [
             r

@@ -131,7 +131,9 @@ def test_mcp_http_endpoint_requires_the_internal_token(monkeypatch) -> None:
 def test_out_of_range_top_k_is_clamped_not_rejected(
     search, args, expected_top_k
 ) -> None:
-    result = run(call("search_transcripts", {"query": "demand", **args}))
+    result = run(
+        call("search_transcripts", {"query": "demand", "fiscal_year": 2027, **args})
+    )
 
     assert not result.is_error
     assert search.search.call_args.args[0].top_k == expected_top_k

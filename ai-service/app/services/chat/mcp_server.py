@@ -23,6 +23,7 @@ from app.models.price_history import HistoryPeriod
 from app.services.market_data.history import get_price_history_service
 from app.services.market_data.service import get_market_data_service
 from app.services.rag.container import get_rag_components
+from app.services.rag.repository import TickerRecord
 
 from . import tools
 from .context import TurnContext, turn_id_from_meta, turn_registry
@@ -100,13 +101,24 @@ def _resolver() -> CompanyResolver:
     )
 
 
+def _ticker_record(ticker: str) -> TickerRecord | None:
+    try:
+        return get_rag_components().repo.get_ticker(ticker)
+    except Exception:
+        logger.warning("could not load ticker record for %s", ticker, exc_info=True)
+        return None
+
+
 def default_tool_deps() -> ToolDeps:
+    settings = get_settings()
     return ToolDeps(
         search=lambda: get_rag_components().search,
         market=get_market_data_service,
         history=get_price_history_service,
         resolver=_resolver,
-        search_top_k=get_settings().chat_search_top_k,
+        ticker_record=_ticker_record,
+        search_top_k=settings.chat_search_top_k,
+        index_wait_seconds=settings.chat_index_wait_seconds,
     )
 
 

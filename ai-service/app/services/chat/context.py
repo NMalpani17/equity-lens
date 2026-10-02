@@ -9,6 +9,7 @@ and are never accepted from tool arguments.
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -30,6 +31,17 @@ class TurnContext:
     turn_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     sources: CitationRegistry = field(default_factory=CitationRegistry)
     created_at: float = field(default_factory=time.monotonic)
+    # Set by the agent: forwards live progress labels (e.g. "Indexing
+    # Starbucks transcripts…") to the stream. Thread-safe; tools may run in
+    # worker threads.
+    progress: Callable[[str], None] | None = None
+
+    def report_progress(self, label: str) -> None:
+        if self.progress is not None:
+            try:
+                self.progress(label)
+            except Exception:  # progress is best-effort; never fail a tool
+                pass
 
 
 class TurnRegistry:

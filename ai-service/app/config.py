@@ -118,6 +118,8 @@ class Settings(BaseSettings):
     chat_history_max_messages: int = 6
     chat_history_max_tokens: int = 3000
     chat_search_top_k: int = 5
+    # How long search_transcripts waits for on-demand indexing within a turn.
+    chat_index_wait_seconds: float = 45.0
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -53,12 +53,20 @@ def test_ticker_input_resolves_directly_even_lowercase() -> None:
     assert make_resolver().resolve("cost").ticker == "COST"
 
 
-def test_share_classes_are_ambiguous() -> None:
-    result = make_resolver().resolve("Alphabet")
+def test_share_classes_resolve_to_the_indexed_class_without_asking() -> None:
+    result = make_resolver().resolve("Alphabet", period="last quarter")
 
-    assert result.status == "ambiguous"
-    assert [c.ticker for c in result.candidates] == ["GOOGL", "GOOG"]
-    assert "Ask the user" in result.message
+    assert result.status == "resolved" and result.ticker == "GOOGL"
+    assert [c.ticker for c in result.share_classes] == ["GOOGL", "GOOG"]
+    assert "for prices or quotes, ask which class" in result.message
+    assert result.period["fiscal_quarter"] == 2  # GOOGL's latest indexed call
+
+
+def test_unindexed_share_classes_resolve_to_the_primary_class() -> None:
+    result = CompanyResolver(lambda: [], lambda _: []).resolve("Berkshire Hathaway")
+
+    assert result.status == "resolved" and result.ticker == "BRK.B"
+    assert result.as_dict()["share_classes"][1]["ticker"] == "BRK.A"
 
 
 def test_several_similar_companies_are_ambiguous() -> None:
