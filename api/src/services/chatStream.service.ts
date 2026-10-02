@@ -114,6 +114,8 @@ export interface ChatStreamRequest {
   message: string;
   history: HistoryMessage[];
   portfolio: PortfolioSummary | null;
+  /** IANA time zone from the browser, for local dates and timestamps. */
+  timeZone?: string;
 }
 
 function toCitation(c: z.infer<typeof citationSchema>): CitationDto {
@@ -245,6 +247,7 @@ export async function openChatStream(
         message: request.message,
         history: request.history,
         portfolio: toSnapshot(request.portfolio),
+        time_zone: request.timeZone,
       }),
     });
   } catch (error) {

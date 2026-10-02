@@ -86,6 +86,15 @@ export type ChatStreamEvent =
   | ({ type: "error" } & ChatErrorPayload)
   | { type: "done"; message: ChatMessage };
 
+/** The browser's IANA time zone (e.g. "America/New_York"), if available. */
+export function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const STREAM_EVENTS = new Set([
   "turn",
   "token",
@@ -147,7 +156,8 @@ export async function streamMessage(
         Accept: "text/event-stream",
         ...(await authHeaders()),
       },
-      body: JSON.stringify({ content }),
+      // The server shows dates and times in the user's own time zone.
+      body: JSON.stringify({ content, timeZone: browserTimeZone() }),
     });
   } catch (error) {
     if (signal?.aborted) throw error;

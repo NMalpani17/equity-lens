@@ -15,6 +15,23 @@ export const createConversationSchema = z.object({ title: titleSchema.optional()
 
 export const renameConversationSchema = z.object({ title: titleSchema });
 
+/** True for a valid IANA time zone such as "America/New_York". */
+export function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The browser's time zone; unknown values are dropped (UTC is used). */
+const timeZoneSchema = z
+  .string()
+  .max(64)
+  .optional()
+  .transform((value) => (value && isValidTimeZone(value) ? value : undefined));
+
 export const sendMessageSchema = z.object({
   content: z
     .string()
@@ -24,6 +41,7 @@ export const sendMessageSchema = z.object({
       config.chat.maxMessageChars,
       `Messages are limited to ${config.chat.maxMessageChars} characters.`,
     ),
+  timeZone: timeZoneSchema,
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

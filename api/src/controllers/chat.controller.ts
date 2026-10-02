@@ -72,7 +72,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   const userId = getUserId(req);
   const isAnonymous = isAnonymousRequest(req);
   const conversationId = conversationIdSchema.parse(req.params.id);
-  const { content } = sendMessageSchema.parse(req.body);
+  const { content, timeZone } = sendMessageSchema.parse(req.body);
 
   const started = performance.now();
   const timings: Record<string, number> = {};
@@ -105,6 +105,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
         message: content,
         history: turn.history,
         portfolio,
+        timeZone,
       },
       abort.signal,
     );

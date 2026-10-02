@@ -250,6 +250,28 @@ describe("POST /api/conversations/:id/messages", () => {
     );
   });
 
+  it("forwards the browser's time zone to the ai-service", async () => {
+    openStream.mockResolvedValue(
+      stream({
+        type: "done",
+        content: "ok",
+        status: "complete",
+        citations: [],
+        toolCalls: [],
+        inputTokens: 1,
+        outputTokens: 1,
+        model: "m",
+      }),
+    );
+
+    await post(`/api/conversations/${CONV}/messages`).send({
+      content: "hi",
+      timeZone: "Europe/Berlin",
+    });
+
+    expect(openStream.mock.calls[0]![0]).toMatchObject({ timeZone: "Europe/Berlin" });
+  });
+
   it("rejects messages over the length limit before doing anything", async () => {
     const res = await post(`/api/conversations/${CONV}/messages`).send({
       content: "x".repeat(2001),
