@@ -101,3 +101,55 @@ def test_finnhub_sends_the_key_in_a_header_not_the_url(monkeypatch) -> None:
         assert SECRET not in url
         assert SECRET not in json.dumps(params)
         assert headers["X-Finnhub-Token"] == SECRET
+
+
+def test_tool_failures_are_logged_with_a_redacted_traceback_only_on_the_server(
+    capsys,
+) -> None:
+    import asyncio
+    from unittest.mock import MagicMock
+
+    from fastmcp import Client
+
+    from app.services.chat import mcp_server
+    from app.services.chat.tools import ToolDeps
+
+    def failing_search():
+        raise RuntimeError(f"pool connect failed for postgres://db?password={SECRET}")
+
+    search = MagicMock()
+    search.search.side_effect = lambda *_: failing_search()
+    deps = ToolDeps(
+        search=lambda: search, market=MagicMock, history=MagicMock, resolver=MagicMock
+    )
+    mcp_server.set_tool_deps(lambda: deps)
+    configure_logging("INFO")  # routes FastMCP's logger through our JSON handler
+
+    async def call():
+        async with Client(mcp_server.mcp) as client:
+            return await client.call_tool(
+                "search_transcripts",
+                {"query": "demand", "ticker": "NVDA"},
+                raise_on_error=False,
+            )
+
+    try:
+        result = asyncio.run(call())
+    finally:
+        mcp_server.set_tool_deps(mcp_server.default_tool_deps)
+
+    # The client (the model, and so Langfuse) sees only a masked error.
+    client_text = result.content[0].text
+    assert result.is_error and client_text == "Error calling tool 'search_transcripts'"
+    assert "Traceback" not in client_text and SECRET not in client_text
+    # The server log has the full traceback, as JSON, with the secret redacted.
+    err = capsys.readouterr().err
+    lines = [json.loads(line) for line in err.splitlines() if line.startswith("{")]
+    failure = next(
+        line for line in lines if line["message"].startswith("Error calling tool")
+    )
+    assert failure["level"] == "ERROR" and failure["logger"].startswith("fastmcp")
+    assert (
+        "Traceback" in failure["exception"] and "failing_search" in failure["exception"]
+    )
+    assert SECRET not in err

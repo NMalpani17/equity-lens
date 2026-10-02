@@ -47,6 +47,11 @@ _SHARE_CLASS_NOTES = {
     "BRK.B": "Berkshire Hathaway Class B",
 }
 
+_INDEX_STATUS_UNKNOWN = (
+    "Whether this company's transcripts are indexed couldn't be checked right "
+    "now (transcripts_indexed is null); search_transcripts checks it itself."
+)
+
 SymbolSearch = Callable[[str], list[dict[str, Any]]]
 IndexedTickers = Callable[[], list[TickerRecord]]
 
@@ -110,7 +115,8 @@ class Resolution:
     ticker: str | None = None
     company_name: str | None = None
     candidates: list[Candidate] = field(default_factory=list)
-    indexed: bool = False
+    # None when the index status couldn't be loaded (reported as unknown).
+    indexed: bool | None = False
     period: dict[str, Any] | None = None
     message: str | None = None
     share_classes: list[Candidate] = field(default_factory=list)
@@ -228,12 +234,21 @@ class CompanyResolver:
 
     def resolve(self, query: str, period: str | None = None) -> Resolution:
         query = query.strip()
-        indexed = self._safe_indexed()
+        loaded = self._safe_indexed()
+        indexed = loaded or []
         by_ticker = {r.ticker: r for r in indexed}
         resolution = self._resolve_company(query, indexed, by_ticker)
         if resolution.status == "resolved" and resolution.ticker:
             record = by_ticker.get(resolution.ticker)
-            resolution.indexed = bool(record and record.status == "indexed")
+            if loaded is None:
+                # Unknown, not "not indexed": an indexed company must not look
+                # unindexed (or prompt indexing) because a lookup failed.
+                resolution.indexed = None
+                resolution.message = " ".join(
+                    filter(None, [resolution.message, _INDEX_STATUS_UNKNOWN])
+                )
+            else:
+                resolution.indexed = bool(record and record.status == "indexed")
             if period:
                 resolution.period = resolve_period(
                     period, record.quarters if record else []
@@ -339,14 +354,15 @@ class CompanyResolver:
             "before calling other tools.",
         )
 
-    def _safe_indexed(self) -> list[TickerRecord]:
+    def _safe_indexed(self) -> list[TickerRecord] | None:
+        """Indexed tickers, or None if they couldn't be loaded."""
         try:
             return self._indexed_tickers()
         except Exception:
             logger.warning(
                 "could not load indexed tickers for resolution", exc_info=True
             )
-            return []
+            return None
 
     def _safe_search(self, query: str) -> list[dict[str, Any]]:
         try:

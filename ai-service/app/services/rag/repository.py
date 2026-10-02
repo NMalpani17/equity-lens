@@ -100,17 +100,27 @@ def to_libpq_url(database_url: str) -> str:
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
+# Idle connections are closed after this long (the pooler drops idle
+# connections on its own, and a dropped one fails the next query).
+POOL_MAX_IDLE_SECONDS = 300
+
+
 def create_pool(database_url: str, max_size: int) -> ConnectionPool:
     """Open a connection pool.
 
     ``prepare_threshold=None`` disables server-side prepared statements, which
     Supabase's transaction-mode pooler (PgBouncer/Supavisor) does not support.
+    ``check`` tests each connection as it is handed out, so one the pooler
+    closed while idle is replaced instead of failing the first query after a
+    quiet period.
     """
     return ConnectionPool(
         to_libpq_url(database_url),
         min_size=1,
         max_size=max_size,
         kwargs={"prepare_threshold": None, "row_factory": dict_row},
+        check=ConnectionPool.check_connection,
+        max_idle=POOL_MAX_IDLE_SECONDS,
         open=True,
         timeout=10,
     )

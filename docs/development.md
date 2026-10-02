@@ -233,7 +233,10 @@ share counts as integers.
 
 **Logs never contain credentials.** Provider keys travel in headers (Finnhub
 uses `X-Finnhub-Token`), HTTP client loggers run at WARNING, and the ai-service
-JSON formatter redacts secret query parameters, bearer tokens and auth headers.
+JSON formatter redacts secret query parameters, bearer tokens and auth headers. FastMCP's
+logger is routed through the same formatter, so a failing tool is logged with
+its full traceback (redacted) on the server, while the model and Langfuse only
+see "Error calling tool '<name>'".
 The API's pino logger censors `authorization`, `cookie`, `x-internal-token` and
 `set-cookie` as `***`.
 
