@@ -103,7 +103,7 @@ def test_search_numbers_passages_within_the_turn(search) -> None:
 
 
 def test_invalid_arguments_are_rejected_by_the_schema(search) -> None:
-    result = run(call("search_transcripts", {"query": "x", "top_k": 50}))
+    result = run(call("search_transcripts", {"query": ""}))
 
     assert result.is_error
 
@@ -122,3 +122,43 @@ def test_mcp_http_endpoint_requires_the_internal_token(monkeypatch) -> None:
 
     assert denied.status_code == 401 and wrong.status_code == 401
     assert allowed.status_code != 401
+
+
+@pytest.mark.parametrize(
+    ("args", "expected_top_k"),
+    [({"top_k": 50}, 8), ({"top_k": 0}, 1), ({"top_k": -3}, 1), ({"top_k": 7.9}, 7)],
+)
+def test_out_of_range_top_k_is_clamped_not_rejected(
+    search, args, expected_top_k
+) -> None:
+    result = run(call("search_transcripts", {"query": "demand", **args}))
+
+    assert not result.is_error
+    assert search.search.call_args.args[0].top_k == expected_top_k
+
+
+def test_out_of_range_periods_are_clamped_or_dropped(search) -> None:
+    result = run(
+        call(
+            "search_transcripts",
+            {"query": "q", "fiscal_year": 1800, "fiscal_quarter": 7},
+        )
+    )
+
+    request = search.search.call_args.args[0]
+    assert not result.is_error
+    assert request.fiscal_year == 1990
+    assert request.fiscal_quarter is None
+
+
+def test_limits_are_stated_in_the_tool_schema() -> None:
+    async def schema():
+        async with Client(mcp_server.mcp) as client:
+            tools = await client.list_tools()
+        return next(t for t in tools if t.name == "search_transcripts").input_schema
+
+    props = run(schema())["properties"]
+
+    assert props["top_k"]["maximum"] == 8 and props["top_k"]["minimum"] == 1
+    assert "1-8" in props["top_k"]["description"]
+    assert "1-4" in str(props["fiscal_quarter"])

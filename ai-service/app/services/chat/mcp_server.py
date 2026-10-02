@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent, ToolAnnotations
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from app.config import get_settings
 from app.models.price_history import HistoryPeriod
@@ -45,6 +45,36 @@ READ_ONLY = ToolAnnotations(
     idempotent_hint=True,
     open_world_hint=True,
 )
+
+
+def _clamped(lo: int, hi: int) -> BeforeValidator:
+    """Clamp an out-of-range number to [lo, hi] instead of failing the call.
+
+    Runs before the Field constraints, so the schema still advertises the
+    limits but a model that overshoots (e.g. top_k=20) gets the nearest
+    valid value rather than a validation error and a wasted retry.
+    """
+
+    def clamp(value: object) -> object:
+        if isinstance(value, bool) or value is None:
+            return value
+        try:
+            number = int(float(value))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return value  # let normal validation report non-numbers
+        return min(max(number, lo), hi)
+
+    return BeforeValidator(clamp)
+
+
+def _quarter_or_none(value: object) -> object:
+    """Drop an impossible quarter filter (clamping would pick a wrong one)."""
+    try:
+        quarter = int(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return value
+    return quarter if 1 <= quarter <= 4 else None
+
 
 Ticker = Annotated[
     str,
@@ -118,10 +148,33 @@ def search_transcripts(
     ] = None,
     fiscal_year: Annotated[
         int | None,
-        Field(description="Company fiscal year (see resolve_company).", ge=1990),
+        Field(
+            description="Company fiscal year, 1990-2100 (see resolve_company). "
+            "Omit to search all indexed calls, newest first.",
+            ge=1990,
+            le=2100,
+        ),
+        _clamped(1990, 2100),
     ] = None,
-    fiscal_quarter: Annotated[int | None, Field(ge=1, le=4)] = None,
-    top_k: Annotated[int, Field(description="Passages to return.", ge=1, le=8)] = 5,
+    fiscal_quarter: Annotated[
+        int | None,
+        Field(
+            description="Fiscal quarter 1-4; any other value is ignored.",
+            ge=1,
+            le=4,
+        ),
+        BeforeValidator(_quarter_or_none),
+    ] = None,
+    top_k: Annotated[
+        int,
+        Field(
+            description="Passages to return: 1-8 (default 5). Larger values "
+            "are capped at 8.",
+            ge=1,
+            le=8,
+        ),
+        _clamped(1, 8),
+    ] = 5,
 ) -> ToolResult:
     """Search earnings call transcripts (last four calls per company).
 
