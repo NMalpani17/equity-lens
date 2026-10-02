@@ -27,7 +27,7 @@ export function ChatMarkdown({ content, citations = [], onCite }: ChatMarkdownPr
           <button
             type="button"
             onClick={() => onCite?.(citation)}
-            className="mx-0.5 rounded px-0.5 align-super text-[0.7em] font-semibold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="ml-0.5 rounded-sm pl-0.5 align-super text-[0.7em] font-semibold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label={`Source ${citation.id}: ${citation.ticker} Q${citation.fiscalQuarter} FY${citation.fiscalYear}, ${citation.speaker}`}
           >
             {children}

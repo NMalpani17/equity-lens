@@ -36,7 +36,7 @@ def test_valid_citations_are_renumbered_in_order_of_appearance() -> None:
 
     assert (
         answer.text
-        == "Revenue rose [1]. Margins expanded [2][1]. Guidance was raised [2]."
+        == "Revenue rose [1]. Margins expanded [1][2]. Guidance was raised [2]."
     )
     assert [c.id for c in answer.citations] == [1, 2]
     assert answer.citations[0].text == search_result(2).text  # old [3]
@@ -77,4 +77,19 @@ def test_passages_cannot_forge_delimiters() -> None:
     assert formatted.count("</passage>") == 1  # only our own closing tag
     assert (
         'id="2"' in formatted and "Q2 FY2027" in formatted and "2026-08-26" in formatted
+    )
+
+
+def test_grouped_citations_are_sorted_and_hug_punctuation() -> None:
+    registry = registry_with(4)
+
+    answer = validate_citations(
+        "Vera Rubin is in production [1] . Demand is broad [4][3][1][2] , "
+        "and supply stays tight [2] ; margins hold [3] !",
+        registry,
+    )
+
+    assert answer.text == (
+        "Vera Rubin is in production [1]. Demand is broad [1][2][3][4], "
+        "and supply stays tight [4]; margins hold [3]!"  # renumbered by appearance
     )

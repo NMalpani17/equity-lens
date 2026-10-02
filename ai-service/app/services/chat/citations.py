@@ -16,6 +16,14 @@ from app.models.rag import RagSearchResult
 # [3], [3, 5], [3,5] — one or two digits so years like [2025] are left alone.
 _MARKER_RE = re.compile(r"\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\]")
 _PASSAGE_TAG_RE = re.compile(r"</?\s*passage", re.IGNORECASE)
+_MARKER_RUN_RE = re.compile(r"(?:\[\d{1,2}\])+")
+
+
+def _sort_run(match: re.Match[str]) -> str:
+    ids = sorted({int(n) for n in re.findall(r"\d+", match.group(0))})
+    return "".join(f"[{n}]" for n in ids)
+
+
 MAX_PASSAGE_CHARS = 1800
 
 
@@ -145,7 +153,10 @@ def validate_citations(text: str, registry: CitationRegistry) -> ValidatedAnswer
         return "".join(kept)
 
     cleaned = _MARKER_RE.sub(replace, text)
-    # Tidy spaces left before punctuation where a marker was removed.
+    # Grouped citations read in order: [4][3][1] -> [1][3][4].
+    cleaned = _MARKER_RUN_RE.sub(_sort_run, cleaned)
+    # No space between text, a citation and the punctuation that follows:
+    # "production [1] ." -> "production [1]."
     cleaned = re.sub(r"[ \t]+([.,;:!?])", r"\1", cleaned)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
     return ValidatedAnswer(text=cleaned, citations=citations, dropped=dropped)

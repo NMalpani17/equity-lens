@@ -9,9 +9,26 @@ export const CITE_PREFIX = "#cite-";
  */
 export function linkCitations(content: string, citations: Citation[]): string {
   const known = new Set(citations.map((c) => c.id));
-  return content.replace(/\[(\d{1,2})\](?!\()/g, (match, raw: string) =>
+  return tidyCitations(content).replace(/\[(\d{1,2})\](?!\()/g, (match, raw: string) =>
     known.has(Number(raw)) ? `[\\[${raw}\\]](${CITE_PREFIX}${raw})` : match,
   );
+}
+
+/**
+ * Sort grouped markers ([4][3][1] -> [1][3][4]) and drop the space between a
+ * marker and the punctuation after it ("production [1] ." -> "production [1].").
+ * Also applied while streaming, before the server's validated text arrives.
+ */
+export function tidyCitations(content: string): string {
+  return content
+    .replace(/(?:\[\d{1,2}\])+/g, (run) => {
+      const ids = [...new Set((run.match(/\d+/g) ?? []).map(Number))];
+      return ids
+        .sort((a, b) => a - b)
+        .map((n) => `[${n}]`)
+        .join("");
+    })
+    .replace(/(\[\d{1,2}\])[ \t]+([.,;:!?])/g, "$1$2");
 }
 
 /** Fallback text so an assistant bubble is never blank. */

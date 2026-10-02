@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatMessage, Citation } from "@/lib/chatApi";
-import { fallbackText, linkCitations } from "@/lib/chatFormat";
+import { fallbackText, linkCitations, tidyCitations } from "@/lib/chatFormat";
 
 const citation = (id: number): Citation => ({
   id,
@@ -56,5 +56,27 @@ describe("fallbackText", () => {
     );
     expect(fallbackText(message({ status: "empty" }))).toMatch(/No answer/);
     expect(fallbackText(message({ status: "complete", content: "Hi" }))).toBeNull();
+  });
+});
+
+describe("tidyCitations", () => {
+  it("sorts grouped citations and removes spaces before punctuation", () => {
+    expect(
+      tidyCitations(
+        "In production [1] . Demand is broad [4][3][1][2] , supply tight [2][2] ;",
+      ),
+    ).toBe("In production [1]. Demand is broad [1][2][3][4], supply tight [2];");
+  });
+
+  it("is applied when citations are linked", () => {
+    expect(linkCitations("Ramp [2][1] .", [citation(1), citation(2)])).toBe(
+      "Ramp [\\[1\\]](#cite-1)[\\[2\\]](#cite-2).",
+    );
+  });
+
+  it("leaves years and prose alone", () => {
+    expect(tidyCitations("Guidance for [2026] is unchanged .")).toBe(
+      "Guidance for [2026] is unchanged .",
+    );
   });
 });
