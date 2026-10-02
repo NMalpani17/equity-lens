@@ -15,7 +15,7 @@ import contextlib
 import logging
 import time
 import warnings
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Literal
@@ -40,6 +40,11 @@ from app.models.chat import (
     ToolCallSummary,
     TurnStatus,
 )
+from app.services.observability.masking import (
+    portfolio_values,
+    set_turn_sensitive_values,
+)
+from app.services.observability.tracing import NoopTracer, Tracer, TurnTrace
 
 from .charts import MAX_CHARTS_PER_TURN, build_chart, chart_key
 from .citations import validate_citations
@@ -107,6 +112,9 @@ class _TurnState:
     ended_on_tool_calls: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
+    # Final status for tracing ("error" if the turn raised).
+    status: str | None = None
+    trace_id: str | None = None
 
 
 async def _decline_elicitation(*_: Any) -> Any:
@@ -211,22 +219,37 @@ class ChatService:
         mcp_server: FastMCP,
         registry: TurnRegistry,
         today: Callable[[ZoneInfo], date] = lambda tz: datetime.now(tz).date(),
+        tracer: Tracer | None = None,
     ) -> None:
         self._settings = settings
         self._model_factory = model_factory
         self._mcp = mcp_server
         self._registry = registry
         self._today = today
+        self._tracer: Tracer = tracer or NoopTracer()
 
-    async def stream_turn(self, request: ChatTurnRequest) -> AsyncIterator[ChatEvent]:
+    async def stream_turn(
+        self, request: ChatTurnRequest, *, trace_tags: Sequence[str] = ()
+    ) -> AsyncIterator[ChatEvent]:
+        """Run one turn. ``trace_tags`` are added to the trace (e.g. evals)."""
         started = time.perf_counter()
+        tags = ["chat", *(["demo"] if request.is_anonymous else []), *trace_tags]
         guard = check_message(request.message)
         if guard.verdict is not Verdict.ALLOW:
             logger.info("chat guard: %s", guard.verdict.value)
-            yield ChatEvent("token", {"text": guard.reply})
-            yield ChatEvent(
-                "done", self._done(guard.reply or "", "refused", _TurnState())
+            state = _TurnState(status="refused")
+            state.trace_id = self._tracer.record_event(
+                user_id=request.user_id,
+                session_id=request.conversation_id,
+                name="chat-turn",
+                input=request.message,
+                output=guard.reply,
+                tags=[*tags, "guardrail"],
+                metadata={"guard": guard.verdict.value},
             )
+            self._record_status(state)
+            yield ChatEvent("token", {"text": guard.reply})
+            yield ChatEvent("done", self._done(guard.reply or "", "refused", state))
             return
 
         turn = TurnContext(
@@ -238,12 +261,27 @@ class ChatService:
         )
         self._registry.register(turn)
         state = _TurnState()
+        if self._tracer.enabled:
+            set_turn_sensitive_values(portfolio_values(request.portfolio))
+        trace = self._tracer.start_turn(
+            user_id=request.user_id,
+            session_id=request.conversation_id,
+            tags=tags,
+            metadata={
+                "model": self._settings.chat_model,
+                "has_portfolio": str(
+                    bool(request.portfolio and request.portfolio.positions)
+                ),
+                "history_messages": str(len(request.history)),
+            },
+        )
         try:
             async for event in self._run_agent(
-                request, turn, state, guard.advice_request
+                request, turn, state, guard.advice_request, trace
             ):
                 yield event
         except Exception as exc:  # model/provider failures end the turn cleanly
+            state.status = "error"
             error = classify_model_error(exc)
             log = logger.warning if error.expected else logger.exception
             log("chat turn failed (%s): %s", error.code, exc)
@@ -257,6 +295,10 @@ class ChatService:
             )
         finally:
             self._registry.discard(turn.turn_id)
+            state.trace_id = state.trace_id or trace.trace_id
+            self._record_status(state)
+            if self._tracer.enabled:
+                set_turn_sensitive_values(())
             logger.info(
                 "chat turn",
                 extra={
@@ -266,6 +308,8 @@ class ChatService:
                         "input_tokens": state.input_tokens,
                         "output_tokens": state.output_tokens,
                         "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                        "status": state.status,
+                        "trace_id": state.trace_id,
                     }
                 },
             )
@@ -276,6 +320,7 @@ class ChatService:
         turn: TurnContext,
         state: _TurnState,
         advice_request: bool,
+        trace: TurnTrace,
     ) -> AsyncIterator[ChatEvent]:
         settings = self._settings
         messages = trim_history(
@@ -309,6 +354,7 @@ class ChatService:
                 {"messages": messages},
                 stream_mode=["messages", "updates"],
                 version="v2",
+                config=trace.config,  # tracing callbacks + trace attributes
             )
             # Tools report progress (e.g. while waiting for indexing) through
             # the turn; merge it with the model/tool stream as it happens.
@@ -330,6 +376,8 @@ class ChatService:
                 turn.progress = None
 
         content, status = self._finalize(turn, state, advice_request)
+        state.status = status
+        state.trace_id = trace.trace_id
         yield ChatEvent("done", self._done(content, status, state))
 
     def _handle_chunk(
@@ -438,6 +486,15 @@ class ChatService:
         state.charts[key] = chart
         return chart
 
+    def _record_status(self, state: _TurnState) -> None:
+        """Tag the trace with how the turn ended (complete, blocked, error…)."""
+        self._tracer.score(
+            trace_id=state.trace_id,
+            name="turn_status",
+            value=state.status or "interrupted",
+            data_type="CATEGORICAL",
+        )
+
     def _finalize(
         self, turn: TurnContext, state: _TurnState, advice_request: bool
     ) -> tuple[str, TurnStatus]:
@@ -480,4 +537,6 @@ class ChatService:
                 "output_tokens": state.output_tokens,
             },
             "model": self._settings.chat_model,
+            # Internal: lets evals attach scores; the gateway ignores it.
+            "trace_id": state.trace_id,
         }

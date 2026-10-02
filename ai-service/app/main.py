@@ -17,6 +17,7 @@ from app.logging_config import configure_logging
 from app.routers import chat, health, market, rag
 from app.security import InternalTokenMiddleware, require_internal_token
 from app.services.chat.mcp_server import mcp
+from app.services.observability.tracing import shutdown_tracer
 from app.services.rag.container import shutdown_rag_components
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
     shutdown_rag_components()
+    shutdown_tracer()
 
 
 def create_app() -> FastAPI:
