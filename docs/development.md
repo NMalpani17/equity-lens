@@ -327,7 +327,9 @@ answer is scored two ways (`ai-service/app/services/evals/`):
   model's answer labeled only "A"/"B" in a seeded random order, each with its
   evidence. Refusal and clarification cases are scored deterministically only.
 
-The script prints a cost estimate first and refuses to run without `--yes`. The
+The script prints a cost estimate first and refuses to run without `--yes`.
+The estimate is deliberately conservative: the 2026-10-02 run cost $0.46
+against a $1.13 estimate (turns averaged ~6.4K input / ~0.3K output tokens). The
 judge is `gemini-3.1-pro-preview` when the whole run is estimated under
 `--budget` ($1.50), otherwise `gemini-3.8-flash`. During the run on-demand
 indexing is disabled (no Equibles quota) and the rerank cache is off so models
