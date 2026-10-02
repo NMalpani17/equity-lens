@@ -1,4 +1,4 @@
-import { Wrench } from "lucide-react";
+import { RotateCcw, Wrench } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { ToolProgress } from "@/components/chat/ToolProgress";
@@ -19,13 +19,20 @@ interface MessageBubbleProps {
   streamText?: string;
   tools?: ToolProgressItem[];
   onCite?: (citation: Citation) => void;
+  /** Re-send the question behind a stopped or failed reply. */
+  onRetry?: () => void;
+  retryDisabled?: boolean;
 }
+
+const RETRYABLE: ChatMessage["status"][] = ["interrupted", "error"];
 
 export function MessageBubble({
   message,
   streamText,
   tools = [],
   onCite,
+  onRetry,
+  retryDisabled = false,
 }: MessageBubbleProps) {
   if (message.role === "user") {
     return (
@@ -42,6 +49,8 @@ export function MessageBubble({
   const fallback = isStreaming ? null : fallbackText(message);
   const note = STATUS_NOTES[message.status];
   const usedTools = !isStreaming ? message.toolCalls : [];
+  const canRetry =
+    !isStreaming && onRetry !== undefined && RETRYABLE.includes(message.status);
 
   return (
     <div className="flex justify-start">
@@ -69,7 +78,7 @@ export function MessageBubble({
             </p>
           )
         )}
-        {(note || usedTools.length > 0) && (
+        {(note || usedTools.length > 0 || canRetry) && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {note && <span className="rounded bg-muted px-1.5 py-0.5">{note}</span>}
             {usedTools.length > 0 && (
@@ -80,6 +89,17 @@ export function MessageBubble({
                 <Wrench aria-hidden="true" className="size-3" />
                 {usedTools.length} tool {usedTools.length === 1 ? "call" : "calls"}
               </span>
+            )}
+            {canRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={retryDisabled}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              >
+                <RotateCcw aria-hidden="true" className="size-3" />
+                Retry
+              </button>
             )}
           </div>
         )}

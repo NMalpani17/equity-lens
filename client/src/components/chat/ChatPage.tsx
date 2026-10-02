@@ -10,7 +10,16 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { StarterQuestions } from "@/components/chat/StarterQuestions";
 import { useAuth } from "@/context/auth-context";
 import { useChat } from "@/hooks/useChat";
-import type { Citation } from "@/lib/chatApi";
+import type { ChatMessage, Citation } from "@/lib/chatApi";
+
+/** The user question an assistant reply answered (for Retry). */
+function questionBefore(messages: ChatMessage[], index: number): string | null {
+  if (messages[index]?.role !== "assistant") return null;
+  for (let i = index - 1; i >= 0; i--) {
+    if (messages[i]!.role === "user") return messages[i]!.content;
+  }
+  return null;
+}
 
 /** The AI analyst chat: conversation list, streaming thread and composer. */
 export function ChatPage() {
@@ -53,15 +62,20 @@ export function ChatPage() {
                 disabled={chat.streaming || outOfMessages}
               />
             ) : (
-              chat.messages.map((message) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  streamText={chat.streamText}
-                  tools={chat.tools}
-                  onCite={setCitation}
-                />
-              ))
+              chat.messages.map((message, index) => {
+                const question = questionBefore(chat.messages, index);
+                return (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    streamText={chat.streamText}
+                    tools={chat.tools}
+                    onCite={setCitation}
+                    onRetry={question ? () => void chat.send(question) : undefined}
+                    retryDisabled={chat.streaming || outOfMessages}
+                  />
+                );
+              })
             )}
             <div ref={bottomRef} />
           </section>

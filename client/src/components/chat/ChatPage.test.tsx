@@ -212,6 +212,37 @@ describe("ChatPage", () => {
     expect(screen.queryByText("Searching SBUX transcripts…")).not.toBeInTheDocument();
   });
 
+  it("offers Retry on stopped and failed replies and re-sends the question", async () => {
+    api.listConversations.mockResolvedValue([{ ...CONV, title: "Earlier chat" }]);
+    api.listMessages.mockResolvedValue([
+      msg({ id: "u1", role: "user", content: "What did NVDA say about demand?" }),
+      msg({ id: "a1", status: "interrupted", content: "Demand was" }),
+      msg({ id: "u2", role: "user", content: "And AMD?" }),
+      msg({ id: "a2", status: "error", errorCode: "ai_rate_limited" }),
+      msg({ id: "u3", role: "user", content: "Thanks" }),
+      msg({ id: "a3", status: "complete", content: "You're welcome." }),
+    ]);
+    api.streamMessage.mockResolvedValue(undefined);
+    renderPage();
+    const sidebar = screen.getByRole("complementary", { name: "Conversations" });
+    fireEvent.click(
+      await within(sidebar).findByRole("button", { name: "Earlier chat" }),
+    );
+    await screen.findByText("You're welcome.");
+
+    const retries = screen.getAllByRole("button", { name: "Retry" });
+    expect(retries).toHaveLength(2); // not on the complete reply
+
+    fireEvent.click(retries[0]!);
+    await waitFor(() => expect(api.streamMessage).toHaveBeenCalledTimes(1));
+    expect(api.streamMessage.mock.calls[0]![1]).toBe("What did NVDA say about demand?");
+
+    await waitFor(() => expect(screen.getByRole("textbox")).not.toBeDisabled());
+    fireEvent.click(screen.getAllByRole("button", { name: "Retry" })[1]!);
+    await waitFor(() => expect(api.streamMessage).toHaveBeenCalledTimes(2));
+    expect(api.streamMessage.mock.calls[1]![1]).toBe("And AMD?");
+  });
+
   it("shows a rate-limit banner when the daily cap is reached", async () => {
     api.streamMessage.mockRejectedValue(
       new ApiError(
