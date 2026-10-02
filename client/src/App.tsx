@@ -6,6 +6,7 @@ import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardPage } from "@/components/DashboardPage";
 import { AccountPage } from "@/components/AccountPage";
+import { ChatPage } from "@/components/chat/ChatPage";
 
 function App() {
   return (
@@ -18,6 +19,14 @@ function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/chat"
+        element={
+          <ProtectedRoute>
+            <ChatPage />
           </ProtectedRoute>
         }
       />
