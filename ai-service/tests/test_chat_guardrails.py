@@ -127,7 +127,7 @@ def test_system_prompt_sets_answer_style_recency_and_share_class_rules() -> None
     assert "Ask which class only when it changes" in prompt
 
 
-def test_system_prompt_covers_quarters_and_tables() -> None:
+def test_system_prompt_covers_quarters_tables_and_number_style() -> None:
     prompt = build_system_prompt(
         date(2026, 10, 1), advice_request=False, is_anonymous=False
     )
@@ -138,3 +138,5 @@ def test_system_prompt_covers_quarters_and_tables() -> None:
     assert "actual results" in prompt and "label it as guidance" in prompt
     assert "never put bullets, lists or line breaks inside a cell" in prompt
     assert "one row per company per quarter" in prompt
+    assert 'never "down -$13,457"' in prompt
+    assert '"42 shares"' in prompt and '"0.5 shares"' in prompt

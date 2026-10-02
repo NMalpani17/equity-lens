@@ -225,6 +225,20 @@ def test_empty_and_blocked_responses_never_produce_a_blank_bubble(
     assert done(events)["content"] == expected
 
 
+def test_final_answer_fixes_double_negatives_and_whole_shares() -> None:
+    model = ScriptedChatModel(
+        script=[
+            ai("You hold 42.0 shares (plus 0.5 shares of VOO); NVDA is down -$13,457.")
+        ]
+    )
+
+    result = done(collect(make_service(model), request("How is my NVDA doing?")))
+
+    assert result["content"] == (
+        "You hold 42 shares (plus 0.5 shares of VOO); NVDA is down $13,457."
+    )
+
+
 def test_truncated_response_keeps_text_and_says_so() -> None:
     model = ScriptedChatModel(
         script=[ai("NVDA guided revenue higher and", finish_reason="MAX_TOKENS")]

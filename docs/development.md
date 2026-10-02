@@ -207,6 +207,13 @@ from that id, never from model-supplied arguments. The same server is mounted at
   `tool_progress` label such as "Indexing Starbucks transcripts…", then
   answers; only after that does it say to try again shortly.
 
+**Answer clean-up** (`ai-service/app/services/chat/formatting.py`): the final
+answer gets a deterministic pass after citation validation. Double negatives
+are removed ("down -$13,457" becomes "down $13,457"), whole share counts lose their
+decimals ("42.0 shares" becomes "42 shares"; fractional shares are kept), and lists
+inside Markdown table cells are flattened to "a; b". Tools also report whole
+share counts as integers.
+
 **Logs never contain credentials.** Provider keys travel in headers (Finnhub
 uses `X-Finnhub-Token`), HTTP client loggers run at WARNING, and the ai-service
 JSON formatter redacts secret query parameters, bearer tokens and auth headers.

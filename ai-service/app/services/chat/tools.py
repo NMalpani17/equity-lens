@@ -20,6 +20,7 @@ from app.services.market_data.service import MarketDataService
 
 from .calculator import PositionMathError, calculate_position
 from .context import TurnContext
+from .formatting import whole_shares
 from .transcripts import SearchDeps, search_transcripts
 
 __all__ = ["ToolDeps", "ToolOutput", "search_transcripts"]
@@ -132,7 +133,9 @@ def get_portfolio(turn: TurnContext | None) -> ToolOutput:
         weight = (
             round(p.market_value / total * 100, 2) if total and p.market_value else None
         )
-        positions.append({**p.model_dump(exclude_none=True), "weight_percent": weight})
+        position = p.model_dump(exclude_none=True)
+        position["total_shares"] = whole_shares(p.total_shares)
+        positions.append({**position, "weight_percent": weight})
     return ToolOutput.of(
         {
             "status": "ok",
@@ -196,10 +199,7 @@ def calculate_position_tool(
         )
     except PositionMathError as exc:
         return ToolOutput.of({"status": "invalid", "message": str(exc)})
-    return ToolOutput.of(
-        {
-            "status": "ok",
-            "position_source": source,
-            **result.model_dump(exclude_none=True),
-        }
-    )
+    data = result.model_dump(exclude_none=True)
+    for key in ("shares_traded", "shares_before", "shares_after"):
+        data[key] = whole_shares(data[key])
+    return ToolOutput.of({"status": "ok", "position_source": source, **data})

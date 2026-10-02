@@ -43,6 +43,7 @@ from app.models.chat import (
 from .citations import validate_citations
 from .context import TURN_META_KEY, TurnContext, TurnRegistry
 from .errors import classify_model_error
+from .formatting import tidy_answer
 from .guardrails import Verdict, check_message, ensure_advice_note
 from .progress import safe_args, tool_label, tool_summary
 from .prompt import build_system_prompt
@@ -428,7 +429,7 @@ class ChatService:
         validated = validate_citations(text, turn.sources)
         if validated.dropped:
             logger.warning("dropped unsupported citations: %s", validated.dropped)
-        content = validated.text
+        content = tidy_answer(validated.text)
         state.citations = validated.citations
         status: TurnStatus = "complete"
         if reason in _MAX_TOKEN_REASONS:

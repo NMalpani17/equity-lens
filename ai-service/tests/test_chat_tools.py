@@ -177,3 +177,22 @@ def test_resolve_company_remembers_the_name_for_status_labels() -> None:
 
     assert out.data["ticker"] == "NKE"
     assert ctx.company_names == {"NKE": "NIKE INC -CL B"}
+
+
+def test_tool_outputs_show_whole_shares_without_decimals() -> None:
+    snapshot = portfolio(
+        position("NVDA", 42.0, 100, 300), position("VOO", 0.5, 400, 500)
+    )
+
+    held = tools.get_portfolio(turn(snapshot)).data["positions"]
+    trade = tools.calculate_position_tool(
+        turn(snapshot), action="buy", shares=8.0, price=310, ticker="NVDA"
+    ).data
+
+    shares = {p["ticker"]: p["total_shares"] for p in held}
+    assert shares == {"NVDA": 42, "VOO": 0.5}
+    assert isinstance(shares["NVDA"], int)
+    assert '"total_shares": 42,' in tools.get_portfolio(turn(snapshot)).text
+    assert trade["shares_before"] == 42 and isinstance(trade["shares_before"], int)
+    assert trade["shares_traded"] == 8 and trade["shares_after"] == 50
+    assert isinstance(trade["shares_after"], int)
