@@ -233,23 +233,26 @@ def main(argv: list[str] | None = None) -> int:
         f"{'off' if args.no_judge else model_id(judge_model)}, tracing "
         f"{'on' if tracer.enabled else 'off'}"
     )
-    try:
-        turns = asyncio.run(run_models(settings, cases, models, tracer, run_id))
-        judge = None
-        if not args.no_judge:
-            judge = llm_judge(
-                init_chat_model(
-                    judge_model,
-                    api_key=base.gemini_api_key,
-                    thinking_level="low",
-                    max_tokens=4096,
-                    timeout=120,
-                    max_retries=2,
-                )
+    judge = None
+    if not args.no_judge:
+        judge = llm_judge(
+            init_chat_model(
+                judge_model,
+                api_key=base.gemini_api_key,
+                thinking_level="low",
+                max_tokens=4096,
+                timeout=120,
+                max_retries=2,
             )
-        results, judge_tokens = asyncio.run(
-            score_cases(cases, turns, judge, seed=args.seed)
         )
+
+    async def run_and_score():
+        # One event loop for both phases, so model clients close cleanly.
+        turns = await run_models(settings, cases, models, tracer, run_id)
+        return await score_cases(cases, turns, judge, seed=args.seed)
+
+    try:
+        results, judge_tokens = asyncio.run(run_and_score())
         log_scores(tracer, results)
     finally:
         rag.close()

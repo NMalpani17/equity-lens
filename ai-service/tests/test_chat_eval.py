@@ -162,6 +162,7 @@ def test_citation_and_tool_failures_are_reported() -> None:
     [
         (turn(OFF_TOPIC_REPLY, status="refused"), True),
         (turn("Sorry, I can only help with stocks and investing."), True),
+        (turn("I can only assist with stocks, earnings calls and markets."), True),
         (turn("Day 1: Tokyo. Day 2: Kyoto."), False),
     ],
 )
@@ -198,6 +199,14 @@ def test_numbers_charts_notes_and_mentions() -> None:
 
     assert failed(run_checks(ok, record)) == []
     assert failed(run_checks(bad, record)) == ["charts", "numbers", "mentions"]
+
+
+def test_the_advice_note_may_be_worded_by_the_model() -> None:
+    own = turn("Facts... This is general information, not financial advice.")
+    none = turn("Facts and a recommendation to buy.")
+
+    assert failed(run_checks(case(advice_note=True), own)) == []
+    assert failed(run_checks(case(advice_note=True), none)) == ["advice_note"]
 
 
 def test_a_failed_turn_fails_with_its_error() -> None:
@@ -464,3 +473,37 @@ def test_run_case_records_tools_usage_and_the_answer() -> None:
     assert json.loads(record.tool_calls[0].output)["totals"]["market_value"] == 30495
     assert record.charts[0]["kind"] == "portfolio_allocation"
     assert record.latency_s >= 0
+
+
+def test_a_guardrail_refusal_records_no_tools_from_the_previous_case() -> None:
+    deps = ToolDeps(
+        search=MagicMock, market=MagicMock, history=MagicMock, resolver=MagicMock
+    )
+    mcp_server.set_tool_deps(lambda: deps)
+    model = ScriptedChatModel(
+        script=[ai(tool_calls=[{"name": "get_portfolio", "id": "p1"}]), ai("Done.")]
+    )
+    tracer = EvalTracer()
+    service = ChatService(
+        Settings(_env_file=None, internal_token="t", gemini_api_key="k"),
+        lambda: model,
+        mcp_server.mcp,
+        turn_registry,
+        tracer=tracer,
+    )
+    first = EvalCase(id="p01", category="portfolio", question="How is my portfolio?")
+    refused = EvalCase(id="o01", category="off_topic", question="Write me a poem.")
+
+    async def both():
+        portfolio = demo_portfolio()
+        await run_case(service, tracer, first, model=FLASH, portfolio=portfolio)
+        return await run_case(
+            service, tracer, refused, model=FLASH, portfolio=portfolio
+        )
+
+    try:
+        record = asyncio.run(both())
+    finally:
+        mcp_server.set_tool_deps(mcp_server.default_tool_deps)
+
+    assert record.status == "refused" and record.tool_calls == []

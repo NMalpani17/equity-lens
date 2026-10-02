@@ -127,8 +127,12 @@ class EvalTracer:
         self.enabled = self.inner.enabled
         self.collector = ToolCollector()
 
-    def start_turn(self, **kwargs: Any) -> TurnTrace:
+    def reset(self) -> None:
+        """Start a fresh collector (guardrail refusals never start a turn)."""
         self.collector = ToolCollector()
+
+    def start_turn(self, **kwargs: Any) -> TurnTrace:
+        self.reset()
         trace = self.inner.start_turn(**kwargs)
         config = dict(trace.config)
         config["callbacks"] = [*config.get("callbacks", []), self.collector]
@@ -167,6 +171,7 @@ async def run_case(
         time_zone="America/New_York",
     )
     record = TurnRecord(case_id=case.id, model=model)
+    tracer.reset()
     started = time.perf_counter()
     async for event in service.stream_turn(request, trace_tags=trace_tags):
         if event.type == "done":

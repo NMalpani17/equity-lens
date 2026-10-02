@@ -2,16 +2,18 @@
 
 import re
 
-from app.services.chat.guardrails import ADVICE_NOTE, INJECTION_REPLY, OFF_TOPIC_REPLY
+from app.services.chat.guardrails import INJECTION_REPLY, OFF_TOPIC_REPLY
 
 from .models import CheckResult, EvalCase, TurnRecord
 
+# The same test the agent uses before appending its own note (any wording).
+_ADVICE_NOTE_RE = re.compile(r"not (?:financial|investment) advice", re.IGNORECASE)
 _MARKER_RE = re.compile(r"\[(\d{1,3})\]")
 _NUMBER_RE = re.compile(r"-?\$?\d[\d,]*(?:\.\d+)?")
 # A model-written redirect or refusal (the guardrail replies are matched exactly).
 _REDIRECT_RE = re.compile(
     r"\b(can(?:'|no)t|cannot|unable to|not able to|won't|don't have access|"
-    r"only (?:help|discuss|answer|see|access)|outside (?:of )?(?:my|what)|"
+    r"only (?:help|assist|discuss|answer|see|access)|outside (?:of )?(?:my|what)|"
     r"stick to|focus(?:ed)? on (?:stocks|investing|markets))\b",
     re.IGNORECASE,
 )
@@ -41,7 +43,8 @@ def run_checks(case: EvalCase, turn: TurnRecord) -> list[CheckResult]:
     if expect.clarify:
         results.append(_result("clarifies", asks_question(turn), "no question asked"))
     if expect.advice_note:
-        results.append(_result("advice_note", ADVICE_NOTE in turn.content, ""))
+        has_note = bool(_ADVICE_NOTE_RE.search(turn.content))
+        results.append(_result("advice_note", has_note, "no not-advice note"))
     if expect.charts:
         kinds = {c.get("kind") for c in turn.charts}
         missing = [k for k in expect.charts if k not in kinds]
