@@ -291,6 +291,61 @@ describe("ChatPage", () => {
     scrollSpy.mockRestore();
   });
 
+  describe("mobile layout", () => {
+    it("opens the conversation drawer from the menu and closes it on select", async () => {
+      api.listConversations.mockResolvedValue([{ ...CONV, title: "NVDA demand" }]);
+      api.listMessages.mockResolvedValue([
+        msg({ id: "u1", role: "user", content: "hi" }),
+      ]);
+      renderPage();
+      await screen.findByText("Ask the AI analyst");
+
+      fireEvent.click(screen.getByRole("button", { name: "Open conversations" }));
+      const drawer = screen.getByRole("dialog", { name: "Conversation list" });
+      fireEvent.click(within(drawer).getByRole("button", { name: "NVDA demand" }));
+
+      expect(
+        screen.queryByRole("dialog", { name: "Conversation list" }),
+      ).not.toBeInTheDocument();
+      await waitFor(() => expect(api.listMessages).toHaveBeenCalledWith("c1"));
+      expect(screen.getByText("NVDA demand", { selector: "span" })).toBeInTheDocument();
+    });
+
+    it("closes the drawer with Escape, the backdrop or the close button", async () => {
+      renderPage();
+      await screen.findByText("Ask the AI analyst");
+      const open = () =>
+        fireEvent.click(screen.getByRole("button", { name: "Open conversations" }));
+      const isOpen = () =>
+        screen.queryByRole("dialog", { name: "Conversation list" }) !== null;
+
+      open();
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(isOpen()).toBe(false);
+
+      open();
+      fireEvent.click(screen.getByRole("button", { name: "Close conversations" }));
+      expect(isOpen()).toBe(false);
+
+      open();
+      const backdrop = screen
+        .getByRole("dialog", { name: "Conversation list" })
+        .querySelector('[aria-hidden="true"]')!;
+      fireEvent.click(backdrop);
+      expect(isOpen()).toBe(false);
+    });
+
+    it("keeps the input full-size on phones (no zoom) and above the safe area", async () => {
+      renderPage();
+      await screen.findByText("Ask the AI analyst");
+
+      const input = screen.getByRole("textbox");
+      expect(input.className).toContain("text-base");
+      expect(input.className).toContain("md:text-sm");
+      expect(input.closest("form")!.className).toContain("safe-area-inset-bottom");
+    });
+  });
+
   it("shows a rate-limit banner when the daily cap is reached", async () => {
     api.streamMessage.mockRejectedValue(
       new ApiError(

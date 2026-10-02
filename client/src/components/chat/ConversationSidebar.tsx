@@ -28,6 +28,7 @@ interface ConversationSidebarProps {
   onSelect: (id: string | null) => void;
   onRename: (id: string, title: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  className?: string;
 }
 
 export function ConversationSidebar({
@@ -37,6 +38,7 @@ export function ConversationSidebar({
   onSelect,
   onRename,
   onDelete,
+  className,
 }: ConversationSidebarProps) {
   const [renaming, setRenaming] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState<Conversation | null>(null);
@@ -67,7 +69,10 @@ export function ConversationSidebar({
   }
 
   return (
-    <aside aria-label="Conversations" className="flex w-full flex-col border-r md:w-64">
+    <aside
+      aria-label="Conversations"
+      className={cn("flex w-full flex-col border-r md:w-64", className)}
+    >
       <div className="p-3">
         <Button
           className="w-full"

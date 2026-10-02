@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowDown } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowDown, Menu, Plus, X } from "lucide-react";
 
 import { Header } from "@/components/Header";
 import { DemoBanner } from "@/components/DemoBanner";
@@ -28,6 +28,7 @@ export function ChatPage() {
   const { isDemo } = useAuth();
   const chat = useChat();
   const [citation, setCitation] = useState<Citation | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const contentKey = [
     chat.activeId,
     chat.messages.length,
@@ -38,25 +39,67 @@ export function ChatPage() {
   const scroll = useStickToBottom<HTMLElement>(contentKey);
 
   const outOfMessages = chat.usage !== null && chat.usage.remaining <= 0;
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
+
+  const activeTitle =
+    chat.conversations.find((c) => c.id === chat.activeId)?.title ?? "New chat";
+  const sidebarProps = {
+    conversations: chat.conversations,
+    activeId: chat.activeId,
+    disabled: chat.streaming,
+    onRename: chat.renameConversation,
+    onDelete: chat.deleteConversation,
+  };
+  const selectConversation = (id: string | null) => {
+    setDrawerOpen(false);
+    void chat.selectConversation(id);
+  };
+
   const send = (content: string) => {
     scroll.scrollToBottom(); // your own message always brings you to the end
     void chat.send(content);
   };
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-dvh flex-col">
       {isDemo && <DemoBanner />}
       <Header />
       <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col md:flex-row">
-        <ConversationSidebar
-          conversations={chat.conversations}
-          activeId={chat.activeId}
-          disabled={chat.streaming}
-          onSelect={(id) => void chat.selectConversation(id)}
-          onRename={chat.renameConversation}
-          onDelete={chat.deleteConversation}
-        />
+        {/* Desktop: a persistent sidebar. Mobile: a drawer behind the menu button. */}
+        <div className="hidden md:flex">
+          <ConversationSidebar {...sidebarProps} onSelect={selectConversation} />
+        </div>
         <main className="relative flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-2 border-b px-2 py-1.5 md:hidden">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open conversations"
+              aria-expanded={drawerOpen}
+              className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Menu aria-hidden="true" className="size-5" />
+            </button>
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              {activeTitle}
+            </span>
+            <button
+              type="button"
+              onClick={() => selectConversation(null)}
+              disabled={chat.streaming}
+              aria-label="New chat"
+              className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <Plus aria-hidden="true" className="size-5" />
+            </button>
+          </div>
           {chat.banner && (
             <ChatBanner banner={chat.banner} onDismiss={chat.dismissBanner} />
           )}
@@ -115,6 +158,37 @@ export function ChatPage() {
           />
         </main>
       </div>
+      {drawerOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Conversation list"
+          className="fixed inset-0 z-40 md:hidden"
+        >
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-background shadow-xl">
+            <div className="flex justify-end p-1">
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Close conversations"
+                className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <X aria-hidden="true" className="size-5" />
+              </button>
+            </div>
+            <ConversationSidebar
+              {...sidebarProps}
+              onSelect={selectConversation}
+              className="min-h-0 flex-1 border-r-0 md:w-full"
+            />
+          </div>
+        </div>
+      )}
       <CitationDialog
         citation={citation}
         onOpenChange={(open) => !open && setCitation(null)}

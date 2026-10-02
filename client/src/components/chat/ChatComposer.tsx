@@ -38,7 +38,10 @@ export function ChatComposer({
   }
 
   return (
-    <form onSubmit={submit} className="border-t bg-background p-3">
+    <form
+      onSubmit={submit}
+      className="border-t bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+    >
       <div className="flex items-end gap-2">
         <label htmlFor="chat-input" className="sr-only">
           Ask about a stock, earnings call, or your portfolio
@@ -57,7 +60,7 @@ export function ChatComposer({
           }
           aria-invalid={tooLong}
           aria-describedby="chat-input-help"
-          className="max-h-40 min-h-[2.5rem] flex-1 resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+          className="max-h-40 min-h-[2.5rem] flex-1 resize-y rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm md:text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
         />
         {streaming ? (
           <Button
