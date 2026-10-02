@@ -120,7 +120,7 @@ describe("openChatStream", () => {
 
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(String(url)).toMatch(/\/chat\/stream$/);
-    expect((init?.headers as Record<string, string>)["X-Internal-Token"]).toBe(
+    expect(new Headers(init?.headers).get("X-Internal-Token")).toBe(
       "test-internal-token",
     );
     expect(JSON.parse(String(init?.body))).toMatchObject({

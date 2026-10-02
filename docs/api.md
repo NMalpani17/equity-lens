@@ -249,6 +249,11 @@ A saved assistant message:
 
 ## AI service (`http://localhost:8000`)
 
+Internal only: every route except `/health` requires the gateway's
+`X-Internal-Token` header (`/mcp/` takes it as a bearer token). Missing or
+wrong tokens get `401` `unauthorized`; if the service has no token
+configured it fails closed with `503`.
+
 The market-data endpoints the API consumes directly:
 
 | Method | Path                  | Description                                    |
@@ -265,7 +270,7 @@ Transcript search (same semantics as the gateway routes above, snake_case JSON):
 | `GET`  | `/rag/tickers`          | All tracked tickers and their status.                                     |
 | `GET`  | `/rag/tickers/{ticker}` | One ticker's status and latest ingestion job.                             |
 
-Chat and MCP (gateway only; both require the internal token):
+Chat and MCP:
 
 | Method | Path           | Description                                                                                              |
 | ------ | -------------- | -------------------------------------------------------------------------------------------------------- |

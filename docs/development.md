@@ -26,14 +26,16 @@ cp ai-service/.env.example ai-service/.env
 - `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY` (your Finnhub key). For
   transcript search also `DATABASE_URL`, `AI_SERVICE_EQUIBLES_API_KEY`,
   `AI_SERVICE_GEMINI_API_KEY` and `AI_SERVICE_PINECONE_API_KEY` (see below).
-  For the AI analyst chat, `AI_SERVICE_INTERNAL_TOKEN` (see below).
+  Always `AI_SERVICE_INTERNAL_TOKEN` (required by every route except
+  `/health`; see the chat setup below).
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
   (**Project Settings → Database → Connection string**). Keep `?pgbouncer=true`
   on the pooled URL. Also set `SUPABASE_URL` (**Project Settings → Data API →
   Project URL**), used to verify user JWTs, and `SUPABASE_SERVICE_ROLE_KEY`
   (**Project Settings → API Keys → service_role**) — server-side only, used to
   delete a user's auth account. Never expose the service-role key to the client.
-  For chat, `AI_SERVICE_INTERNAL_TOKEN` (the same value as in `ai-service/.env`).
+  Also `AI_SERVICE_INTERNAL_TOKEN` (the same value as in `ai-service/.env`);
+  without it quotes, transcript search and chat are unavailable.
 - `client/.env` → `VITE_SUPABASE_URL` (same Project URL) and
   `VITE_SUPABASE_PUBLISHABLE_KEY` (**Project Settings → API Keys → publishable /
   anon key**).
@@ -150,8 +152,11 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
    python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
 
-   `/chat/stream` and `/mcp/` reject requests without it, so the ai-service only
-   trusts user ids that come from the gateway.
+   Every ai-service route except `/health` (quotes, transcript search, chat
+   and `/mcp/`) rejects requests without it with `401`, and fails closed
+   with `503` if the ai-service has no token configured. The gateway sends it
+   on every call (`api/src/services/aiServiceClient.ts`), so the ai-service
+   only trusts requests, and user ids, that come from the gateway.
 
 2. **Model.** Reuses `AI_SERVICE_GEMINI_API_KEY` (with billing enabled).
    Defaults: `gemini-3.8-flash` with `low` thinking and a 2,048-token output cap

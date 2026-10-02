@@ -10,6 +10,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { HttpError, ServiceUnavailableError, UpstreamError } from "../errors.js";
 import { logger } from "../logger.js";
+import { aiServiceFetch, aiServiceUrl } from "./aiServiceClient.js";
 import type { PortfolioSummary } from "../types.js";
 import type { HistoryMessage } from "./chat.service.js";
 
@@ -224,16 +225,15 @@ export async function openChatStream(
       "The AI analyst is not configured.",
     );
   }
-  const url = new URL("/chat/stream", config.aiServiceUrl);
+  const url = aiServiceUrl("/chat/stream");
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await aiServiceFetch(url, {
       method: "POST",
       signal,
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
-        "X-Internal-Token": config.aiServiceInternalToken,
       },
       body: JSON.stringify({
         user_id: request.userId,

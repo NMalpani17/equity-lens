@@ -95,10 +95,11 @@ Fill in the required secrets before running:
   `AI_SERVICE_EQUIBLES_API_KEY`, `AI_SERVICE_GEMINI_API_KEY` and
   `AI_SERVICE_PINECONE_API_KEY`, then seed the index once with
   `cd ai-service && python -m scripts.seed_transcripts`.
-- Chat: the same `AI_SERVICE_INTERNAL_TOKEN` secret in **both** `ai-service/.env`
-  and `api/.env` (generate one with
-  `python -c "import secrets; print(secrets.token_urlsafe(32))"`); it reuses the
-  Gemini key above.
+- **Both** `ai-service/.env` and `api/.env` → the same
+  `AI_SERVICE_INTERNAL_TOKEN` secret (generate one with
+  `python -c "import secrets; print(secrets.token_urlsafe(32))"`). Every
+  ai-service route except `/health` requires it, so quotes, transcript search
+  and chat all depend on it. Chat reuses the Gemini key above.
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase,
   `SUPABASE_URL` (verifies user JWTs), and `SUPABASE_SERVICE_ROLE_KEY`
   (server-only; used to delete a user's auth account).
