@@ -11,16 +11,13 @@ from fastapi.responses import StreamingResponse
 from app.config import get_settings
 from app.errors import AppError
 from app.models.chat import ChatTurnRequest
-from app.security import require_internal_token
 from app.services.chat.agent import ChatEvent, ChatService
 from app.services.chat.service import get_chat_service
 
 logger = logging.getLogger(__name__)
 
-# The internal-token check runs before the body is parsed or validated.
-router = APIRouter(
-    prefix="/chat", tags=["chat"], dependencies=[Depends(require_internal_token)]
-)
+# Mounted with the internal-token dependency in app.main (gateway only).
+router = APIRouter(prefix="/chat", tags=["chat"])
 
 ChatDep = Annotated[ChatService, Depends(get_chat_service)]
 

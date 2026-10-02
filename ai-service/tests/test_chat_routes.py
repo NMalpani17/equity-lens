@@ -10,8 +10,8 @@ from app.config import get_settings
 from app.main import app
 from app.services.chat.agent import ChatEvent
 from app.services.chat.service import get_chat_service
+from tests.conftest import TEST_INTERNAL_TOKEN as TOKEN
 
-TOKEN = "test-internal-token"
 HEADERS = {"X-Internal-Token": TOKEN}
 BODY = {"user_id": "user-1", "message": "What did NVDA say about demand?"}
 

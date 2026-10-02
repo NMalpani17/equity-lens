@@ -22,6 +22,7 @@ from app.services.rag.errors import (
     TickerUnavailableError,
 )
 from app.services.rag.repository import TickerRecord, utcnow
+from tests.conftest import INTERNAL_HEADERS
 from tests.rag_fakes import FakeRepo
 
 RESULT = RagSearchResult(
@@ -53,7 +54,7 @@ def rag() -> Iterator[SimpleNamespace]:
 
 @pytest.fixture
 def client(rag: SimpleNamespace) -> TestClient:
-    return TestClient(app)
+    return TestClient(app, headers=INTERNAL_HEADERS)
 
 
 def test_search_returns_results(client: TestClient, rag: SimpleNamespace) -> None:
@@ -136,7 +137,9 @@ def test_not_configured_returns_503() -> None:
 
     app.dependency_overrides[get_rag_components] = raise_not_configured
     try:
-        res = TestClient(app).post("/rag/search", json={"query": "q"})
+        res = TestClient(app, headers=INTERNAL_HEADERS).post(
+            "/rag/search", json={"query": "q"}
+        )
     finally:
         app.dependency_overrides.clear()
 
