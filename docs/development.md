@@ -26,12 +26,14 @@ cp ai-service/.env.example ai-service/.env
 - `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY` (your Finnhub key). For
   transcript search also `DATABASE_URL`, `AI_SERVICE_EQUIBLES_API_KEY`,
   `AI_SERVICE_GEMINI_API_KEY` and `AI_SERVICE_PINECONE_API_KEY` (see below).
+  For the AI analyst chat, `AI_SERVICE_INTERNAL_TOKEN` (see below).
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase
   (**Project Settings → Database → Connection string**). Keep `?pgbouncer=true`
   on the pooled URL. Also set `SUPABASE_URL` (**Project Settings → Data API →
   Project URL**), used to verify user JWTs, and `SUPABASE_SERVICE_ROLE_KEY`
   (**Project Settings → API Keys → service_role**) — server-side only, used to
   delete a user's auth account. Never expose the service-role key to the client.
+  For chat, `AI_SERVICE_INTERNAL_TOKEN` (the same value as in `ai-service/.env`).
 - `client/.env` → `VITE_SUPABASE_URL` (same Project URL) and
   `VITE_SUPABASE_PUBLISHABLE_KEY` (**Project Settings → API Keys → publishable /
   anon key**).
@@ -128,6 +130,66 @@ filters, candidate count, whether reranking applied, and per-stage latency.
 Repository integration tests (advisory-lock dedupe, daily cap) run only when
 `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a direct,
 non-pooled URL); they apply the migration into a throwaway schema and drop it.
+
+## AI analyst chat setup
+
+The chat is a LangGraph tool-calling agent in the ai-service. Express
+authenticates the user, enforces limits, stores conversations, and proxies the
+reply stream (SSE) to the browser.
+
+```
+Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token── ai-service
+                                                                       │
+                LangGraph agent ── MCP client (langchain.mcp) ── FastMCP server (read-only tools)
+```
+
+1. **Internal token.** Generate one secret and put it in both
+   `ai-service/.env` and `api/.env` as `AI_SERVICE_INTERNAL_TOKEN`:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   `/chat/stream` and `/mcp/` reject requests without it, so the ai-service only
+   trusts user ids that come from the gateway.
+
+2. **Model.** Reuses `AI_SERVICE_GEMINI_API_KEY` (with billing enabled).
+   Defaults: `gemini-3.8-flash` with `low` thinking and a 2,048-token output cap
+   (thinking included). The provider is swappable: `AI_SERVICE_CHAT_MODEL` is a
+   LangChain `provider:model` string for `init_chat_model`. A typical turn uses
+   ~6–7K input and ~0.5K output tokens, about $0.006 at 3.8 Flash's 2026 prices.
+   When prepaid credits run out Gemini returns HTTP 402, shown to users as
+   "out of credits".
+
+3. **Database.** Conversations live in Postgres. Run the API migrations
+   (`npm --prefix api run prisma:migrate`), which add `chat_conversations` and
+   `chat_messages`.
+
+4. **Limits** (in `api/.env`): `CHAT_DAILY_LIMIT` (20), `CHAT_DAILY_LIMIT_ANON`
+   (5), `CHAT_GLOBAL_DAILY_LIMIT` (60), `CHAT_MAX_MESSAGE_CHARS` (2000). Per
+   turn (in `ai-service/.env`): `AI_SERVICE_CHAT_MAX_MODEL_CALLS` (6) and
+   `AI_SERVICE_CHAT_MAX_TOOL_CALLS` (8).
+
+**Tools** are defined once on the FastMCP server
+(`ai-service/app/services/chat/mcp_server.py`) and are all read-only:
+`search_transcripts`, `get_quote`, `get_price_history`, `get_portfolio`,
+`resolve_company` and `calculate_position`. The agent loads them through
+`langchain.mcp.MCPAdapter` with a per-turn client that tags each call with a
+turn id; tools resolve the user's portfolio and the turn's citation numbering
+from that id, never from model-supplied arguments. The same server is mounted at
+`/mcp/` for other MCP clients (bearer = internal token).
+
+**Guardrails.** Obvious off-topic requests and instruction-override attempts get
+a short canned reply without calling the model. The system prompt (today's date,
+no secrets) adds the scope rules, untrusted tool data, cite only retrieved
+passages, numbers only from tools, ask when a company is ambiguous, report tool
+status honestly, and no personalized buy/sell advice (answers to "should I
+buy…" get facts plus a not-financial-advice note). Answers are validated after
+generation: citations to passages that weren't retrieved are dropped, and empty,
+truncated and blocked responses get explicit messages.
+
+Chat tests need no network: a scripted fake chat model drives the real agent
+and MCP tools (`ai-service/tests/test_chat_agent.py`).
 
 ## First-time install
 

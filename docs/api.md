@@ -5,20 +5,27 @@ All application routes are served by the Express gateway at
 
 ## API gateway (`http://localhost:3001`)
 
-| Method   | Path                       | Description                                                     |
-| -------- | -------------------------- | --------------------------------------------------------------- |
-| `GET`    | `/api/health`              | Health of the API and downstream AI service.                    |
-| `GET`    | `/api/holdings`            | List all holdings (lots).                                       |
-| `POST`   | `/api/holdings`            | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
-| `GET`    | `/api/holdings/:id`        | Get one holding.                                                |
-| `PATCH`  | `/api/holdings/:id`        | Update a holding.                                               |
-| `DELETE` | `/api/holdings/:id`        | Delete one lot.                                                 |
-| `DELETE` | `/api/holdings?ticker=X`   | Delete a whole position (every lot for a ticker).               |
-| `GET`    | `/api/portfolio/summary`   | Positions (lots grouped by ticker) with live prices + totals.   |
-| `DELETE` | `/api/account`             | Delete the authenticated user's account and all their data.     |
-| `POST`   | `/api/rag/search`          | Search earnings call transcripts (hybrid + rerank).             |
-| `GET`    | `/api/rag/tickers`         | Every ticker indexed (or attempted) for transcript search.      |
-| `GET`    | `/api/rag/tickers/:ticker` | Indexing status for one ticker (poll while `indexing`).         |
+| Method   | Path                              | Description                                                     |
+| -------- | --------------------------------- | --------------------------------------------------------------- |
+| `GET`    | `/api/health`                     | Health of the API and downstream AI service.                    |
+| `GET`    | `/api/holdings`                   | List all holdings (lots).                                       |
+| `POST`   | `/api/holdings`                   | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
+| `GET`    | `/api/holdings/:id`               | Get one holding.                                                |
+| `PATCH`  | `/api/holdings/:id`               | Update a holding.                                               |
+| `DELETE` | `/api/holdings/:id`               | Delete one lot.                                                 |
+| `DELETE` | `/api/holdings?ticker=X`          | Delete a whole position (every lot for a ticker).               |
+| `GET`    | `/api/portfolio/summary`          | Positions (lots grouped by ticker) with live prices + totals.   |
+| `DELETE` | `/api/account`                    | Delete the authenticated user's account and all their data.     |
+| `POST`   | `/api/rag/search`                 | Search earnings call transcripts (hybrid + rerank).             |
+| `GET`    | `/api/conversations`              | The user's chat conversations, most recent first.               |
+| `POST`   | `/api/conversations`              | Start a conversation (`title?`).                                |
+| `PATCH`  | `/api/conversations/:id`          | Rename a conversation (`title`).                                |
+| `DELETE` | `/api/conversations/:id`          | Delete a conversation and its messages.                         |
+| `GET`    | `/api/conversations/:id/messages` | Messages with citations and tool calls.                         |
+| `POST`   | `/api/conversations/:id/messages` | Send a message; the reply streams as SSE.                       |
+| `GET`    | `/api/chat/usage`                 | Today's message allowance (`used`, `limit`, `remaining`).       |
+| `GET`    | `/api/rag/tickers`                | Every ticker indexed (or attempted) for transcript search.      |
+| `GET`    | `/api/rag/tickers/:ticker`        | Indexing status for one ticker (poll while `indexing`).         |
 
 ### Authentication
 
@@ -161,6 +168,85 @@ daily cap on new tickers — default 8 per UTC day — is used up; the body incl
 search retries) or `unavailable`. `GET /api/rag/tickers` returns
 `{ "tickers": [...] }` with the same shape (without `job`).
 
+## AI analyst chat
+
+All chat routes require auth and are scoped to the user (another user's
+conversation is a `404`). Deleting an account deletes its conversations.
+
+### `POST /api/conversations/:id/messages`
+
+Body: `{ "content": "What did NVIDIA say about Vera Rubin timing last quarter?" }`
+(1–2,000 characters).
+
+Errors before streaming starts are normal JSON errors:
+
+| Status | `error`                                    | When                                                                          |
+| ------ | ------------------------------------------ | ----------------------------------------------------------------------------- |
+| `422`  | `validation_error`                         | Empty, or over 2,000 characters ("Messages are limited to 2000 characters."). |
+| `404`  | `not_found`                                | Not the user's conversation.                                                  |
+| `409`  | `turn_in_progress`                         | A reply is still streaming in this conversation (no overlapping turns).       |
+| `429`  | `chat_limit_reached`                       | Daily cap reached; body has `scope` (`user`/`global`), `limit`, `resetsAt`.   |
+| `503`  | `chat_unavailable` / `chat_not_configured` | The ai-service is down or not configured.                                     |
+
+Daily caps (user messages per UTC day, configurable): **20** for signed-in users,
+**5** for demo (anonymous) users, and **60** across all users.
+
+On success the response is `text/event-stream`:
+
+| Event        | Data                                                                            |
+| ------------ | ------------------------------------------------------------------------------- |
+| `turn`       | `{ conversation, userMessage, assistantMessageId }` (the saved user message).   |
+| `tool_start` | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.        |
+| `tool_end`   | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                         |
+| `token`      | `{ text }` — answer text as it is generated (reset by the next `tool_start`).   |
+| `error`      | `{ code, message, retryable }`, e.g. `ai_credits_exhausted`, `ai_rate_limited`. |
+| `done`       | `{ message }` — the saved assistant message (always last).                      |
+
+A saved assistant message:
+
+```json
+{
+  "id": "…",
+  "role": "assistant",
+  "content": "NVIDIA expects Vera Rubin to be the fastest ramp in its history [1].",
+  "status": "complete",
+  "citations": [
+    {
+      "id": 1,
+      "ticker": "NVDA",
+      "companyName": "Nvidia Corp",
+      "fiscalYear": 2027,
+      "fiscalQuarter": 2,
+      "callDate": "2026-08-26",
+      "speaker": "Colette Kress",
+      "role": "CFO",
+      "section": "prepared_remarks",
+      "text": "…the retrieved passage…"
+    }
+  ],
+  "toolCalls": [
+    {
+      "id": "…",
+      "name": "search_transcripts",
+      "label": "Searching NVDA transcripts…",
+      "ok": true,
+      "summary": "Found 5 passages"
+    }
+  ],
+  "errorCode": null,
+  "createdAt": "…"
+}
+```
+
+- `status`: `complete`, `truncated` (hit the output-token cap), `blocked`
+  (provider safety block), `empty` (no answer produced), `refused` (off-topic or
+  instruction-override attempt, answered with a short redirect), `interrupted`
+  (the client disconnected or pressed Stop; the partial text is kept) or `error`.
+- Citations only reference passages retrieved in that turn; markers the model
+  invents are dropped and the rest are renumbered in order.
+- If the client disconnects mid-stream, the gateway aborts the upstream call
+  (cancelling the model request) and saves the partial reply as `interrupted`.
+
 ## AI service (`http://localhost:8000`)
 
 The market-data endpoints the API consumes directly:
@@ -178,6 +264,19 @@ Transcript search (same semantics as the gateway routes above, snake_case JSON):
 | `POST` | `/rag/search`           | `{query, ticker?, fiscal_year?, fiscal_quarter?, top_k}` → `200` / `202`. |
 | `GET`  | `/rag/tickers`          | All tracked tickers and their status.                                     |
 | `GET`  | `/rag/tickers/{ticker}` | One ticker's status and latest ingestion job.                             |
+
+Chat and MCP (gateway only; both require the internal token):
+
+| Method | Path           | Description                                                                                              |
+| ------ | -------------- | -------------------------------------------------------------------------------------------------------- |
+| `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, message, history, portfolio}`. |
+| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `Authorization: Bearer <internal token>`.                  |
+
+`/chat/stream` emits `token`, `tool_start`, `tool_end`, `done` (`content`,
+`status`, `citations`, `tool_calls`, `usage`, `model`) and `error` events. The
+user id comes from the gateway's verified JWT; the ai-service never accepts one
+from a browser. History is trimmed to the last 6 final answers (~3K tokens) and
+never includes past tool results.
 
 Quotes come from Finnhub with an automatic yfinance fallback. In a batch, a
 single failing ticker is isolated: valid tickers still return quotes, and the

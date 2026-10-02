@@ -32,6 +32,13 @@ live market data.
   last four earnings call transcripts per ticker, reranked, with speaker and
   quarter citations. Ten large caps are pre-seeded; searching any other ticker
   indexes it in the background (capped per day to protect API quotas).
+- **AI analyst chat** — ask about companies, earnings calls, markets or your
+  portfolio and get a streamed answer with inline citations ([1], [2]) that open
+  the exact transcript passage. A LangGraph agent (Gemini 3.8 Flash by default,
+  swappable via config) uses read-only tools served by an MCP server: transcript
+  search, quotes, price history, your portfolio, company/period resolution and
+  exact position math. Guardrails keep it on topic, refuse prompt-injection and
+  avoid personalized buy/sell advice; daily message caps protect the budget.
 - **Graceful degradation** — one bad ticker never breaks the batch, unpriced
   holdings are excluded from totals (shown as partial), and the UI reports when
   the AI service is unavailable instead of failing.
@@ -49,11 +56,11 @@ LLM logic).
 
 ## Tech stack
 
-| Part          | Stack                                                               | Port   |
-| ------------- | ------------------------------------------------------------------- | ------ |
-| `client/`     | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui              | `5173` |
-| `api/`        | Node.js, TypeScript, Express, Zod, Pino, Prisma (Supabase PG)       | `3001` |
-| `ai-service/` | Python 3.12, FastAPI, Pydantic, Finnhub, Equibles, Gemini, Pinecone | `8000` |
+| Part          | Stack                                                                | Port   |
+| ------------- | -------------------------------------------------------------------- | ------ |
+| `client/`     | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui               | `5173` |
+| `api/`        | Node.js, TypeScript, Express, Zod, Pino, Prisma (Supabase PG)        | `3001` |
+| `ai-service/` | Python 3.12, FastAPI, LangGraph, FastMCP, Gemini, Pinecone, Equibles | `8000` |
 
 ## Quick start
 
@@ -88,6 +95,10 @@ Fill in the required secrets before running:
   `AI_SERVICE_EQUIBLES_API_KEY`, `AI_SERVICE_GEMINI_API_KEY` and
   `AI_SERVICE_PINECONE_API_KEY`, then seed the index once with
   `cd ai-service && python -m scripts.seed_transcripts`.
+- Chat: the same `AI_SERVICE_INTERNAL_TOKEN` secret in **both** `ai-service/.env`
+  and `api/.env` (generate one with
+  `python -c "import secrets; print(secrets.token_urlsafe(32))"`); it reuses the
+  Gemini key above.
 - `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase,
   `SUPABASE_URL` (verifies user JWTs), and `SUPABASE_SERVICE_ROLE_KEY`
   (server-only; used to delete a user's auth account).
