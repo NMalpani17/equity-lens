@@ -15,7 +15,8 @@ import hashlib
 import hmac
 import logging
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Literal, Protocol
@@ -42,10 +43,17 @@ def hash_user_id(user_id: str, salt: str = "") -> str:
 
 @dataclass
 class TurnTrace:
-    """Tracing for one run: LangChain config to merge, and the trace id after."""
+    """Tracing for one run: LangChain config to merge, and the trace id after.
+
+    ``scope`` must wrap the whole agent run in the task that drives it: it
+    puts the trace attributes (hashed user, session, tags) into the context
+    that every span of the run is created from, so each model call is
+    attributed to the user and session, not just the root.
+    """
 
     config: dict[str, Any] = field(default_factory=dict)
     handler: Any = None
+    scope: Callable[[], AbstractContextManager[Any]] = nullcontext
 
     @property
     def trace_id(self) -> str | None:
@@ -113,6 +121,28 @@ class NoopTracer:
         return None
 
 
+@contextmanager
+def _propagated(**attributes: Any) -> Iterator[None]:
+    """Langfuse ``propagate_attributes``, but never failing the run."""
+    manager = None
+    try:
+        from langfuse import propagate_attributes
+
+        manager = propagate_attributes(**attributes)
+        manager.__enter__()
+    except Exception:
+        logger.warning("could not propagate trace attributes", exc_info=True)
+        manager = None
+    try:
+        yield
+    finally:
+        if manager is not None:
+            try:
+                manager.__exit__(None, None, None)
+            except Exception:
+                logger.warning("could not reset trace attributes", exc_info=True)
+
+
 class LangfuseTracer:
     """Wraps a Langfuse client; every method swallows and logs SDK errors."""
 
@@ -165,8 +195,17 @@ class LangfuseTracer:
             tags=tags,
             metadata=metadata,
         )
+        attributes = {
+            "user_id": meta["langfuse_user_id"],
+            "session_id": session_id,
+            "tags": list(tags),
+            "trace_name": name,
+            "metadata": metadata,
+        }
         return TurnTrace(
-            config={"callbacks": [handler], "metadata": meta}, handler=handler
+            config={"callbacks": [handler], "metadata": meta},
+            handler=handler,
+            scope=lambda: _propagated(**attributes),
         )
 
     def record_event(

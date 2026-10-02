@@ -324,6 +324,60 @@ def test_exported_spans_are_masked_and_pseudonymous() -> None:
     tracer.shutdown()
 
 
+def test_every_model_call_carries_the_hashed_user_and_session() -> None:
+    # Langfuse attributes cost per user/session from the generation spans, so
+    # the root span alone isn't enough.
+    exporter = InMemorySpanExporter()
+    tracer = real_tracer("pk-lf-attribution-test", exporter)
+    tracer.score = lambda **_: None  # type: ignore[method-assign]
+    model = ScriptedChatModel(
+        script=[
+            ai(tool_calls=[{"name": "get_portfolio", "id": "p1"}]),
+            ai("You hold NVDA."),
+        ]
+    )
+
+    events = run_turn(
+        make_service(model, tracer),
+        "How is my portfolio?",
+        portfolio=portfolio(position("NVDA", 10, 100, 150)),
+    )
+    tracer.flush()
+
+    assert events[-1].data["status"] == "complete"
+    spans = [dict(s.attributes or {}) for s in exporter.get_finished_spans()]
+    generations = [
+        s for s in spans if s.get("langfuse.observation.type") == "generation"
+    ]
+    tools = [s for s in spans if s.get("langfuse.observation.type") == "tool"]
+    assert len(generations) == 2 and tools
+    for span in generations + tools:
+        assert span.get("user.id") == hash_user_id(USER_ID)
+        assert span.get("session.id") == "conv-1"
+    tracer.shutdown()
+
+
+def test_a_failing_trace_scope_never_breaks_the_turn() -> None:
+    class BrokenScope:
+        def __enter__(self):
+            raise RuntimeError("context propagation failed")
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+    class ScopedTracer(RecordingTracer):
+        def start_turn(self, **kwargs: Any) -> TurnTrace:
+            trace = super().start_turn(**kwargs)
+            trace.scope = tracing._propagated  # real wrapper, broken SDK below
+            return trace
+
+    model = ScriptedChatModel(script=[ai("NVDA reports in November.")])
+    with patch("langfuse.propagate_attributes", return_value=BrokenScope()):
+        events = run_turn(make_service(model, ScopedTracer()), "When does NVDA report?")
+
+    assert events[-1].data["content"] == "NVDA reports in November."
+
+
 def test_position_math_the_model_repeats_is_masked_in_exported_spans() -> None:
     exporter = InMemorySpanExporter()
     tracer = real_tracer("pk-lf-math-test", exporter)

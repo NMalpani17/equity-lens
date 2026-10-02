@@ -160,6 +160,54 @@ async def merge_progress(
                 await aclose()
 
 
+_STREAM_BUFFER = 64
+
+
+async def iterate_in_scope(
+    stream: AsyncIterator[Any], scope: Callable[[], contextlib.AbstractContextManager]
+) -> AsyncIterator[Any]:
+    """Drive ``stream`` from one producer task that holds ``scope``.
+
+    Callbacks and graph nodes copy the context of the task running the graph,
+    so entering the trace scope there gives every span of the run the trace
+    attributes. Entering and leaving it in that one task keeps context tokens
+    out of this generator, which yields across tasks. Closing this generator
+    cancels the producer, which closes the stream (cancelling the model call).
+    """
+    queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue(maxsize=_STREAM_BUFFER)
+
+    async def produce() -> None:
+        try:
+            with scope():
+                async for item in stream:
+                    await queue.put(("item", item))
+            await queue.put(("end", None))
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:  # handed to the consumer to re-raise
+            await queue.put(("error", exc))
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if aclose is not None:
+                with contextlib.suppress(Exception):
+                    await aclose()
+
+    producer = asyncio.create_task(produce())
+    try:
+        while True:
+            kind, value = await queue.get()
+            if kind == "end":
+                return
+            if kind == "error":
+                raise value
+            yield value
+    finally:
+        if not producer.done():
+            producer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await producer
+
+
 class TurnClient(Client):
     """FastMCP client that tags every tool call with the turn id (call meta)."""
 
@@ -365,7 +413,9 @@ class ChatService:
                 labels.put_nowait, label
             )
             try:
-                async for kind, item in merge_progress(stream, labels):
+                # The producer task holds the trace scope for the whole run.
+                chunks = iterate_in_scope(stream, trace.scope)
+                async for kind, item in merge_progress(chunks, labels):
                     if kind == "progress":
                         event = self._on_progress(item, state)
                         if event:
