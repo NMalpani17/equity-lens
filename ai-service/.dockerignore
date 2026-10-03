@@ -1,0 +1,6 @@
+# Only the app package and the lock file go into the image.
+*
+!app/
+!requirements.lock
+**/__pycache__
+**/*.pyc
