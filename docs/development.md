@@ -467,13 +467,20 @@ pip install pre-commit # for the Python (Ruff) hook
 Husky + lint-staged format/lint staged JS/TS; Ruff handles Python. CI runs lint,
 typecheck, and tests for all three services on every push and PR.
 
+## Docker
+
+Both backend services have Dockerfiles; build and run them locally with
+`docker build` / `docker run` as described in
+[deployment.md](deployment.md#docker-images). The containers read `PORT`; the
+api's liveness check is `GET /api/live` and the ai-service's is `GET /health`.
+
 ## Repository layout
 
 ```
 equity-lens/
 ├── CLAUDE.md          # project guide, rules, and code quality standards
 ├── README.md
-├── docs/              # api.md (API reference), development.md (this file)
+├── docs/              # api.md, development.md (this file), deployment.md
 ├── client/            # React + TypeScript front end
 ├── api/               # Express + TypeScript API gateway
 └── ai-service/        # FastAPI (Python) AI service

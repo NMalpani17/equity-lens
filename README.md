@@ -134,6 +134,13 @@ steps, scripts, health checks) and **[docs/api.md](docs/api.md)** (API reference
 Optional: set `AI_SERVICE_LANGFUSE_PUBLIC_KEY` and `AI_SERVICE_LANGFUSE_SECRET_KEY`
 in `ai-service/.env` to trace chat turns in Langfuse.
 
+## Deployment
+
+The client deploys to Vercel and the api and ai-service to Google Cloud Run as
+Docker images (`api/Dockerfile`, `ai-service/Dockerfile`). Every environment
+variable, the Cloud Run, Vercel and Supabase settings, and how to run Prisma
+migrations are in **[docs/deployment.md](docs/deployment.md)**.
+
 ## Evaluation
 
 `python -m scripts.eval_chat` (in `ai-service/`) runs 25 labeled questions —
