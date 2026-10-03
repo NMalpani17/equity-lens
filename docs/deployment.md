@@ -175,7 +175,7 @@ region.
 
 Never use `/api/health` as the api's health check: it returns `503` whenever the
 ai-service is asleep, which would fail deploys and restart healthy instances.
-It's for the client's status card.
+It's for the client's status dot in the top bar.
 
 With instance-based billing and min instances 0, the ai-service bills for each
 instance from start until Cloud Run scales it in after it has been idle (up to
@@ -279,8 +279,8 @@ transaction pooler.
   sign-in) the client fires `POST /api/warmup`. The api pings the ai-service's
   `/health` and waits up to 20 s, so the ai-service is usually up before the
   first question. Each user can trigger it at most once per minute.
-- While the ai-service is unreachable, the status card shows **waking up** and
-  re-checks every 5 s.
+- While the ai-service is unreachable, the top-bar status dot is amber
+  (**waking up**) and re-checks every 5 s.
 - A chat turn starts streaming immediately (`turn` event plus keepalive
   comments). The api waits up to `CHAT_CONNECT_TIMEOUT_MS` (30 s) for the
   ai-service to start answering, then shows "The AI analyst is unavailable

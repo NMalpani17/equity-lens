@@ -9,6 +9,8 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
+// The header's status dot polls /api/health; not under test here.
+vi.mock("@/components/HealthIndicator", () => ({ HealthIndicator: () => null }));
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
 vi.mock("@/lib/chatApi", () => ({
   listConversations: vi.fn(),

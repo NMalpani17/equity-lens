@@ -3,6 +3,15 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getApiHealth: vi.fn().mockResolvedValue({
+    status: "ok",
+    service: "equity-lens-api",
+    version: "0.1.0",
+    dependencies: { aiService: { status: "ok", service: "equity-lens-ai-service" } },
+  }),
+}));
 
 import { useAuth } from "@/context/auth-context";
 import { Header } from "./Header";
@@ -122,5 +131,19 @@ describe("Header user menu", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Log out" }));
 
     await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
+  });
+});
+
+describe("Header status dot", () => {
+  beforeEach(() => mockAuth({}));
+
+  it("sits next to the user avatar", async () => {
+    renderHeader();
+
+    const dot = await screen.findByRole("button", {
+      name: /System status: All systems ok/,
+    });
+    const avatar = screen.getByRole("button", { name: /User menu/ });
+    expect(dot.parentElement).toBe(avatar.parentElement);
   });
 });

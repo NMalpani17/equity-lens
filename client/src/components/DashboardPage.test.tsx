@@ -6,9 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 vi.mock("@/components/portfolio/Dashboard", () => ({
   Dashboard: () => <div>dashboard-body</div>,
 }));
-vi.mock("@/components/HealthStatus", () => ({
-  HealthStatus: () => <div>health-body</div>,
-}));
+vi.mock("@/components/HealthIndicator", () => ({ HealthIndicator: () => null }));
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
 
 import { useAuth } from "@/context/auth-context";

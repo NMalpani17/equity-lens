@@ -387,8 +387,9 @@ curl http://localhost:3001/api/health
 ```
 
 If the AI service is down, the API responds `503` with `status: "degraded"`. The
-client shows that as "waking up" (the ai-service scales to zero) and re-checks
-every 5 s until it is `ok`.
+client's top-bar status dot shows that as amber "waking up" (the ai-service
+scales to zero) and re-checks every 5 s until it is `ok`; it's red when the API
+can't be reached or reports another problem.
 
 `GET /api/live` answers `200 {"status":"ok","service":"equity-lens-api"}` as
 long as the process is up and checks nothing else: use it as the platform

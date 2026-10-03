@@ -5,9 +5,7 @@
 An AI-powered investment research platform for tracking an equity portfolio with
 live market data.
 
-<!-- Screenshot: replace with a real image, e.g. docs/screenshot.png -->
-
-![Equity Lens dashboard](docs/screenshot.png)
+![Equity Lens portfolio dashboard in demo mode, with the green system status dot next to the user avatar](docs/screenshot.png)
 
 **Live demo:** _coming soon_ <!-- replace with the deployed URL -->
 
@@ -54,7 +52,10 @@ live market data.
   quality, latency and cost (see [Evaluation](#evaluation)).
 - **Graceful degradation** — one bad ticker never breaks the batch, unpriced
   holdings are excluded from totals (shown as partial), and the UI reports when
-  the AI service is unavailable instead of failing.
+  the AI service is unavailable instead of failing. A status dot in the top bar
+  (next to the avatar) shows green when all is well, amber while the AI service
+  wakes from a cold start, and red when something is down; hover or focus it for
+  per-service status.
 
 ## Architecture
 

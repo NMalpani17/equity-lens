@@ -4,11 +4,10 @@ import { X } from "lucide-react";
 import { Header } from "@/components/Header";
 import { DemoBanner } from "@/components/DemoBanner";
 import { Dashboard } from "@/components/portfolio/Dashboard";
-import { HealthStatus } from "@/components/HealthStatus";
 import { useAuth } from "@/context/auth-context";
 import { consumeAuthFlash } from "@/lib/authFlash";
 
-/** The authenticated home page: header, portfolio dashboard, and health card. */
+/** The authenticated home page: header and portfolio dashboard. */
 export function DashboardPage() {
   const { isDemo } = useAuth();
   const [flash, setFlash] = useState<string | null>(null);
@@ -43,9 +42,6 @@ export function DashboardPage() {
       <Header />
       <main>
         <Dashboard />
-        <div className="mx-auto w-full max-w-6xl px-6 pb-10">
-          <HealthStatus />
-        </div>
       </main>
     </div>
   );

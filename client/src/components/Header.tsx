@@ -16,6 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { HealthIndicator } from "@/components/HealthIndicator";
 import { useAuth } from "@/context/auth-context";
 
 const NAV_ITEMS = [
@@ -23,7 +24,7 @@ const NAV_ITEMS = [
   { to: "/chat", label: "AI analyst", end: false },
 ];
 
-/** App header: brand, main navigation, and an avatar user menu. */
+/** App header: brand, main navigation, system status dot, and user menu. */
 export function Header() {
   const { user, isDemo, signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
@@ -44,10 +45,10 @@ export function Header() {
 
   return (
     <header className="border-b">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 p-4">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:p-4">
         <Link
           to="/"
-          className="rounded-sm text-lg font-bold tracking-tight transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="whitespace-nowrap rounded-sm text-base font-bold tracking-tight sm:text-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           Equity Lens
         </Link>
@@ -59,7 +60,7 @@ export function Header() {
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                `whitespace-nowrap rounded-md px-2 py-1.5 text-sm transition-colors sm:px-3 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   isActive ? "bg-accent font-medium" : "text-muted-foreground"
                 }`
               }
@@ -69,45 +70,48 @@ export function Header() {
           ))}
         </nav>
 
-        <TooltipProvider>
-          <Tooltip>
-            <DropdownMenu>
-              {/* One avatar button acts as both the tooltip and menu trigger. */}
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger
-                  aria-label={`User menu for ${label}`}
-                  className="flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2"
-                >
-                  {initial}
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
+        <div className="flex shrink-0 items-center gap-1">
+          <HealthIndicator />
+          <TooltipProvider>
+            <Tooltip>
+              <DropdownMenu>
+                {/* One avatar button acts as both the tooltip and menu trigger. */}
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger
+                    aria-label={`User menu for ${label}`}
+                    className="flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=open]:ring-2 data-[state=open]:ring-ring data-[state=open]:ring-offset-2"
+                  >
+                    {initial}
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
 
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel className="max-w-[16rem] truncate font-normal text-muted-foreground">
-                  {label}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {!isDemo && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/account">
-                      <Settings aria-hidden="true" />
-                      Account settings
-                    </Link>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel className="max-w-[16rem] truncate font-normal text-muted-foreground">
+                    {label}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {!isDemo && (
+                    <DropdownMenuItem asChild>
+                      <Link to="/account">
+                        <Settings aria-hidden="true" />
+                        Account settings
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onSelect={() => void handleSignOut()}
+                    disabled={signingOut}
+                  >
+                    <LogOut aria-hidden="true" />
+                    Log out
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onSelect={() => void handleSignOut()}
-                  disabled={signingOut}
-                >
-                  <LogOut aria-hidden="true" />
-                  Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <TooltipContent>{label}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+              <TooltipContent>{label}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </div>
     </header>
   );
