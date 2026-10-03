@@ -179,9 +179,12 @@ It's for the client's status card.
 
 With instance-based billing and min instances 0, the ai-service bills for each
 instance from start until Cloud Run scales it in after it has been idle (up to
-about 15 minutes). The max-instances cap of 1 bounds the cost. `POST
-/api/warmup` and `/api/health` are public, so anyone can wake the instance;
-the cap still applies.
+about 15 minutes). The max-instances cap of 1 bounds the cost. Only
+signed-in users (including anonymous demo users) can trigger `POST
+/api/warmup`, at most once per minute each, and one successful ping is reused
+for 60 s across all users. `/api/health` is still public and also pings the
+ai-service (3 s timeout), so an unauthenticated caller can still wake it; the
+cap still applies.
 
 Shutdown: Cloud Run sends SIGTERM and kills the instance ~10 s later. The api
 stops accepting connections and exits within 8 s. The ai-service drains open
@@ -272,9 +275,10 @@ transaction pooler.
 
 ## Cold starts and warm-up
 
-- The client fires `POST /api/warmup` on page load. The api pings the
-  ai-service's `/health` and waits up to 20 s, so the ai-service is usually up
-  before the first question.
+- Once a session exists (on load when signed in, or right after login or demo
+  sign-in) the client fires `POST /api/warmup`. The api pings the ai-service's
+  `/health` and waits up to 20 s, so the ai-service is usually up before the
+  first question. Each user can trigger it at most once per minute.
 - While the ai-service is unreachable, the status card shows **waking up** and
   re-checks every 5 s.
 - A chat turn starts streaming immediately (`turn` event plus keepalive

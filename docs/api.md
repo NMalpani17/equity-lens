@@ -9,7 +9,7 @@ All application routes are served by the Express gateway at
 | -------- | -------------------------------------------------- | ---------------------------------------------------------------- |
 | `GET`    | `/api/health`                                      | Health of the API and downstream AI service.                     |
 | `GET`    | `/api/live`                                        | Liveness only (no dependency checks); the platform health check. |
-| `POST`   | `/api/warmup`                                      | Wake the ai-service ahead of the first question (no auth).       |
+| `POST`   | `/api/warmup`                                      | Wake the ai-service ahead of the first question (signed in).     |
 | `GET`    | `/api/holdings`                                    | List all holdings (lots).                                        |
 | `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`).  |
 | `GET`    | `/api/holdings/:id`                                | Get one holding.                                                 |
@@ -394,8 +394,12 @@ every 5 s until it is `ok`.
 long as the process is up and checks nothing else: use it as the platform
 health check, so a sleeping ai-service never fails a deploy or restarts the API.
 
-`POST /api/warmup` (no auth, no body) pings the ai-service's `/health` and waits
-up to 20 s for it, so a scaled-to-zero ai-service starts before the user's
-first question. The client fires it once on page load without waiting. It
-always answers `200` with `{"aiService":"ok"}` or `{"aiService":"waking"}`;
-concurrent calls share one ping and a success is reused for 60 s.
+`POST /api/warmup` (bearer token for a real or anonymous demo user, no body)
+pings the ai-service's `/health` and waits up to 20 s for it, so a
+scaled-to-zero ai-service starts before the user's first question. The client
+fires it, without waiting, as soon as a session exists: on load when already
+signed in, or right after login or demo sign-in. It answers `200` with
+`{"aiService":"ok"}` or `{"aiService":"waking"}`, `401` without a valid
+session, and `429 warmup_rate_limited` (with `Retry-After`) when the same user
+asks again within a minute. Concurrent calls share one ping and a success is
+reused for 60 s.

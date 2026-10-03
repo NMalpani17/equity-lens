@@ -17,6 +17,8 @@ const authApi = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/supabase", () => ({ supabase: { auth: authApi } }));
+const warmUpMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/warmUp", () => ({ warmUp: warmUpMock }));
 
 import { AuthProvider } from "./AuthProvider";
 import { useAuth } from "./auth-context";
@@ -195,3 +197,50 @@ describe("AuthProvider", () => {
 function fireClick(label: string) {
   screen.getByText(label).click();
 }
+
+describe("ai-service warm-up", () => {
+  type AuthCallback = (event: string, session: unknown) => void;
+
+  function captureAuthCallback(): () => AuthCallback {
+    let callback: AuthCallback = () => {};
+    authApi.onAuthStateChange.mockImplementation((cb: AuthCallback) => {
+      callback = cb;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    return () => callback;
+  }
+
+  const session = (token: string, anonymous = false) => ({
+    access_token: token,
+    user: { email: anonymous ? null : "a@b.com", is_anonymous: anonymous },
+  });
+
+  it("warms up on load when a session already exists", async () => {
+    const emit = captureAuthCallback();
+    renderProvider();
+
+    act(() => emit()("INITIAL_SESSION", session("token-1")));
+
+    expect(warmUpMock).toHaveBeenCalledWith("token-1");
+  });
+
+  it("warms up right after login or demo sign-in", async () => {
+    const emit = captureAuthCallback();
+    renderProvider();
+
+    act(() => emit()("SIGNED_IN", session("token-demo", true)));
+
+    expect(warmUpMock).toHaveBeenCalledWith("token-demo");
+  });
+
+  it("never warms up without a session or on token refreshes", async () => {
+    const emit = captureAuthCallback();
+    renderProvider();
+
+    act(() => emit()("INITIAL_SESSION", null));
+    act(() => emit()("TOKEN_REFRESHED", session("token-2")));
+    act(() => emit()("SIGNED_OUT", null));
+
+    expect(warmUpMock).not.toHaveBeenCalled();
+  });
+});

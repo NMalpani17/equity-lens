@@ -6,6 +6,7 @@
 import { z } from "zod";
 
 import { logger } from "../logger.js";
+import { createKeyedRateLimiter } from "./rateLimit.js";
 import { aiServiceFetch, aiServiceUrl } from "./aiServiceClient.js";
 import type { ServiceHealth } from "../types.js";
 
@@ -21,6 +22,11 @@ const REQUEST_TIMEOUT_MS = 3000;
 export const WARMUP_TIMEOUT_MS = 20_000;
 /** A successful warm-up is reused for this long instead of pinging again. */
 export const WARMUP_REUSE_MS = 60_000;
+/** Each user may trigger a warm-up at most this often. */
+export const WARMUP_USER_WINDOW_MS = 60_000;
+
+/** Per-user warm-up limit (per api instance). */
+export const warmupLimiter = createKeyedRateLimiter(WARMUP_USER_WINDOW_MS);
 
 /**
  * Fetch the AI service health. Never throws — on any failure it returns an
@@ -77,8 +83,9 @@ export async function warmAiService(now = Date.now): Promise<ServiceHealth> {
   return warming;
 }
 
-/** Forget the last warm-up (tests). */
+/** Forget the last warm-up and the per-user limits (tests). */
 export function resetWarmup(): void {
   warming = null;
   lastWarmAt = 0;
+  warmupLimiter.reset();
 }

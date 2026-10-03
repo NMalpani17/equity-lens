@@ -3,6 +3,7 @@ import { Router } from "express";
 
 import { getHealth, getLive, postWarmup } from "../controllers/health.controller.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { requireAuth } from "../middleware/auth.js";
 
 export const healthRouter = Router();
 
@@ -10,5 +11,5 @@ export const healthRouter = Router();
 healthRouter.get("/health", getHealth);
 // Liveness only (platform health check).
 healthRouter.get("/live", getLive);
-// Wake the ai-service on page load (fire-and-forget from the client).
-healthRouter.post("/warmup", asyncHandler(postWarmup));
+// Wake the ai-service once a user has a session (fire-and-forget).
+healthRouter.post("/warmup", asyncHandler(requireAuth), asyncHandler(postWarmup));

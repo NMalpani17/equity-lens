@@ -93,17 +93,6 @@ export interface HealthResponse {
  * `degraded` body, so we parse and return it instead of throwing. Only other
  * non-OK statuses (the API itself being unreachable) are treated as errors.
  */
-/**
- * Ask the API to wake the ai-service (it scales to zero) so it's starting up
- * before the user's first question. Fire-and-forget: never awaited by the UI,
- * never throws, and errors are ignored.
- */
-export function warmUp(): void {
-  fetch(`${API_URL}/api/warmup`, { method: "POST", keepalive: true }).catch(() => {
-    // Best effort: a failed warm-up only means a slower first answer.
-  });
-}
-
 export async function getApiHealth(): Promise<HealthResponse> {
   const response = await fetch(`${API_URL}/api/health`);
   if (!response.ok && response.status !== 503) {

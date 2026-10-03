@@ -1,7 +1,13 @@
 /** Health-check controller (HTTP layer). */
 import type { Request, Response } from "express";
 
-import { getAiServiceHealth, warmAiService } from "../services/aiService.js";
+import { HttpError } from "../errors.js";
+import { getUserId } from "../middleware/auth.js";
+import {
+  getAiServiceHealth,
+  warmAiService,
+  warmupLimiter,
+} from "../services/aiService.js";
 import type { HealthResponse } from "../types.js";
 
 const VERSION = "0.1.0";
@@ -34,12 +40,25 @@ export function getLive(_req: Request, res: Response): void {
 }
 
 /**
- * Wake the ai-service ahead of the user's first question. The client fires
- * this on page load without waiting. The request stays open until the
- * ai-service answers (or the warm-up times out) so the platform keeps this
- * instance's CPU while the ping is in flight. Always 200: warming is best effort.
+ * Wake the ai-service ahead of the user's first question. Signed-in (or demo)
+ * users only; the client fires it once a session exists, without waiting. At
+ * most once per minute per user (429 otherwise). The request stays open until
+ * the ai-service answers (or the warm-up times out) so the platform keeps this
+ * instance's CPU while the ping is in flight. Otherwise always 200: warming is
+ * best effort.
  */
-export async function postWarmup(_req: Request, res: Response): Promise<void> {
+export async function postWarmup(req: Request, res: Response): Promise<void> {
+  const retryAfterMs = warmupLimiter.take(getUserId(req));
+  if (retryAfterMs > 0) {
+    const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
+    res.set("Retry-After", String(retryAfterSeconds));
+    throw new HttpError(
+      429,
+      "warmup_rate_limited",
+      "The AI service was warmed up recently. Try again shortly.",
+      { retryAfterSeconds },
+    );
+  }
   const aiService = await warmAiService();
   res.status(200).json({ aiService: aiService.status === "ok" ? "ok" : "waking" });
 }
