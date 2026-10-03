@@ -42,9 +42,12 @@ class RagComponents:
     coordinator: IngestionCoordinator
     search: RagSearchService
 
-    def close(self) -> None:
-        self.executor.shutdown(wait=False, cancel_futures=True)
-        self.pool.close()
+    def close(self, timeout: float = 3.0) -> None:
+        """Stop ingestion (bounded by ``timeout``) and close the pool."""
+        self.coordinator.shutdown(timeout)
+        # A job that didn't stop in time may still hold a connection; don't
+        # wait long for it to come back.
+        self.pool.close(timeout=1.0)
 
 
 def build_components(settings: Settings) -> RagComponents:
@@ -153,8 +156,8 @@ def get_rag_components() -> RagComponents:
     return build_components(get_settings())
 
 
-def shutdown_rag_components() -> None:
-    """Close the pool and executor if they were ever built."""
+def shutdown_rag_components(timeout: float = 3.0) -> None:
+    """Stop ingestion and close the pool, if they were ever built."""
     if get_rag_components.cache_info().currsize:
-        get_rag_components().close()
+        get_rag_components().close(timeout)
         get_rag_components.cache_clear()

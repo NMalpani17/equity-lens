@@ -26,8 +26,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
-    shutdown_rag_components()
-    shutdown_tracer()
+    # Bounded, so a shutdown never hangs: ingestion stops at its next stage
+    # (an interrupted job is reclaimed later), then pending traces flush.
+    settings = get_settings()
+    shutdown_rag_components(settings.shutdown_ingestion_timeout_seconds)
+    shutdown_tracer(settings.shutdown_tracing_timeout_seconds)
 
 
 def create_app() -> FastAPI:

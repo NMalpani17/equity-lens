@@ -97,7 +97,7 @@ class Tracer(Protocol):
 
     def flush(self) -> None: ...
 
-    def shutdown(self) -> None: ...
+    def shutdown(self, timeout: float = 3.0) -> None: ...
 
 
 class NoopTracer:
@@ -117,7 +117,7 @@ class NoopTracer:
     def flush(self) -> None:
         return None
 
-    def shutdown(self) -> None:
+    def shutdown(self, timeout: float = 3.0) -> None:
         return None
 
 
@@ -360,7 +360,7 @@ def get_tracer() -> Tracer:
     return build_tracer(get_settings())
 
 
-def shutdown_tracer() -> None:
+def shutdown_tracer(timeout: float = 3.0) -> None:
     """Flush pending spans at shutdown (only if a tracer was ever built)."""
     if get_tracer.cache_info().currsize:
-        get_tracer().shutdown()
+        get_tracer().shutdown(timeout)

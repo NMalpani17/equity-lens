@@ -147,8 +147,8 @@ class EvalTracer:
     def flush(self) -> None:
         self.inner.flush()
 
-    def shutdown(self) -> None:
-        self.inner.shutdown()
+    def shutdown(self, timeout: float = 3.0) -> None:
+        self.inner.shutdown(timeout)
 
 
 async def run_case(
