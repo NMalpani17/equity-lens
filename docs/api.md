@@ -5,28 +5,30 @@ All application routes are served by the Express gateway at
 
 ## API gateway (`http://localhost:3001`)
 
-| Method   | Path                                               | Description                                                     |
-| -------- | -------------------------------------------------- | --------------------------------------------------------------- |
-| `GET`    | `/api/health`                                      | Health of the API and downstream AI service.                    |
-| `GET`    | `/api/holdings`                                    | List all holdings (lots).                                       |
-| `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
-| `GET`    | `/api/holdings/:id`                                | Get one holding.                                                |
-| `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                               |
-| `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                 |
-| `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).               |
-| `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.   |
-| `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.     |
-| `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).             |
-| `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.               |
-| `POST`   | `/api/conversations`                               | Start a conversation (`title?`).                                |
-| `PATCH`  | `/api/conversations/:id`                           | Rename a conversation (`title`).                                |
-| `DELETE` | `/api/conversations/:id`                           | Delete a conversation and its messages.                         |
-| `GET`    | `/api/conversations/:id/messages`                  | Messages with citations and tool calls.                         |
-| `POST`   | `/api/conversations/:id/messages`                  | Send a message; the reply streams as SSE.                       |
-| `POST`   | `/api/conversations/:id/messages/:messageId/retry` | Regenerate the latest stopped/failed reply in place (SSE).      |
-| `GET`    | `/api/chat/usage`                                  | Today's message allowance (`used`, `limit`, `remaining`).       |
-| `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.      |
-| `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).         |
+| Method   | Path                                               | Description                                                      |
+| -------- | -------------------------------------------------- | ---------------------------------------------------------------- |
+| `GET`    | `/api/health`                                      | Health of the API and downstream AI service.                     |
+| `GET`    | `/api/live`                                        | Liveness only (no dependency checks); the platform health check. |
+| `POST`   | `/api/warmup`                                      | Wake the ai-service ahead of the first question (no auth).       |
+| `GET`    | `/api/holdings`                                    | List all holdings (lots).                                        |
+| `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`).  |
+| `GET`    | `/api/holdings/:id`                                | Get one holding.                                                 |
+| `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                                |
+| `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                  |
+| `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).                |
+| `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.    |
+| `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.      |
+| `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).              |
+| `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.                |
+| `POST`   | `/api/conversations`                               | Start a conversation (`title?`).                                 |
+| `PATCH`  | `/api/conversations/:id`                           | Rename a conversation (`title`).                                 |
+| `DELETE` | `/api/conversations/:id`                           | Delete a conversation and its messages.                          |
+| `GET`    | `/api/conversations/:id/messages`                  | Messages with citations and tool calls.                          |
+| `POST`   | `/api/conversations/:id/messages`                  | Send a message; the reply streams as SSE.                        |
+| `POST`   | `/api/conversations/:id/messages/:messageId/retry` | Regenerate the latest stopped/failed reply in place (SSE).       |
+| `GET`    | `/api/chat/usage`                                  | Today's message allowance (`used`, `limit`, `remaining`).        |
+| `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.       |
+| `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).          |
 
 ### Errors
 
@@ -384,4 +386,16 @@ curl http://localhost:3001/api/health
 #  "dependencies":{"aiService":{"status":"ok", ...}}}
 ```
 
-If the AI service is down, the API responds `503` with `status: "degraded"`.
+If the AI service is down, the API responds `503` with `status: "degraded"`. The
+client shows that as "waking up" (the ai-service scales to zero) and re-checks
+every 5 s until it is `ok`.
+
+`GET /api/live` answers `200 {"status":"ok","service":"equity-lens-api"}` as
+long as the process is up and checks nothing else: use it as the platform
+health check, so a sleeping ai-service never fails a deploy or restarts the API.
+
+`POST /api/warmup` (no auth, no body) pings the ai-service's `/health` and waits
+up to 20 s for it, so a scaled-to-zero ai-service starts before the user's
+first question. The client fires it once on page load without waiting. It
+always answers `200` with `{"aiService":"ok"}` or `{"aiService":"waking"}`;
+concurrent calls share one ping and a success is reused for 60 s.
