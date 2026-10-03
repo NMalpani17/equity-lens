@@ -34,7 +34,8 @@ const envSchema = z.object({
   // Context sent to the model: final answers only, newest first.
   CHAT_HISTORY_MESSAGES: z.coerce.number().int().nonnegative().default(6),
   CHAT_HISTORY_TOKENS: z.coerce.number().int().positive().default(3000),
-  // Comma-separated list of origins allowed by CORS (the client dev server).
+  // Comma-separated origins allowed by CORS (exact matches, no wildcards),
+  // e.g. "https://equity-lens.vercel.app,http://localhost:5173".
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
   // Supabase PostgreSQL connection strings.
   // DATABASE_URL is the pooled (PgBouncer) URL used by the running app;
@@ -48,6 +49,18 @@ const envSchema = z.object({
   // deleting auth users); never expose it to the client.
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
 });
+
+/**
+ * Split a comma-separated origin list: trimmed, empty entries dropped, and a
+ * trailing slash removed (browsers send origins without one). Each entry is
+ * matched exactly; "*" or partial domains are never treated as patterns.
+ */
+export function parseOrigins(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter((origin) => origin.length > 0);
+}
 
 const parsed = envSchema.safeParse(process.env);
 
@@ -74,7 +87,7 @@ export const config = {
     historyMessages: parsed.data.CHAT_HISTORY_MESSAGES,
     historyTokens: parsed.data.CHAT_HISTORY_TOKENS,
   },
-  clientOrigin: parsed.data.CLIENT_ORIGIN,
+  clientOrigins: parseOrigins(parsed.data.CLIENT_ORIGIN),
   databaseUrl: parsed.data.DATABASE_URL,
   directUrl: parsed.data.DIRECT_URL,
   supabaseUrl: parsed.data.SUPABASE_URL,

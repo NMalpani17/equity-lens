@@ -12,7 +12,8 @@ export function createApp(): Express {
   const app = express();
 
   app.use(pinoHttp({ logger }));
-  app.use(cors({ origin: config.clientOrigin }));
+  // An array of strings: the cors package allows an origin only on an exact match.
+  app.use(cors({ origin: config.clientOrigins }));
   app.use(express.json());
 
   // All API routes are mounted under /api.
