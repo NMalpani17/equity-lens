@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
+
+// findBy*/waitFor give up after 1s by default, which a loaded runner (the
+// full suite, or the first render of a lazy chunk) can exceed.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom doesn't implement the pointer-capture or scroll APIs that Radix menus
 // (DropdownMenu) call, so stub them to keep those components testable.

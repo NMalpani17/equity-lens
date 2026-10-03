@@ -44,10 +44,11 @@ async function figure(name: string) {
 
 describe("ChatCharts", () => {
   // Load the lazy Recharts chunk once up front; on a busy runner its first
-  // import can outlast findBy's default timeout.
+  // import can outlast findBy's default timeout, and even the default 10s
+  // hook timeout, so the hook gets 60s.
   beforeAll(async () => {
     await import("./charts/ChartView");
-  });
+  }, 60_000);
 
   it("renders a price chart with its headline, an SVG and a data table", async () => {
     render(<ChatCharts charts={[priceChart]} />);
