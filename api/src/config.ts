@@ -34,6 +34,13 @@ const envSchema = z.object({
   // Context sent to the model: final answers only, newest first.
   CHAT_HISTORY_MESSAGES: z.coerce.number().int().nonnegative().default(6),
   CHAT_HISTORY_TOKENS: z.coerce.number().int().positive().default(3000),
+  // How long to wait for the ai-service to start answering a chat turn. Covers
+  // a cold start (~15s) with margin; a real timeout shows the friendly
+  // "unavailable" error.
+  CHAT_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  // SSE comment sent this often while a turn is open, so the browser sees the
+  // stream is alive and proxies don't close an idle connection.
+  CHAT_KEEPALIVE_MS: z.coerce.number().int().positive().default(10_000),
   // Comma-separated origins allowed by CORS (exact matches, no wildcards),
   // e.g. "https://equity-lens.vercel.app,http://localhost:5173".
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
@@ -86,6 +93,8 @@ export const config = {
     maxMessageChars: parsed.data.CHAT_MAX_MESSAGE_CHARS,
     historyMessages: parsed.data.CHAT_HISTORY_MESSAGES,
     historyTokens: parsed.data.CHAT_HISTORY_TOKENS,
+    connectTimeoutMs: parsed.data.CHAT_CONNECT_TIMEOUT_MS,
+    keepaliveMs: parsed.data.CHAT_KEEPALIVE_MS,
   },
   clientOrigins: parseOrigins(parsed.data.CLIENT_ORIGIN),
   databaseUrl: parsed.data.DATABASE_URL,

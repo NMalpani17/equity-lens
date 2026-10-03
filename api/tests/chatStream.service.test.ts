@@ -258,3 +258,49 @@ describe("mapEvent tool_progress", () => {
     expect(mapEvent("tool_progress", { id: "t1" })).toBeNull();
   });
 });
+
+describe("openChatStream connect timeout", () => {
+  it("gives up with chat_unavailable when the ai-service doesn't answer in time", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+        }),
+    );
+    const started = Date.now();
+
+    const error = await openChatStream(REQUEST, new AbortController().signal, {
+      connectTimeoutMs: 50,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableError);
+    expect((error as HttpError).code).toBe("chat_unavailable");
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("never cuts a stream that started answering before the timeout", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          // The first event arrives well after the connect timeout.
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          if (init?.signal?.aborted) return controller.error(init.signal.reason);
+          controller.enqueue(encoder.encode('event: token\ndata: {"text":"Hi"}\n\n'));
+          controller.close();
+        },
+      });
+      return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+    });
+
+    const events = await openChatStream(REQUEST, new AbortController().signal, {
+      connectTimeoutMs: 50,
+    });
+
+    expect(await collect(events)).toEqual([{ type: "token", text: "Hi" }]);
+  });
+
+  it("uses the configured timeout by default", () => {
+    expect(config.chat.connectTimeoutMs).toBe(30_000);
+    expect(config.chat.keepaliveMs).toBe(10_000);
+  });
+});

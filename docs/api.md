@@ -189,13 +189,12 @@ and makes dates and quote timestamps appear in the user's local time.
 
 Errors before streaming starts are normal JSON errors:
 
-| Status | `error`                                    | When                                                                          |
-| ------ | ------------------------------------------ | ----------------------------------------------------------------------------- |
-| `422`  | `validation_error`                         | Empty, or over 2,000 characters ("Messages are limited to 2000 characters."). |
-| `404`  | `not_found`                                | Not the user's conversation.                                                  |
-| `409`  | `turn_in_progress`                         | A reply is still streaming in this conversation (no overlapping turns).       |
-| `429`  | `chat_limit_reached`                       | Daily cap reached; body has `scope` (`user`/`global`), `limit`, `resetsAt`.   |
-| `503`  | `chat_unavailable` / `chat_not_configured` | The ai-service is down or not configured.                                     |
+| Status | `error`              | When                                                                          |
+| ------ | -------------------- | ----------------------------------------------------------------------------- |
+| `422`  | `validation_error`   | Empty, or over 2,000 characters ("Messages are limited to 2000 characters."). |
+| `404`  | `not_found`          | Not the user's conversation.                                                  |
+| `409`  | `turn_in_progress`   | A reply is still streaming in this conversation (no overlapping turns).       |
+| `429`  | `chat_limit_reached` | Daily cap reached; body has `scope` (`user`/`global`), `limit`, `resetsAt`.   |
 
 Daily caps (turns per UTC day — sent messages plus retries, configurable):
 **20** for signed-in users, **5** for demo (anonymous) users, and **60** across
@@ -203,7 +202,15 @@ all users. The window is the UTC day; limit messages don't name a time, and the
 client shows `resetsAt` (from `429` bodies and `GET /api/chat/usage`) in the
 user's local time zone, e.g. "It resets at 8:00 PM EDT".
 
-On success the response is `text/event-stream`:
+Once the turn is claimed, the response is `text/event-stream` and starts at
+once with the `turn` event, before the ai-service has answered (it may be
+waking from a cold start). While the turn is open the stream carries an SSE
+comment (`: keepalive`) every `CHAT_KEEPALIVE_MS` (10 s), which clients ignore.
+If the ai-service doesn't start answering within `CHAT_CONNECT_TIMEOUT_MS`
+(30 s), is down or isn't configured, the stream ends with `error`
+(`chat_unavailable` / `chat_not_configured`, "The AI analyst is unavailable
+right now. Please try again shortly.", `retryable: true`) and `done` with the
+saved failed reply. Events:
 
 | Event           | Data                                                                                        |
 | --------------- | ------------------------------------------------------------------------------------------- |
