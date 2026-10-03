@@ -40,3 +40,21 @@ describe("GET /api/health", () => {
     expect(res.body.dependencies.aiService.status).toBe("unreachable");
   });
 });
+
+describe("GET /api/live", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns 200 without calling the AI service, even when it is down", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("ECONNREFUSED"));
+
+    const res = await request(app).get("/api/live");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: "ok", service: "equity-lens-api" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

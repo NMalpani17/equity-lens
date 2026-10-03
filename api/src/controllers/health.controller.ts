@@ -23,3 +23,12 @@ export async function getHealth(_req: Request, res: Response): Promise<void> {
 
   res.status(healthy ? 200 : 503).json(body);
 }
+
+/**
+ * Liveness for the platform health check: the process is up and serving.
+ * Deliberately checks no dependencies, so a sleeping or slow ai-service never
+ * fails a deploy or gets this instance restarted.
+ */
+export function getLive(_req: Request, res: Response): void {
+  res.status(200).json({ status: "ok", service: "equity-lens-api" });
+}
