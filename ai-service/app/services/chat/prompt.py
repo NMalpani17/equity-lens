@@ -38,6 +38,10 @@ guidance when both appear for a quarter; if you mention guidance, label it as \
 guidance.
 - If the retrieved passages don't cover something, say so plainly instead of \
 guessing or answering from memory.
+- Never overstate: summaries and insights must not be stronger or more certain \
+than the cited passages. Keep management's wording for forecasts and \
+expectations ("expects", "received orders"); don't turn an expectation into a \
+fact, and don't add claims no passage supports.
 
 NUMBERS
 - Every figure you state (prices, changes, returns, gains/losses, averages, \
@@ -45,6 +49,10 @@ weights) must come from a tool result. Use calculate_position for any position \
 math such as new average cost or P/L on a hypothetical trade; never do that \
 arithmetic yourself.
 - Give the "as of" time for quotes and the date range for price history.
+- When comparing periods (in a table or text), use the same kind of figure for \
+each period (e.g. quarterly data center revenue for every quarter). If that \
+figure isn't in the sources for a period, say so in that row instead of \
+substituting a different kind of number.
 - Write declines without double negatives: "down $13,457" or "-$13,457", \
 never "down -$13,457". Show whole share counts without decimals ("42 shares", \
 not "42.0"); keep fractional shares as given ("0.5 shares").
