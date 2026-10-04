@@ -29,7 +29,8 @@ Click **Try demo**; no sign-up needed.
 
 - **Earnings-call search (RAG).** Hybrid dense + keyword search over each
   company's last four earnings calls, reranked, with speaker and quarter on
-  every passage. New tickers are indexed on demand.
+  every passage. New tickers are indexed on demand, and a stale ticker picks
+  up its newest call in the background without slowing the answer.
 - **Charts in answers.** Price and allocation charts built only from tool data,
   never from numbers the model wrote. They stream in with the answer and are
   saved with the conversation.

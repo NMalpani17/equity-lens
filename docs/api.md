@@ -134,9 +134,11 @@ calendar.
 - `section` is `prepared_remarks` or `qa`. `speaker` falls back to the role
   (e.g. `Analyst`) when Equibles does not identify the speaker by name.
 
-**`202`** — the ticker is not indexed yet. Ingestion has started in the
+**`202`** — the ticker has never been indexed. Ingestion has started in the
 background (or was already running); poll `pollUrl` and search again once it
-reports `indexed` (typically well under a minute):
+reports `indexed` (typically well under a minute). A ticker that was indexed
+before always gets `200` from its existing passages, even while it is
+`indexing` again (a freshness refresh adding a newer call):
 
 ```json
 {
@@ -177,7 +179,8 @@ daily cap on new tickers — default 8 per UTC day — is used up; the body incl
 ```
 
 `status` is one of `not_indexed`, `indexing`, `indexed`, `failed` (a later
-search retries) or `unavailable`. `GET /api/rag/tickers` returns
+search retries) or `unavailable`. `job.trigger` is `on_demand` (a search),
+`refresh` (a newer call for an indexed ticker) or `seed` (the seed script). `GET /api/rag/tickers` returns
 `{ "tickers": [...] }` with the same shape (without `job`).
 
 ## AI analyst chat

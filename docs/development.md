@@ -73,7 +73,8 @@ keywords, reranked); see [architecture.md](architecture.md#rag-pipeline).
 
 1. **Keys** in `ai-service/.env`:
    - `AI_SERVICE_EQUIBLES_API_KEY` — [equibles.com/dashboard/apikeys](https://equibles.com/dashboard/apikeys)
-     (free tier: 100 requests/day, resets 00:00 UTC; one new ticker costs ~5 requests).
+     (free tier: 100 requests/day, resets 00:00 UTC; one new ticker costs ~5 requests,
+     a freshness check 1, and a refresh 1–2 more).
    - `AI_SERVICE_GEMINI_API_KEY` — [aistudio.google.com/apikey](https://aistudio.google.com/apikey),
      on a project with **billing enabled** (as the live deployment uses;
      embedding the ten default tickers costs well under $1). The service throttles
@@ -114,6 +115,12 @@ keywords, reranked); see [architecture.md](architecture.md#rag-pipeline).
 4. **Other tickers** are indexed on demand the first time they're searched, at
    most `AI_SERVICE_RAG_DAILY_INGESTION_CAP` (default 8) new tickers per UTC
    day.
+5. **Newer calls** are picked up automatically: a searched ticker whose newest
+   indexed call is older than `AI_SERVICE_RAG_FRESHNESS_DAYS` (default 90) is
+   checked in the background at most once per day, and a newer call is indexed
+   (dropping the oldest quarter) within `AI_SERVICE_RAG_DAILY_REFRESH_CAP`
+   (default 3) refreshes per UTC day; `0` turns this off. See
+   [architecture.md](architecture.md#rag-pipeline).
 
 To measure retrieval quality, see [evaluation.md](evaluation.md#retrieval-evaluation).
 
@@ -239,9 +246,10 @@ details, see [api.md](./api.md).
 
 - Chat tests need no network: a scripted fake chat model drives the real agent
   and MCP tools (`ai-service/tests/test_chat_agent.py`).
-- RAG repository integration tests (advisory-lock dedupe, daily cap) run only
-  when `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a
-  direct, non-pooled URL); they apply the migration into a throwaway schema and
+- RAG repository integration tests (advisory-lock dedupe, daily caps,
+  once-per-day freshness checks, the freshness backfill) run only when
+  `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a direct,
+  non-pooled URL); they apply the RAG migrations into a throwaway schema and
   drop it.
 - Tracing tests cover the disabled path, a handler that raises on every
   callback, an unreachable host, and the masked spans the real SDK would export
