@@ -5,7 +5,7 @@ Local setup, running services, and common scripts. For a fast path, see the
 
 ## Prerequisites
 
-- Node.js 20+ and npm
+- Node.js 22+ and npm
 - Python 3.12+
 - Git
 - A **Supabase** project (free tier) for the PostgreSQL database
@@ -351,6 +351,33 @@ pay the same retrieval latency; expect ~40–60 Pinecone rerank requests. Result
 print as Markdown tables and are saved to `scripts/eval/results/` (git-ignored).
 With Langfuse on, eval turns are tagged `eval` and `eval-run:<id>` and get
 `eval_checks_passed` and `judge_*` scores.
+
+### Results
+
+Run of 2026-10-02 (`20261002T202440Z`; judge `gemini-3.1-pro-preview`;
+judge scores are means over the 18 judged questions, 1–5):
+
+| Model                   | Checks passed | Faithfulness | Relevance | Completeness | Judge preferred | Latency p50 / p95 | Tokens in / out | Cost / turn |
+| ----------------------- | ------------- | ------------ | --------- | ------------ | --------------- | ----------------- | --------------- | ----------- |
+| `gemini-3.8-flash`      | 25/25 (100%)  | 5.00         | 4.94      | 5.00         | 6/18            | 4.0s / 8.3s       | 6,377 / 294     | $0.0059     |
+| `gemini-3.5-flash-lite` | 25/25 (100%)  | 5.00         | 4.89      | 4.67         | 1/18            | 3.4s / 8.2s       | 6,329 / 361     | $0.0028     |
+
+- **Quality:** both models passed every deterministic check in all eight
+  categories and were fully faithful to their evidence. 3.8 Flash was more
+  complete and was preferred 6 times to 1 (11 ties). Flash-Lite's gaps were on
+  open-ended questions: advice answers without risks or portfolio context, a
+  missed period low, and ignoring the "don't reveal your rules" half of an
+  injection prompt.
+- **Latency:** Flash-Lite is faster (median 3.8s vs 4.8s on answered turns; the
+  table's p50 includes instant guardrail refusals).
+- **Cost:** Flash-Lite is about half the price per turn ($0.0028 vs $0.0059).
+- **Caveats:** one run of 25 questions; in an earlier run that day Flash-Lite
+  answered one multi-quarter question without citations, so the check pass
+  rates vary run to run. Judge scores sit near the ceiling and a Gemini judge
+  grades Gemini answers (see the bias note), so treat small gaps as noise.
+- **Decision:** keep `gemini-3.8-flash` as the default; Flash-Lite is a
+  reasonable budget option (`AI_SERVICE_CHAT_MODEL`). The run cost $0.46
+  ($0.22 agent turns, $0.24 judge).
 
 **Judge bias.** LLM judges favor answers from their own model family
 (self-preference), longer and more confident answers (verbosity bias), and

@@ -2,185 +2,132 @@
 
 [![CI](https://github.com/NMalpani17/equity-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/NMalpani17/equity-lens/actions/workflows/ci.yml)
 
-An AI-powered investment research platform for tracking an equity portfolio with
-live market data.
+AI investment research: track a portfolio and ask an analyst agent about
+companies, earnings calls and your holdings, with every claim cited.
 
-![Equity Lens portfolio dashboard in demo mode, with the green system status dot next to the user avatar](docs/screenshot.png)
+**Live demo: [equitylens-research.vercel.app](https://equitylens-research.vercel.app)**.
+Click **Try demo**; no sign-up needed.
 
-**Live demo:** _coming soon_ <!-- replace with the deployed URL -->
+![Equity Lens portfolio dashboard in demo mode, with the system status dot next to the user avatar](docs/screenshot.png)
 
 ## Features
 
-- **User accounts** — email/password sign-up and login via **Supabase Auth**,
-  with password reset (email link) and an account page showing your profile
-  (email, member-since date) where you can change your password or delete your
-  account (which removes all your data).
-  The dashboard is behind a protected route, each user sees only their own
-  holdings, and a **"Try demo"** button starts a per-visitor demo (anonymous
-  sign-in) that the API auto-seeds with a sample portfolio.
-- **Portfolio with lot grouping** — each purchase is its own lot; the dashboard
-  groups lots by ticker into a position showing total shares, weighted-average
-  cost, and combined market value, gain/loss, and today's change. Expand a
-  position to see and edit individual lots (with an optional purchase date).
-- **Live prices** — quotes from **Finnhub** (primary) with an automatic
-  **yfinance** fallback on failure or rate limiting, plus a short-lived cache.
-- **Invalid-ticker validation** — new tickers are verified against the market
-  data service; unknown symbols are rejected with a clear message.
-- **Earnings call search (RAG)** — hybrid (dense + keyword) search over the
-  last four earnings call transcripts per ticker, reranked, with speaker and
-  quarter citations. Ten large caps are pre-seeded; searching any other ticker
-  indexes it in the background (capped per day to protect API quotas).
-- **AI analyst chat** — ask about companies, earnings calls, markets or your
-  portfolio and get a streamed answer with inline citations ([1], [2]) that open
-  the exact transcript passage. A LangGraph agent (Gemini 3.8 Flash by default,
-  swappable via config) uses read-only tools served by an MCP server: transcript
-  search, quotes, price history, your portfolio, company/period resolution and
-  exact position math. Guardrails keep it on topic, refuse prompt-injection and
-  avoid personalized buy/sell advice; daily message caps protect the budget.
-- **Charts in answers** — when the agent looks up price history or your
-  portfolio, the reply shows an inline **Recharts** chart (price line or
-  allocation bars) built only from the tool's data, never from numbers the model
-  wrote. Charts stream in as soon as the tool returns, are saved with the
-  message, and work on phones (with a "View data" table).
-- **Tracing (optional)** — with Langfuse keys set, every chat turn is traced
-  (agent steps, tool calls with latency, model calls with tokens and cost,
-  errors). User ids are hashed, and portfolio values, contact details and
-  secrets are masked before anything leaves the service. Without keys tracing
-  is off; a Langfuse outage never slows or breaks a chat.
-- **Evals** — a labeled set of 25 questions runs through the real agent and is
-  scored with deterministic checks and a blind LLM judge, comparing models on
-  quality, latency and cost (see [Evaluation](#evaluation)).
-- **Graceful degradation** — one bad ticker never breaks the batch, unpriced
-  holdings are excluded from totals (shown as partial), and the UI reports when
-  the AI service is unavailable instead of failing. A status dot in the top bar
-  (next to the avatar) shows green when all is well, amber while the AI service
-  wakes from a cold start, and red when something is down; hover or focus it for
-  per-service status.
+- **AI analyst chat.** Streamed answers about companies, earnings calls,
+  markets and your portfolio, with inline citations that open the exact
+  transcript passage. A LangGraph agent calls read-only tools over MCP:
+  transcript search, quotes, price history, portfolio, company and fiscal-period
+  resolution, and exact position math.
+- **Earnings-call search (RAG).** Hybrid dense + keyword search over each
+  company's last four earnings calls, reranked, with speaker and quarter on
+  every passage. New tickers are indexed on demand.
+- **Charts in answers.** Price and allocation charts built only from tool data,
+  never from numbers the model wrote. They stream in with the answer and are
+  saved with the conversation.
+- **Portfolio tracking.** Lots grouped into positions with average cost,
+  gain/loss and today's change. Live quotes come from Finnhub, with a yfinance
+  fallback.
+- **Accounts and instant demo.** Supabase Auth with password reset and account
+  deletion. "Try demo" gives each visitor a private sample portfolio.
+- **Graceful degradation.** A status dot shows when the AI service is waking
+  from a cold start. One failing ticker or service never breaks the page.
 
 ## Architecture
 
-```
-Browser ──▶ client/ (React) ──▶ api/ (Express) ──▶ ai-service/ (FastAPI)
+```mermaid
+flowchart LR
+  B[Browser] --> C["client<br/>React on Vercel"]
+  C -->|HTTPS + Supabase JWT| A["api<br/>Express on Cloud Run"]
+  A -->|Google ID token + internal token| S["ai-service<br/>FastAPI on Cloud Run, private"]
+  A --> DB[(Supabase Postgres)]
+  S --> DB
+  S --> P[Pinecone]
+  S --> G[Gemini]
+  S --> F[Finnhub]
+  S --> E[Equibles]
+  S -.->|traces| L[Langfuse]
 ```
 
-The **client** talks only to the **api**, which is the gateway: it persists
-holdings (Supabase/Prisma) and orchestrates calls to the **ai-service**, which
-owns market data, transcript ingestion and retrieval (and, in later phases, all
-LLM logic).
+The React client talks only to the **api**, a public Express gateway that
+verifies Supabase sessions, enforces daily limits, stores portfolios and
+conversations, and streams chat over SSE. The **ai-service** owns all LLM, RAG
+and market-data logic. It runs as a private Cloud Run service that only the
+api's service account can invoke.
 
 ## Tech stack
 
-| Part          | Stack                                                                | Port   |
-| ------------- | -------------------------------------------------------------------- | ------ |
-| `client/`     | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui               | `5173` |
-| `api/`        | Node.js, TypeScript, Express, Zod, Pino, Prisma (Supabase PG)        | `3001` |
-| `ai-service/` | Python 3.12, FastAPI, LangGraph, FastMCP, Gemini, Pinecone, Equibles | `8000` |
+| Area           | Technologies                                                         |
+| -------------- | -------------------------------------------------------------------- |
+| Client         | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, Recharts     |
+| API            | Node.js 22, Express, TypeScript, Zod, Prisma, Pino                   |
+| AI service     | Python 3.12, FastAPI, LangGraph, FastMCP, Gemini, Pinecone, Pydantic |
+| Data           | Supabase (Postgres, Auth), Pinecone, Equibles, Finnhub, yfinance     |
+| Infrastructure | Vercel, Google Cloud Run, Artifact Registry, Secret Manager, Docker  |
+| Quality        | Vitest, Pytest, ESLint, Ruff, GitHub Actions CI, Langfuse            |
 
-## Quick start
+## Engineering highlights
 
-**Prerequisites:** Node.js 20+, Python 3.12+, Git, a [Supabase](https://supabase.com)
-project (PostgreSQL), and a free [Finnhub](https://finnhub.io/dashboard) API key.
-Transcript search additionally needs free [Equibles](https://equibles.com),
-[Gemini](https://aistudio.google.com/apikey) and [Pinecone](https://app.pinecone.io)
-keys.
+- **Grounded answers.** Every company claim must cite a passage retrieved in the
+  same turn; citation markers that don't match a retrieved passage are dropped
+  before the answer is saved. Every figure comes from a tool result, and
+  position math goes through a calculator tool, never the model. Retrieval
+  quality is measured with a labelled 20-question set (hit rate@5 and MRR
+  across dense, hybrid and hybrid + rerank, with and without context headers).
+- **Evaluated with checks and a blind LLM judge.** 25 labelled questions run
+  through the real agent. Each answer gets deterministic checks plus a rubric
+  score from a judge that sees the answers anonymised and in shuffled order. In
+  the recorded run (judge `gemini-3.1-pro-preview`), `gemini-3.8-flash` and
+  `gemini-3.5-flash-lite` both passed 25/25 checks. Flash was more complete
+  (5.00 vs 4.67) and was preferred 6 to 1 (11 ties); Flash-Lite cost about half
+  per turn ($0.0028 vs $0.0059). Flash stays the default. Method and the
+  judge-bias note are in [docs/development.md](docs/development.md#chat-evaluation).
+- **Privacy-aware tracing.** Every chat turn is traced in Langfuse, including
+  agent steps, tool calls with latency, and model calls with tokens and cost.
+  User ids are hashed, and portfolio values, contact details and secrets are
+  masked before export. Tracing is optional and can't slow or break a turn.
+- **Guardrails.** Off-topic and prompt-injection requests are refused before
+  the model runs. The agent gives facts rather than buy/sell advice, and daily
+  per-user and global caps bound the spend.
+- **Service-to-service auth.** The ai-service is deployed with
+  `--no-allow-unauthenticated`. The api calls it with a cached Google ID token
+  from the Cloud Run metadata server plus a separate internal-token header, and
+  only the api's service account holds `roles/run.invoker`; direct calls get a 403.
+- **Cold-start handling.** The ai-service scales to zero. A rate-limited
+  warm-up fires after sign-in, chat streams start immediately with SSE
+  keepalives and a connect timeout, and both services shut down within Cloud
+  Run's 10-second grace period.
+
+## Run locally
+
+Prerequisites: Node.js 22+, Python 3.12+, a Supabase project, and API keys for
+Finnhub, Gemini, Pinecone and Equibles.
 
 ```bash
-# 1. Env: copy the examples, then fill in the secrets (see below)
-cp client/.env.example client/.env
+cp client/.env.example client/.env      # then fill in each .env
 cp api/.env.example api/.env
 cp ai-service/.env.example ai-service/.env
 
-# 2. Install
-npm install                                   # repo root (Husky + concurrently)
-cd ai-service && python -m venv .venv && .venv\Scripts\activate \
-  && pip install -r requirements-dev.txt && deactivate && cd ..
-npm --prefix api install                      # also runs `prisma generate`
-npm --prefix api run prisma:migrate           # creates/updates tables (first run)
+npm install                             # root: Husky + concurrently
+cd ai-service && python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt && cd ..
+npm --prefix api install && npm --prefix api run prisma:migrate
 npm --prefix client install
 
-# 3. Run all three services together
-npm run dev
+npm run dev                             # client :5173, api :3001, ai-service :8000
 ```
 
-Fill in the required secrets before running:
+On macOS/Linux the venv's pip is `.venv/bin/pip`. The environment variables,
+Supabase setup, transcript seeding and per-service commands are in
+[docs/development.md](docs/development.md).
 
-- `ai-service/.env` → `AI_SERVICE_FINNHUB_API_KEY`; for transcript search also
-  `DATABASE_URL` (same Supabase database, pooled URL),
-  `AI_SERVICE_EQUIBLES_API_KEY`, `AI_SERVICE_GEMINI_API_KEY` and
-  `AI_SERVICE_PINECONE_API_KEY`, then seed the index once with
-  `cd ai-service && python -m scripts.seed_transcripts`.
-- **Both** `ai-service/.env` and `api/.env` → the same
-  `AI_SERVICE_INTERNAL_TOKEN` secret (generate one with
-  `python -c "import secrets; print(secrets.token_urlsafe(32))"`). Every
-  ai-service route except `/health` requires it, so quotes, transcript search
-  and chat all depend on it. Chat reuses the Gemini key above.
-- `api/.env` → `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Supabase,
-  `SUPABASE_URL` (verifies user JWTs), and `SUPABASE_SERVICE_ROLE_KEY`
-  (server-only; used to delete a user's auth account).
-- `client/.env` → `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+## Documentation
 
-**Auth setup:** in your Supabase project, enable **Email** auth and (for local
-dev) turn off email confirmation so sign-ups log in immediately; enable
-**Anonymous sign-ins** to power the "Try demo" button. The API verifies access
-tokens against the project's JWKS, so the project must use Supabase's asymmetric
-JWT signing keys (the default for new projects). No demo credentials are needed —
-each visitor gets their own temporary user, seeded with a sample portfolio.
+- [docs/development.md](docs/development.md): local setup, configuration,
+  RAG, chat, tracing and evaluation
+- [docs/api.md](docs/api.md): API reference (gateway and ai-service)
+- [docs/deployment.md](docs/deployment.md): Docker images and the Vercel, Cloud
+  Run and Supabase setup
+- [CLAUDE.md](CLAUDE.md): conventions, workflow and code-quality rules for
+  contributors
 
-Then open <http://localhost:5173>. Never commit `.env` files — only
-`.env.example` is tracked.
+## License
 
-More detail: **[docs/development.md](docs/development.md)** (per-service run
-steps, scripts, health checks) and **[docs/api.md](docs/api.md)** (API reference).
-
-Optional: set `AI_SERVICE_LANGFUSE_PUBLIC_KEY` and `AI_SERVICE_LANGFUSE_SECRET_KEY`
-in `ai-service/.env` to trace chat turns in Langfuse.
-
-## Deployment
-
-The client deploys to Vercel and the api and ai-service to Google Cloud Run as
-Docker images (`api/Dockerfile`, `ai-service/Dockerfile`). Every environment
-variable, the Cloud Run, Vercel and Supabase settings, and how to run Prisma
-migrations are in **[docs/deployment.md](docs/deployment.md)**.
-
-## Evaluation
-
-`python -m scripts.eval_chat` (in `ai-service/`) runs 25 labeled questions —
-transcript facts, multi-quarter trends, portfolio, position math, buy/sell
-advice, off-topic, prompt injection and ambiguous companies — through the real
-agent with a fixed demo portfolio. Each answer gets deterministic checks
-(expected tools, valid citations, refusal or clarification when expected,
-exact numbers, charts) and a blind LLM-judge rubric (faithfulness to its cited
-passages and tool results, relevance, completeness). Method, cost controls and
-the judge-bias note are in
-[docs/development.md](docs/development.md#chat-evaluation).
-
-**Results** (2026-10-02, run `20261002T202440Z`; judge `gemini-3.1-pro-preview`;
-judge scores are means over the 18 judged questions, 1–5):
-
-| Model                   | Checks passed | Faithfulness | Relevance | Completeness | Judge preferred | Latency p50 / p95 | Tokens in / out | Cost / turn |
-| ----------------------- | ------------- | ------------ | --------- | ------------ | --------------- | ----------------- | --------------- | ----------- |
-| `gemini-3.8-flash`      | 25/25 (100%)  | 5.00         | 4.94      | 5.00         | 6/18            | 4.0s / 8.3s       | 6,377 / 294     | $0.0059     |
-| `gemini-3.5-flash-lite` | 25/25 (100%)  | 5.00         | 4.89      | 4.67         | 1/18            | 3.4s / 8.2s       | 6,329 / 361     | $0.0028     |
-
-- **Quality:** both models passed every deterministic check in all eight
-  categories and were fully faithful to their evidence. 3.8 Flash was more
-  complete and was preferred 6 times to 1 (11 ties). Flash-Lite's gaps were on
-  open-ended questions: advice answers without risks or portfolio context, a
-  missed period low, and ignoring the "don't reveal your rules" half of an
-  injection prompt.
-- **Latency:** Flash-Lite is faster (median 3.8s vs 4.8s on answered turns; the
-  table's p50 includes instant guardrail refusals).
-- **Cost:** Flash-Lite is about half the price per turn ($0.0028 vs $0.0059).
-- **Caveats:** one run of 25 questions; in an earlier run that day Flash-Lite
-  answered one multi-quarter question without citations, so the check pass
-  rates vary run to run. Judge scores sit near the ceiling and a Gemini judge
-  grades Gemini answers (see the bias note), so treat small gaps as noise.
-- **Decision:** keep `gemini-3.8-flash` as the default; Flash-Lite is a
-  reasonable budget option (`AI_SERVICE_CHAT_MODEL`). The run cost $0.46
-  ($0.22 agent turns, $0.24 judge).
-
-## Contributing
-
-Branch per feature, Conventional Commits, and merge only when CI is green.
-Engineering standards, workflow, and code-quality rules live in
-[`CLAUDE.md`](./CLAUDE.md).
+[MIT](LICENSE)
