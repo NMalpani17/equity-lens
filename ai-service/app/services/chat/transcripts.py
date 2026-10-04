@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from app.models.rag import RagIndexingResponse, RagSearchRequest, RagSearchResult
+from app.models.transcript import parse_period_label
 from app.services.rag.errors import (
     IngestionCapReachedError,
     RagNotConfiguredError,
@@ -31,7 +32,7 @@ from app.services.rag.errors import (
     TickerUnavailableError,
 )
 from app.services.rag.repository import TickerRecord
-from app.services.rag.search import RagSearchService
+from app.services.rag.search import RagSearchService, is_searchable
 
 from .citations import CitationRegistry, Source, format_passage
 from .context import TurnContext
@@ -89,12 +90,6 @@ def _of(data: dict) -> SearchOutput:
     return SearchOutput(text=json.dumps(data, default=str), data=data)
 
 
-def _is_searchable(record: TickerRecord | None) -> bool:
-    return record is not None and (
-        record.status == "indexed" or record.indexed_at is not None
-    )
-
-
 def transcript_ticker(
     ticker: str | None, ticker_record: Callable[[str], TickerRecord | None]
 ) -> tuple[str | None, str | None]:
@@ -103,9 +98,9 @@ def transcript_ticker(
         return ticker, None
     symbol = ticker.strip().upper()
     group = _GROUP_BY_TICKER.get(symbol)
-    if group is None or _is_searchable(ticker_record(symbol)):
+    if group is None or is_searchable(ticker_record(symbol)):
         return symbol, None
-    indexed = next((t for t in group if _is_searchable(ticker_record(t))), None)
+    indexed = next((t for t in group if is_searchable(ticker_record(t))), None)
     chosen = indexed or group[0]  # never index a second copy of the same calls
     if chosen == symbol:
         return symbol, None
@@ -123,15 +118,6 @@ def _quarter_rank(
     )
 
 
-def _parse_period(label: str) -> tuple[int, int] | None:
-    """ "FY2026Q2" -> (2026, 2)."""
-    try:
-        year, quarter = label.removeprefix("FY").split("Q")
-        return int(year), int(quarter)
-    except ValueError:
-        return None
-
-
 def _indexed_quarters(
     tickers: set[str], ticker_record: Callable[[str], TickerRecord | None]
 ) -> dict[str, dict[tuple[int, int], int]]:
@@ -140,7 +126,7 @@ def _indexed_quarters(
     for ticker in tickers:
         record = ticker_record(ticker)
         periods = [
-            _parse_period(label) for label in (record.quarters if record else [])
+            parse_period_label(label) for label in (record.quarters if record else [])
         ]
         out[ticker] = {
             period: rank
@@ -404,7 +390,9 @@ def _search_each_quarter(
         if waiting is not None:
             return waiting
     record = deps.ticker_record(ticker)
-    parsed = [_parse_period(label) for label in (record.quarters if record else [])]
+    parsed = [
+        parse_period_label(label) for label in (record.quarters if record else [])
+    ]
     periods = sorted({p for p in parsed if p is not None}, reverse=True)[:count]
     if not periods:
         return _of(

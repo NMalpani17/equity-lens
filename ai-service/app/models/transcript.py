@@ -22,6 +22,20 @@ def company_from_event_title(title: str | None) -> str | None:
     return _FILER_SUFFIX_RE.sub("", match.group("company")).strip() or None
 
 
+def period_label(fiscal_year: int, fiscal_quarter: int) -> str:
+    """Short label such as ``FY2025Q3``."""
+    return f"FY{fiscal_year}Q{fiscal_quarter}"
+
+
+def parse_period_label(label: str) -> tuple[int, int] | None:
+    """ "FY2026Q2" -> (2026, 2); None if the label is malformed."""
+    try:
+        year, quarter = label.removeprefix("FY").split("Q")
+        return int(year), int(quarter)
+    except ValueError:
+        return None
+
+
 class EarningsCallEvent(BaseModel):
     """One row of ``GET /stocks/{ticker}/investor-events``."""
 
@@ -70,7 +84,7 @@ class Transcript(BaseModel):
     @property
     def period_label(self) -> str:
         """Short label such as ``FY2025Q3``."""
-        return f"FY{self.fiscal_year}Q{self.fiscal_quarter}"
+        return period_label(self.fiscal_year, self.fiscal_quarter)
 
     @classmethod
     def from_equibles(cls, payload: dict[str, Any]) -> "Transcript":

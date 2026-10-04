@@ -26,6 +26,7 @@ from app.models.rag import (
 from .cache import TTLCache
 from .embeddings import DenseEmbedder, SparseEncoder, SparseVector
 from .errors import RerankUnavailableError, SearchUpstreamError
+from .freshness import FreshnessRefresher
 from .jobs import IngestionCoordinator
 from .repository import ClaimOutcome, RagRepository, TickerRecord
 from .reranker import PineconeReranker, RerankedItem
@@ -64,7 +65,8 @@ def hybrid_scale(
 
 
 def is_searchable(record: TickerRecord | None) -> bool:
-    """Indexed now, or indexed before (a re-index keeps old vectors live)."""
+    """Indexed now, or indexed before (a re-index or freshness refresh keeps
+    the old vectors live, so searches never wait for it)."""
     return record is not None and (
         record.status == "indexed" or record.indexed_at is not None
     )
@@ -103,8 +105,10 @@ class RagSearchService:
         namespace: str,
         candidate_k: int,
         alpha: float,
+        freshness: FreshnessRefresher | None = None,
     ) -> None:
         self._repo = repo
+        self._freshness = freshness
         self._coordinator = coordinator
         self._embedder = embedder
         self._sparse = sparse_encoder
@@ -126,8 +130,15 @@ class RagSearchService:
         return self.retrieve(request)
 
     def ensure_indexed(self, ticker: str) -> RagIndexingResponse | None:
-        """None when ``ticker`` is searchable; otherwise start indexing it."""
-        if is_searchable(self._repo.get_ticker(ticker)):
+        """None when ``ticker`` is searchable; otherwise start indexing it.
+
+        A searchable ticker may also get a background freshness check; the
+        search itself never waits for it.
+        """
+        record = self._repo.get_ticker(ticker)
+        if record is not None and is_searchable(record):
+            if self._freshness is not None:
+                self._freshness.maybe_check(record)
             return None
         claim = self._coordinator.request_on_demand(ticker)
         if claim.outcome is ClaimOutcome.ALREADY_INDEXED:

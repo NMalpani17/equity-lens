@@ -17,7 +17,7 @@ from enum import StrEnum
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from psycopg import Connection
+from psycopg import Connection, sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
@@ -42,6 +42,14 @@ class ClaimOutcome(StrEnum):
     ALREADY_INDEXED = "already_indexed"
     UNAVAILABLE = "unavailable"
     CAP_REACHED = "cap_reached"
+    NOT_INDEXED = "not_indexed"
+
+
+class DailyCounter(StrEnum):
+    """Columns of ``rag_daily_usage``; each has its own daily cap."""
+
+    NEW_TICKER = "new_ticker_ingestions"
+    REFRESH = "refresh_ingestions"
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,8 @@ class TickerRecord:
     last_error: str | None = None
     last_job_id: str | None = None
     indexed_at: datetime | None = None
+    latest_call_date: date | None = None
+    freshness_checked_at: datetime | None = None
 
 
 # Query parameters Prisma understands but libpq rejects ("invalid URI query
@@ -128,7 +138,8 @@ def create_pool(database_url: str, max_size: int) -> ConnectionPool:
 
 _TICKER_COLUMNS = """
     ticker, status::text AS status, company_name, chunk_count, quarters,
-    last_error, last_job_id::text AS last_job_id, indexed_at
+    last_error, last_job_id::text AS last_job_id, indexed_at, latest_call_date,
+    freshness_checked_at
 """
 
 _JOB_COLUMNS = """
@@ -225,12 +236,16 @@ class RagRepository:
         daily_cap: int | None,
         stale_after: timedelta,
         force: bool = False,
+        refresh: bool = False,
         today: date | None = None,
     ) -> Claim:
         """Atomically decide whether to start an ingestion job for ``ticker``.
 
         ``daily_cap=None`` bypasses the cap (seed script). ``force`` re-ingests
-        tickers that are already indexed or marked unavailable.
+        tickers that are already indexed or marked unavailable. ``refresh``
+        claims an *indexed* ticker to add a newer call and charges the refresh
+        counter instead of the new-ticker one (NOT_INDEXED for any other
+        ticker).
         """
         today = today or datetime.now(UTC).date()
         now = utcnow()
@@ -256,13 +271,18 @@ class RagRepository:
                     if created is not None and now - created < stale_after:
                         return Claim(ClaimOutcome.ALREADY_INDEXING, row["job_id"])
                     self._expire_job(conn, row["job_id"], now)
-                elif status == "indexed" and not force:
+                elif refresh and status != "indexed":
+                    return Claim(ClaimOutcome.NOT_INDEXED)
+                elif status == "indexed" and not (force or refresh):
                     return Claim(ClaimOutcome.ALREADY_INDEXED)
                 elif status == "unavailable" and not force:
                     return Claim(ClaimOutcome.UNAVAILABLE)
+            elif refresh:
+                return Claim(ClaimOutcome.NOT_INDEXED)
 
+            counter = DailyCounter.REFRESH if refresh else DailyCounter.NEW_TICKER
             if daily_cap is not None and not self._consume_daily_slot(
-                conn, today, daily_cap, now
+                conn, today, daily_cap, now, counter
             ):
                 return Claim(ClaimOutcome.CAP_REACHED)
 
@@ -289,13 +309,39 @@ class RagRepository:
             )
             return Claim(ClaimOutcome.STARTED, job_id)
 
-    def get_daily_usage(self, day: date) -> int:
+    def claim_freshness_check(
+        self, ticker: str, *, now: datetime | None = None
+    ) -> bool:
+        """Record today's freshness check for ``ticker``; False if already done.
+
+        One UPDATE decides it, so concurrent searches (even across processes)
+        check a ticker at most once per UTC day. Only tickers that have been
+        indexed qualify.
+        """
+        now = now or utcnow()
+        day_start = datetime.combine(now.date(), datetime.min.time())
         with self._pool.connection() as conn:
             row = conn.execute(
-                "SELECT new_ticker_ingestions FROM rag_daily_usage WHERE day = %s",
-                (day,),
+                """
+                UPDATE rag_tickers SET freshness_checked_at = %s
+                WHERE ticker = %s AND indexed_at IS NOT NULL
+                  AND status IN ('indexed', 'indexing')
+                  AND (freshness_checked_at IS NULL OR freshness_checked_at < %s)
+                RETURNING ticker
+                """,
+                (now, ticker, day_start),
             ).fetchone()
-        return int(row["new_ticker_ingestions"]) if row else 0
+        return row is not None
+
+    def get_daily_usage(
+        self, day: date, counter: DailyCounter = DailyCounter.NEW_TICKER
+    ) -> int:
+        query = sql.SQL("SELECT {} AS used FROM rag_daily_usage WHERE day = %s")
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                query.format(sql.Identifier(counter.value)), (day,)
+            ).fetchone()
+        return int(row["used"]) if row else 0
 
     def mark_job_running(self, job_id: str) -> None:
         with self._pool.connection() as conn:
@@ -315,6 +361,7 @@ class RagRepository:
         company_name: str,
         chunk_count: int,
         quarters: list[str],
+        latest_call_date: date | None = None,
     ) -> None:
         now = utcnow()
         with self._pool.connection() as conn, conn.transaction():
@@ -330,17 +377,37 @@ class RagRepository:
                 """
                 UPDATE rag_tickers SET status = 'indexed', company_name = %s,
                     chunk_count = %s, quarters = %s, last_error = NULL,
+                    latest_call_date = COALESCE(%s, latest_call_date),
                     indexed_at = %s, updated_at = %s
                 WHERE ticker = %s
                 """,
-                (company_name, chunk_count, Jsonb(quarters), now, now, ticker),
+                (
+                    company_name,
+                    chunk_count,
+                    Jsonb(quarters),
+                    latest_call_date,
+                    now,
+                    now,
+                    ticker,
+                ),
             )
 
     def fail_job(
-        self, job_id: str, ticker: str, *, error: str, unavailable: bool
+        self,
+        job_id: str,
+        ticker: str,
+        *,
+        error: str,
+        unavailable: bool,
+        keep_indexed: bool = False,
     ) -> None:
+        """Record a failed job. ``keep_indexed`` (a failed refresh) leaves the
+        ticker ``indexed``: its existing vectors are intact and searchable."""
         now = utcnow()
-        status = "unavailable" if unavailable else "failed"
+        if keep_indexed:
+            status = "indexed"
+        else:
+            status = "unavailable" if unavailable else "failed"
         with self._pool.connection() as conn, conn.transaction():
             conn.execute(
                 """
@@ -364,25 +431,28 @@ class RagRepository:
 
     @staticmethod
     def _consume_daily_slot(
-        conn: Connection, today: date, cap: int, now: datetime
+        conn: Connection,
+        today: date,
+        cap: int,
+        now: datetime,
+        counter: DailyCounter = DailyCounter.NEW_TICKER,
     ) -> bool:
-        """Increment today's counter if below ``cap``. False when the cap is hit."""
+        """Increment today's ``counter`` if below ``cap``. False at the cap."""
         conn.execute(
             """
-            INSERT INTO rag_daily_usage (day, new_ticker_ingestions, updated_at)
-            VALUES (%s, 0, %s) ON CONFLICT (day) DO NOTHING
+            INSERT INTO rag_daily_usage (day, updated_at)
+            VALUES (%s, %s) ON CONFLICT (day) DO NOTHING
             """,
             (today, now),
         )
-        row = conn.execute(
+        update = sql.SQL(
             """
-            UPDATE rag_daily_usage
-            SET new_ticker_ingestions = new_ticker_ingestions + 1, updated_at = %s
-            WHERE day = %s AND new_ticker_ingestions < %s
-            RETURNING new_ticker_ingestions
-            """,
-            (now, today, cap),
-        ).fetchone()
+            UPDATE rag_daily_usage SET {column} = {column} + 1, updated_at = %s
+            WHERE day = %s AND {column} < %s
+            RETURNING {column}
+            """
+        ).format(column=sql.Identifier(counter.value))
+        row = conn.execute(update, (now, today, cap)).fetchone()
         return row is not None
 
     @staticmethod

@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     # New tickers ingested on demand per UTC day (Equibles allows 100 req/day
     # and one ticker costs about 5 requests).
     rag_daily_ingestion_cap: int = 8
+    # A searched ticker whose newest indexed call is older than this is checked
+    # for a newer call (one Equibles request, at most once per ticker per day).
+    rag_freshness_days: int = 90
+    # Refresh jobs (newer call found) per UTC day, separate from the new-ticker
+    # cap. 0 turns freshness refresh off.
+    rag_daily_refresh_cap: int = 3
     # An "indexing" job older than this is assumed dead and may be re-claimed.
     rag_stale_job_minutes: int = 30
     rag_ingestion_workers: int = 2

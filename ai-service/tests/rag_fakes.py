@@ -94,11 +94,12 @@ class FakeSparse:
 class FakeRepo:
     """Mimics RagRepository's claim semantics without a database."""
 
-    def __init__(self, daily_cap_used: int = 0) -> None:
+    def __init__(self, daily_cap_used: int = 0, refreshes_used: int = 0) -> None:
         self.transcripts: dict[tuple[str, int, int], dict] = {}
         self.tickers: dict[str, TickerRecord] = {}
         self.jobs: dict[str, JobRecord] = {}
         self.daily_used = daily_cap_used
+        self.refreshes_used = refreshes_used
 
     # transcripts
     def get_cached_transcripts(self, ticker: str) -> list[CachedTranscript]:
@@ -132,34 +133,61 @@ class FakeRepo:
         daily_cap: int | None,
         stale_after: timedelta,
         force: bool = False,
+        refresh: bool = False,
         today: date | None = None,
     ) -> Claim:
         record = self.tickers.get(ticker)
         if record is not None:
             if record.status == "indexing":
                 return Claim(ClaimOutcome.ALREADY_INDEXING, record.last_job_id)
-            if record.status == "indexed" and not force:
+            if refresh and record.status != "indexed":
+                return Claim(ClaimOutcome.NOT_INDEXED)
+            if record.status == "indexed" and not (force or refresh):
                 return Claim(ClaimOutcome.ALREADY_INDEXED)
             if record.status == "unavailable" and not force:
                 return Claim(ClaimOutcome.UNAVAILABLE)
+        elif refresh:
+            return Claim(ClaimOutcome.NOT_INDEXED)
         if daily_cap is not None:
-            if self.daily_used >= daily_cap:
+            used = self.refreshes_used if refresh else self.daily_used
+            if used >= daily_cap:
                 return Claim(ClaimOutcome.CAP_REACHED)
-            self.daily_used += 1
+            if refresh:
+                self.refreshes_used += 1
+            else:
+                self.daily_used += 1
         job_id = str(uuid.uuid4())
         self.jobs[job_id] = JobRecord(
             job_id, ticker, "queued", trigger, 0, None, utcnow(), None, None
         )
         self.tickers[ticker] = TickerRecord(
-            ticker=ticker,
-            status="indexing",
-            company_name=record.company_name if record else None,
-            chunk_count=record.chunk_count if record else 0,
-            quarters=record.quarters if record else [],
-            last_job_id=job_id,
-            indexed_at=record.indexed_at if record else None,
+            **{
+                **(record.__dict__ if record else {"ticker": ticker}),
+                "status": "indexing",
+                "company_name": record.company_name if record else None,
+                "chunk_count": record.chunk_count if record else 0,
+                "quarters": record.quarters if record else [],
+                "last_job_id": job_id,
+                "last_error": None,
+            }
         )
         return Claim(ClaimOutcome.STARTED, job_id)
+
+    def claim_freshness_check(self, ticker: str, *, now: datetime) -> bool:
+        record = self.tickers.get(ticker)
+        if (
+            record is None
+            or record.indexed_at is None
+            or record.status not in ("indexed", "indexing")
+        ):
+            return False
+        checked = record.freshness_checked_at
+        if checked is not None and checked.date() >= now.date():
+            return False
+        self.tickers[ticker] = TickerRecord(
+            **{**record.__dict__, "freshness_checked_at": now}
+        )
+        return True
 
     def _update_job(self, job_id: str, **changes: Any) -> None:
         job = self.jobs[job_id]
@@ -168,10 +196,20 @@ class FakeRepo:
     def mark_job_running(self, job_id: str) -> None:
         self._update_job(job_id, status="running", started_at=utcnow())
 
-    def complete_job(self, job_id, ticker, *, company_name, chunk_count, quarters):
+    def complete_job(
+        self,
+        job_id,
+        ticker,
+        *,
+        company_name,
+        chunk_count,
+        quarters,
+        latest_call_date=None,
+    ):
         self._update_job(
             job_id, status="succeeded", chunk_count=chunk_count, finished_at=utcnow()
         )
+        old = self.tickers.get(ticker)
         self.tickers[ticker] = TickerRecord(
             ticker=ticker,
             status="indexed",
@@ -180,17 +218,19 @@ class FakeRepo:
             quarters=quarters,
             last_job_id=job_id,
             indexed_at=utcnow(),
+            latest_call_date=latest_call_date or (old and old.latest_call_date),
+            freshness_checked_at=old.freshness_checked_at if old else None,
         )
 
-    def fail_job(self, job_id, ticker, *, error, unavailable):
+    def fail_job(self, job_id, ticker, *, error, unavailable, keep_indexed=False):
         self._update_job(job_id, status="failed", error=error, finished_at=utcnow())
         old = self.tickers[ticker]
+        if keep_indexed:
+            status = "indexed"
+        else:
+            status = "unavailable" if unavailable else "failed"
         self.tickers[ticker] = TickerRecord(
-            **{
-                **old.__dict__,
-                "status": "unavailable" if unavailable else "failed",
-                "last_error": error,
-            }
+            **{**old.__dict__, "status": status, "last_error": error}
         )
 
 

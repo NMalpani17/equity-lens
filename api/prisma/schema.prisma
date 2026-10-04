@@ -79,19 +79,23 @@ enum RagJobStatus {
 
 /// One row per ticker that has been (or is being) ingested into Pinecone.
 model RagTicker {
-  ticker      String          @id
-  companyName String?         @map("company_name")
-  status      RagTickerStatus
+  ticker             String          @id
+  companyName        String?         @map("company_name")
+  status             RagTickerStatus
   /// Number of chunks upserted for this ticker on the last successful run.
-  chunkCount  Int             @default(0) @map("chunk_count")
+  chunkCount         Int             @default(0) @map("chunk_count")
   /// Quarters indexed, e.g. ["FY2025Q3", "FY2025Q4"].
-  quarters    Json            @default("[]")
-  lastError   String?         @map("last_error")
+  quarters           Json            @default("[]")
+  lastError          String?         @map("last_error")
   /// The most recent ingestion job for this ticker.
-  lastJobId   String?         @map("last_job_id") @db.Uuid
-  indexedAt   DateTime?       @map("indexed_at")
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at")
+  lastJobId          String?         @map("last_job_id") @db.Uuid
+  indexedAt          DateTime?       @map("indexed_at")
+  /// Date of the newest indexed earnings call (drives the freshness check).
+  latestCallDate     DateTime?       @map("latest_call_date") @db.Date
+  /// Last time Equibles was asked for a newer call (at most once per UTC day).
+  freshnessCheckedAt DateTime?       @map("freshness_checked_at")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
 
   @@map("rag_tickers")
 }
@@ -101,7 +105,8 @@ model RagIngestionJob {
   id         String       @id @default(uuid()) @db.Uuid
   ticker     String
   status     RagJobStatus
-  /// What started the job: "on_demand" (a search) or "seed" (the CLI script).
+  /// What started the job: "on_demand" (a search), "refresh" (a newer call
+  /// for an indexed ticker) or "seed" (the CLI script).
   trigger    String
   chunkCount Int          @default(0) @map("chunk_count")
   error      String?
@@ -113,11 +118,13 @@ model RagIngestionJob {
   @@map("rag_ingestion_jobs")
 }
 
-/// Per-UTC-day counter of new-ticker ingestions, enforcing the daily cap that
-/// keeps us inside Equibles' request quota (which resets at 00:00 UTC).
+/// Per-UTC-day counters of new-ticker ingestions and freshness refreshes,
+/// enforcing the daily caps that keep us inside Equibles' request quota (which
+/// resets at 00:00 UTC).
 model RagDailyUsage {
   day                 DateTime @id @db.Date
   newTickerIngestions Int      @default(0) @map("new_ticker_ingestions")
+  refreshIngestions   Int      @default(0) @map("refresh_ingestions")
   updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("rag_daily_usage")
