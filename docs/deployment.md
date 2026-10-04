@@ -9,7 +9,8 @@ Browser ──▶ client (Vercel, static) ──▶ api (Cloud Run) ──▶ ai
 ```
 
 - **client** — static Vite build on Vercel.
-- **api** — Docker image on Cloud Run, **request-based billing**.
+- **api** — Docker image on Cloud Run, **request-based billing**, startup CPU
+  boost.
 - **ai-service** — Docker image on Cloud Run, **instance-based billing**,
   min instances 0, startup CPU boost.
 - **Database** — the existing Supabase project; tables are owned by the api's
@@ -167,7 +168,7 @@ region.
 | Max instances         | 2 (cost cap)                                                                           | 1 (cost cap; one instance handles this traffic)                                                                                                                                                                                      |
 | Concurrency           | 80                                                                                     | 20 (one async worker; chat turns are I/O-bound)                                                                                                                                                                                      |
 | Request timeout       | 600 s (chat streams are one long request)                                              | 600 s                                                                                                                                                                                                                                |
-| Startup CPU boost     | Off (starts in under a second)                                                         | **On** (import-heavy startup)                                                                                                                                                                                                        |
+| Startup CPU boost     | **On** (shorter cold starts; only adds CPU while an instance starts)                   | **On** (import-heavy startup)                                                                                                                                                                                                        |
 | Startup probe         | HTTP `GET /api/live` (port 8080)                                                       | HTTP `GET /health` (port 8080), period 2 s, failure threshold 30                                                                                                                                                                     |
 | Liveness probe        | HTTP `GET /api/live`                                                                   | HTTP `GET /health`                                                                                                                                                                                                                   |
 | Service account       | Dedicated `equity-lens-api@PROJECT.iam.gserviceaccount.com`                            | Dedicated `equity-lens-ai-service@PROJECT.iam.gserviceaccount.com`                                                                                                                                                                   |
@@ -337,7 +338,7 @@ The probes need no token: Cloud Run runs them inside the instance.
 ```bash
 gcloud run deploy equity-lens-api --image $IMG/api:TAG --region us-east4 \
   --service-account equity-lens-api@PROJECT.iam.gserviceaccount.com \
-  --allow-unauthenticated --cpu-throttling --no-cpu-boost --cpu 1 --memory 512Mi \
+  --allow-unauthenticated --cpu-throttling --cpu-boost --cpu 1 --memory 512Mi \
   --min-instances 0 --max-instances 2 --concurrency 80 --timeout 600 \
   --execution-environment gen2 --env-vars-file api-env.yaml \
   --set-secrets AI_SERVICE_INTERNAL_TOKEN=internal-token:latest,DATABASE_URL=database-url:latest,DIRECT_URL=direct-url:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest \
@@ -345,8 +346,10 @@ gcloud run deploy equity-lens-api --image $IMG/api:TAG --region us-east4 \
   --liveness-probe=httpGet.path=/api/live,periodSeconds=30,timeoutSeconds=5,failureThreshold=3
 ```
 
-Pass `--no-cpu-boost` explicitly: gcloud turns startup CPU boost on for new
-services by default.
+Startup CPU boost is on for the api too (gcloud's default for new services).
+The api starts quickly anyway, but with min instances 0 the first request after
+an idle period waits for a cold start, and the boost only adds CPU while an
+instance starts, so it shortens that wait for very little cost.
 
 **8. Verify**
 
