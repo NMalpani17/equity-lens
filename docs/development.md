@@ -1,6 +1,8 @@
 # Development
 
-Local setup, running services, and common scripts. For a fast path, see
+Local setup, configuration, running the services, tests and scripts. How the
+system works is in [architecture.md](architecture.md); evals are in
+[evaluation.md](evaluation.md). For a fast path, see
 [Run locally](../README.md#run-locally) in the README.
 
 ## Prerequisites
@@ -65,10 +67,9 @@ Authentication uses Supabase Auth. In the Supabase dashboard:
 
 ## Transcript search (RAG) setup
 
-The ai-service ingests earnings call transcripts from **Equibles**, embeds them
-with **Gemini** (dense) and Pinecone's hosted sparse model (keywords), and
-stores both in one **Pinecone** serverless index for hybrid search, reranked
-with Pinecone's `bge-reranker-v2-m3`.
+The ai-service indexes earnings call transcripts from **Equibles** into a
+**Pinecone** index for hybrid search (dense **Gemini** embeddings + sparse
+keywords, reranked); see [architecture.md](architecture.md#rag-pipeline).
 
 1. **Keys** in `ai-service/.env`:
    - `AI_SERVICE_EQUIBLES_API_KEY` — [equibles.com/dashboard/apikeys](https://equibles.com/dashboard/apikeys)
@@ -110,85 +111,17 @@ with Pinecone's `bge-reranker-v2-m3`.
    transcripts are served from the `rag_transcripts` cache. The seed bypasses the
    on-demand daily cap and stops cleanly if the Equibles quota runs out.
 
-4. **On-demand tickers:** searching an unindexed ticker returns `202` and indexes
-   it in a background thread. At most `AI_SERVICE_RAG_DAILY_INGESTION_CAP`
-   (default 8) new tickers are ingested per UTC day; concurrent requests for the
-   same ticker share one job (Postgres advisory lock). A job stuck in `indexing`
-   for over 30 minutes (e.g. the process restarted) is re-claimed by the next
-   search.
-5. **Evaluate** retrieval (hit rate@5 and MRR for dense / hybrid / hybrid +
-   rerank, with and without context headers) on the labeled questions in
-   `ai-service/scripts/eval/questions.json`:
+4. **Other tickers** are indexed on demand the first time they're searched, at
+   most `AI_SERVICE_RAG_DAILY_INGESTION_CAP` (default 8) new tickers per UTC
+   day.
 
-   ```bash
-   python -m scripts.eval_rag --build-plain   # first time: index header-less copies
-   python -m scripts.eval_rag
-   ```
-
-   Each run makes ~40 rerank calls, so mind the 500/month Starter quota. The
-   recorded run is under [Retrieval results](#retrieval-results).
-
-Every search logs one structured JSON line (`event: rag_search`) with the
-filters, candidate count, whether reranking applied, and per-stage latency.
-
-Repository integration tests (advisory-lock dedupe, daily cap) run only when
-`AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a direct,
-non-pooled URL); they apply the migration into a throwaway schema and drop it.
-
-### Retrieval results
-
-Run of 2026-10-04 UTC (`20261004T012541Z`; 20 questions, 10 exact and 10
-conceptual; k = 5). Index `equity-lens-transcripts`: `gemini-embedding-001`
-(768-d) dense + `pinecone-sparse-english-v0` sparse, 400-token chunks with
-60-token overlap, hybrid alpha 0.75 (dense weight), 25 candidates reranked by
-`bge-reranker-v2-m3`. "Headers" configs search the production `transcripts`
-namespace; "no headers" configs search `transcripts-noctx`. A hit is any result
-from the expected ticker and fiscal quarter.
-
-| Config                                    | Hit@5    | MRR       | Exact hit / MRR | Conceptual hit / MRR |
-| ----------------------------------------- | -------- | --------- | --------------- | -------------------- |
-| dense, no headers                         | 0.90     | 0.710     | 0.90 / 0.650    | 0.90 / 0.770         |
-| hybrid, no headers                        | 1.00     | 0.858     | 1.00 / 0.925    | 1.00 / 0.792         |
-| hybrid + rerank, no headers               | 1.00     | 0.879     | 1.00 / 0.900    | 1.00 / 0.858         |
-| dense, headers                            | 0.95     | 0.854     | 0.90 / 0.833    | 1.00 / 0.875         |
-| hybrid, headers                           | 0.95     | 0.852     | 1.00 / 0.950    | 0.90 / 0.753         |
-| **hybrid + rerank, headers** (production) | **1.00** | **0.938** | 1.00 / 0.875    | 1.00 / 1.000         |
-
-- **Production config:** hybrid + rerank with headers found the right call in
-  the top 5 for all 20 questions, and ranked it first for every conceptual
-  question. It has the highest overall MRR (0.938, vs 0.710 for plain dense
-  search).
-- **Context headers:** a large gain for dense search (MRR 0.710 → 0.854) and a
-  smaller one with reranking (0.879 → 0.938). No net change for hybrid without
-  reranking (0.858 vs 0.852).
-- **Reranking:** raises MRR in both namespaces (0.858 → 0.879 without headers,
-  0.852 → 0.938 with headers), mostly on conceptual questions. On exact,
-  keyword-style questions, hybrid alone ranks slightly better (exact MRR 0.950
-  vs 0.875 with headers), because reranking moved one correct call from first to
-  fourth.
-- **Misses (not in the top 5):** dense without headers missed two questions,
-  dense with headers one, and hybrid with headers one; hybrid without headers
-  and both rerank configs missed none.
-- **Caveats:** 20 questions, so one question moves hit rate by 0.05 and a rank
-  change from 1 to 2 moves MRR by 0.025. Relevance is judged per call (ticker
-  and quarter), not per passage. The production namespace also holds 12 calls
-  for COST, NKE and SBUX that were indexed on demand after the plain copies were
-  built (52 calls and 3,173 chunks, vs 40 calls and 2,440 chunks). The 40 shared
-  calls have identical chunks, and the extra calls only add distractors to the
-  "headers" configs, so those numbers are, if anything, conservative. The run
-  used 40 rerank requests and had no rerank fallbacks.
+To measure retrieval quality, see [evaluation.md](evaluation.md#retrieval-evaluation).
 
 ## AI analyst chat setup
 
-The chat is a LangGraph tool-calling agent in the ai-service. Express
-authenticates the user, enforces limits, stores conversations, and proxies the
-reply stream (SSE) to the browser.
-
-```
-Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token── ai-service
-                                                                       │
-                LangGraph agent ── MCP client (langchain.mcp) ── FastMCP server (read-only tools)
-```
+The chat is a LangGraph agent in the ai-service with read-only tools on a
+FastMCP server; the api authenticates, enforces limits, stores conversations and
+streams the reply. See [architecture.md](architecture.md#a-chat-turn).
 
 1. **Internal token.** Generate one secret and put it in both
    `ai-service/.env` and `api/.env` as `AI_SERVICE_INTERNAL_TOKEN`:
@@ -197,11 +130,9 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
    python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
 
-   Every ai-service route except `/health` (quotes, transcript search, chat
-   and `/mcp/`) rejects requests without it with `401`, and fails closed
-   with `503` if the ai-service has no token configured. The gateway sends it
-   on every call (`api/src/services/aiServiceClient.ts`), so the ai-service
-   only trusts requests, and user ids, that come from the gateway.
+   Every ai-service route except `/health` rejects requests without it
+   (`401`), and fails closed (`503`) if none is configured; see
+   [architecture.md](architecture.md#security).
 
 2. **Model.** Reuses `AI_SERVICE_GEMINI_API_KEY` (with billing enabled).
    Defaults: `gemini-3.8-flash` with `low` thinking and a 2,048-token output cap
@@ -222,90 +153,6 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
    turn (in `ai-service/.env`): `AI_SERVICE_CHAT_MAX_MODEL_CALLS` (6) and
    `AI_SERVICE_CHAT_MAX_TOOL_CALLS` (8).
 
-**Tools** are defined once on the FastMCP server
-(`ai-service/app/services/chat/mcp_server.py`) and are all read-only:
-`search_transcripts`, `get_quote`, `get_price_history`, `get_portfolio`,
-`resolve_company` and `calculate_position`. The agent loads them through
-`langchain.mcp.MCPAdapter` with a per-turn client that tags each call with a
-turn id; tools resolve the user's portfolio and the turn's citation numbering
-from that id, never from model-supplied arguments. The same server is mounted at
-`/mcp/` for other MCP clients (`X-Internal-Token` header).
-
-**Transcript search** (`ai-service/app/services/chat/transcripts.py`):
-
-- `query` is optional: when the model leaves it out (it sometimes does when it
-  wants an overview of a call), the user's question is searched instead (or a
-  broad "results, outlook and management commentary" default), rather than
-  rejecting the call and costing the agent a retry step.
-- Out-of-range numeric arguments are clamped (e.g. `top_k` to 1–8) instead of
-  failing the call; the limits are in the tool schema and descriptions.
-- With no period named, it fetches extra candidates, boosts newer calls, makes
-  sure the company's latest call is represented, and lists passages newest
-  first.
-- For trends across quarters ("over the last year", "quarter by quarter") the
-  agent passes `quarters` (1–4): each of the company's latest N indexed
-  quarters gets its own filtered retrieval, so no quarter is crowded out, and
-  the union is reranked in **one** request (one rerank call per company, not
-  per quarter). Passages are grouped by quarter; a quarter with no passages,
-  or none scoring at least `MIN_QUARTER_RELEVANCE` (0.02) after reranking, is
-  marked "NO RELEVANT PASSAGES" so the answer says so explicitly.
-- Share classes of one company (GOOG/GOOGL, BRK.A/BRK.B, …) map to the class
-  that is indexed, so transcript questions never ask which class and never index
-  a duplicate. The agent asks about the class only for prices.
-- If a company isn't indexed yet, the tool waits for on-demand indexing within
-  the turn (`AI_SERVICE_CHAT_INDEX_WAIT_SECONDS`, default 45) and streams a
-  `tool_progress` label such as "Indexing Starbucks transcripts…", then
-  answers; only after that does it say to try again shortly.
-
-**Stop, errors and Retry** (`client/src/hooks/useChat.ts`): a turn that ends
-without the server's final message (Stop, an error, a dropped connection) is
-marked stopped or failed at once and the thread is re-synced from the server,
-which supplies the saved message ids that Retry needs, final statuses and the
-conversation title (set from the first question even if that turn was stopped).
-A reply the server still reports as `streaming` is re-checked briefly, then
-shown as stopped, so the UI never waits on "Thinking…". Retry is offered only
-on the latest reply; a question the server never saved is simply sent again.
-Errors are shown as plain sentences (`client/src/lib/chatErrors.ts`), never
-status codes. The API watches for a client disconnect from the very start of a
-turn, so a Stop during setup is saved as `interrupted` immediately.
-
-**Answer clean-up** (`ai-service/app/services/chat/formatting.py`): the final
-answer gets a deterministic pass after citation validation. Double negatives
-are removed ("down -$13,457" becomes "down $13,457"), whole share counts lose their
-decimals ("42.0 shares" becomes "42 shares"; fractional shares are kept), and lists
-inside Markdown table cells are flattened to "a; b". Tools also report whole
-share counts as integers.
-
-**Logs never contain credentials.** Provider keys travel in headers (Finnhub
-uses `X-Finnhub-Token`), HTTP client loggers run at WARNING, and the ai-service
-JSON formatter redacts secret query parameters, bearer tokens and auth headers. FastMCP's
-logger is routed through the same formatter, so a failing tool is logged with
-its full traceback (redacted) on the server, while the model and Langfuse only
-see "Error calling tool '<name>'".
-The API's pino logger censors `authorization`, `cookie`, `x-internal-token` and
-`set-cookie` as `***`.
-
-**Guardrails.** Obvious off-topic requests and instruction-override attempts get
-a short canned reply without calling the model. The system prompt (today's date,
-no secrets) adds the scope rules, untrusted tool data, cite only retrieved
-passages, numbers only from tools, ask when a company is ambiguous, report tool
-status honestly, and no personalized buy/sell advice (answers to "should I
-buy…" get facts plus a not-financial-advice note). Answers are validated after
-generation: citations to passages that weren't retrieved are dropped, and empty,
-truncated and blocked responses get explicit messages.
-
-**Inline charts** (`ai-service/app/services/chat/charts.py`): when
-`get_price_history` or `get_portfolio` succeeds, the agent builds a typed chart
-from the tool's structured output (never from the model's text), streams it as
-a `chart` event and attaches the turn's charts to `done`. The API validates
-them with Zod and saves them on the message; the client renders them with
-Recharts (`client/src/components/chat/charts/`), lazy-loaded in its own chunk.
-Charts fill the bubble width (the full row on phones), use the `--chart-1`
-color token (separate light and dark values) and include a "View data" table.
-
-Chat tests need no network: a scripted fake chat model drives the real agent
-and MCP tools (`ai-service/tests/test_chat_agent.py`).
-
 ## Tracing (Langfuse, optional)
 
 Set both keys in `ai-service/.env` to trace every chat turn; leave them empty
@@ -317,127 +164,15 @@ AI_SERVICE_LANGFUSE_SECRET_KEY=sk-lf-...
 AI_SERVICE_LANGFUSE_BASE_URL=https://cloud.langfuse.com   # or https://us.cloud.langfuse.com / self-hosted
 ```
 
-Each turn gets a Langfuse LangChain `CallbackHandler`, so one trace holds the
-agent graph, every model call (tokens and cost; Langfuse prices Gemini models
-from its model table, editable under Project Settings → Models), every MCP tool
-call with its latency, and errors (level `ERROR`). Traces are named
-`chat-turn`, grouped by conversation (session id), tagged `chat` (plus `demo`
-for anonymous users and `eval` for eval runs), and get a `turn_status` score
-(`complete`, `truncated`, `blocked`, `empty`, `refused`, `error`). Guardrail
-refusals, which never reach the model, are recorded as single-span traces. Every
-model and tool span carries the hashed user id and session id (the agent run is
-driven from one task that holds Langfuse's `propagate_attributes` scope), so
-cost is attributed per user and session. FastMCP's own OpenTelemetry spans are
-not exported (`should_export_span` drops the `fastmcp` scope): they would
-duplicate the tool spans as parentless traces and bypass the mask hook.
+`AI_SERVICE_TRACE_USER_SALT` keys the hashed user ids (plain SHA-256 if unset),
+`AI_SERVICE_LANGFUSE_SAMPLE_RATE` (1.0) traces a fraction of turns, and
+`AI_SERVICE_LANGFUSE_TIMEOUT_SECONDS` (2) bounds each export. Langfuse prices
+Gemini models from its model table (editable under Project Settings → Models).
+What's traced and how it's masked: [architecture.md](architecture.md#tracing-and-privacy).
 
-**Privacy** (`ai-service/app/services/observability/masking.py`): the Langfuse
-client's `mask` hook runs on every input, output and metadata payload before
-export. It removes configured secrets verbatim (internal token, provider keys,
-the database URL) plus bearer/token patterns, masks emails, phone numbers and
-"N shares" counts, masks portfolio fields by key (shares, average cost, cost
-basis, market value, gain/loss, weights, position-math inputs and results),
-including inside JSON tool output, and masks the turn's own portfolio numbers
-and position-math results wherever they appear in text as amounts (money,
-percentages, decimals or grouped numbers; bare small numbers such as "6:07 PM"
-are left alone) (e.g. the answer saying
-"your $13,680 position" or "a new average cost of $112.40"). Numbers typed in
-the question itself stay visible unless they match those values or a share
-count.
-Public prices stay visible. User ids are sent as `u_` + HMAC-SHA256 (keyed by
-`AI_SERVICE_TRACE_USER_SALT`; plain SHA-256 if unset), never raw ids or emails.
-If masking fails, Langfuse drops the payload.
+## Running locally
 
-**Failure isolation** (`ai-service/app/services/observability/tracing.py`):
-spans are exported by a background thread with a short timeout
-(`AI_SERVICE_LANGFUSE_TIMEOUT_SECONDS`, 2); if Langfuse is slow or down, the
-turn doesn't wait. Client start-up errors disable tracing with a warning, every
-SDK call is guarded, LangChain logs (not raises) callback errors, and shutdown
-waits at most 2 seconds
-(`AI_SERVICE_SHUTDOWN_TRACING_TIMEOUT_SECONDS`). `AI_SERVICE_LANGFUSE_SAMPLE_RATE` (1.0) traces a
-fraction of turns. Tests cover the disabled path, a handler that raises on
-every callback, an unreachable host, and the masked spans the real SDK would
-export (`ai-service/tests/test_tracing.py`, `test_trace_masking.py`).
-
-## Chat evaluation
-
-`ai-service/scripts/eval_chat.py` runs a labeled set of 25 questions
-(`scripts/eval/chat_questions.json`) through the real agent — real tools,
-transcripts and Gemini — with a fixed demo portfolio, for each model compared:
-
-```bash
-cd ai-service
-python -m scripts.eval_chat --estimate   # expected cost, no API calls
-python -m scripts.eval_chat --yes        # run it (spends Gemini credit)
-python -m scripts.eval_chat --yes --cases t01,pm01 --models google_genai:gemini-3.8-flash
-```
-
-Categories: transcript facts, multi-quarter trends, portfolio, position math,
-buy/sell advice, off-topic, prompt injection and ambiguous companies. Each
-answer is scored two ways (`ai-service/app/services/evals/`):
-
-- **Deterministic checks**: expected tools called (and forbidden ones not),
-  every `[n]` marker resolves to a returned passage, citations come from the
-  right company and enough distinct quarters, refusal or redirect when
-  expected, a clarifying question (without searching) for ambiguous names, the
-  not-financial-advice note, expected numbers (position math, portfolio
-  totals) and expected charts.
-- **LLM judge** (rubric 1–5: faithfulness to the answer's own cited passages
-  and tool results, relevance, completeness): one call per question sees every
-  model's answer labeled only "A"/"B" in a seeded random order, each with its
-  evidence. Refusal and clarification cases are scored deterministically only.
-
-The script prints a cost estimate first and refuses to run without `--yes`.
-The estimate is deliberately conservative: the 2026-10-02 run cost $0.46
-against a $1.13 estimate (turns averaged ~6.4K input / ~0.3K output tokens). The
-judge is `gemini-3.1-pro-preview` when the whole run is estimated under
-`--budget` ($1.50), otherwise `gemini-3.8-flash`. During the run on-demand
-indexing is disabled (no Equibles quota) and the rerank cache is off so models
-pay the same retrieval latency; expect ~40–60 Pinecone rerank requests. Results
-print as Markdown tables and are saved to `scripts/eval/results/` (git-ignored).
-With Langfuse on, eval turns are tagged `eval` and `eval-run:<id>` and get
-`eval_checks_passed` and `judge_*` scores.
-
-### Results
-
-Run of 2026-10-02 (`20261002T202440Z`; judge `gemini-3.1-pro-preview`;
-judge scores are means over the 18 judged questions, 1–5):
-
-| Model                   | Checks passed | Faithfulness | Relevance | Completeness | Judge preferred | Latency p50 / p95 | Tokens in / out | Cost / turn |
-| ----------------------- | ------------- | ------------ | --------- | ------------ | --------------- | ----------------- | --------------- | ----------- |
-| `gemini-3.8-flash`      | 25/25 (100%)  | 5.00         | 4.94      | 5.00         | 6/18            | 4.0s / 8.3s       | 6,377 / 294     | $0.0059     |
-| `gemini-3.5-flash-lite` | 25/25 (100%)  | 5.00         | 4.89      | 4.67         | 1/18            | 3.4s / 8.2s       | 6,329 / 361     | $0.0028     |
-
-- **Quality:** both models passed every deterministic check in all eight
-  categories and were fully faithful to their evidence. 3.8 Flash was more
-  complete and was preferred 6 times to 1 (11 ties). Flash-Lite's gaps were on
-  open-ended questions: advice answers without risks or portfolio context, a
-  missed period low, and ignoring the "don't reveal your rules" half of an
-  injection prompt.
-- **Latency:** Flash-Lite is faster (median 3.8s vs 4.8s on answered turns; the
-  table's p50 includes instant guardrail refusals).
-- **Cost:** Flash-Lite is about half the price per turn ($0.0028 vs $0.0059).
-- **Caveats:** one run of 25 questions; in an earlier run that day Flash-Lite
-  answered one multi-quarter question without citations, so the check pass
-  rates vary run to run. Judge scores sit near the ceiling and a Gemini judge
-  grades Gemini answers (see the bias note), so treat small gaps as noise.
-- **Decision:** keep `gemini-3.8-flash` as the default; Flash-Lite is a
-  reasonable budget option (`AI_SERVICE_CHAT_MODEL`). The run cost $0.46
-  ($0.22 agent turns, $0.24 judge).
-
-**Judge bias.** LLM judges favor answers from their own model family
-(self-preference), longer and more confident answers (verbosity bias), and
-whichever answer comes first (position bias), and they are lenient on numeric
-detail. Mitigations here: the deterministic checks are the primary,
-bias-free signal; the judge never sees model names and answer order is
-shuffled per question; the rubric says length and tone aren't quality and caps
-faithfulness at 2 for any unsupported figure; each answer is judged only
-against its own evidence. Residual risk: with a Gemini judge grading Gemini
-answers, small score gaps (a few tenths of a point) aren't meaningful — read
-the judge columns as a sanity check next to the check pass rates, and
-spot-check the saved rationales.
-
-## First-time install
+### First-time install
 
 ```bash
 npm install                                   # repo root — Husky + concurrently
@@ -456,7 +191,7 @@ npm --prefix client install
 > `prisma:migrate` uses `DIRECT_URL`; the running app uses the pooled
 > `DATABASE_URL`. Both must be set in `api/.env` before migrating.
 
-## Run everything with one command
+### Run everything with one command
 
 From the repo root:
 
@@ -474,52 +209,27 @@ terminal with color-coded, prefixed output (`ai`, `api`, `client`). Press
 > the venv binary lives at `.venv/bin/uvicorn`; adjust the `dev:ai` script in the
 > root `package.json` accordingly.
 
-Run a single service with `npm run dev:ai`, `npm run dev:api`, or
-`npm run dev:client`.
+### Single services
 
-## Running services individually
-
-If you prefer separate terminals, start them **bottom-up**
-(ai-service → api → client).
-
-### 1. ai-service (FastAPI) — port 8000
+Run one service with `npm run dev:ai`, `npm run dev:api`, or
+`npm run dev:client`. In separate terminals, start them **bottom-up**:
 
 ```bash
-cd ai-service
-python -m venv .venv
-.venv\Scripts\activate            # Windows (PowerShell/cmd)
-# source .venv/bin/activate        # macOS/Linux
-pip install -r requirements-dev.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-### 2. api (Express) — port 3001
-
-```bash
-cd api
-npm install                 # also runs `prisma generate`
-npm run prisma:migrate      # creates/updates the tables in Supabase (first run)
-npm run dev
-```
-
-### 3. client (React) — port 5173
-
-```bash
-cd client
-npm install
-npm run dev
+cd ai-service && .venv\Scripts\activate && uvicorn app.main:app --reload --port 8000   # :8000
+npm --prefix api run dev                                                              # :3001
+npm --prefix client run dev                                                           # :5173
 ```
 
 Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
 or click **Try demo**. After authenticating you reach the **portfolio dashboard**
 (positions, summary cards, and add/edit/delete). The **status dot** in the top
 bar, next to the avatar, calls `api → ai-service` and turns green (ok), amber
-(the ai-service is waking up; re-checked every 5 s) or red (degraded); hover or
-focus it for the status of each hop. In demo mode a
-slim banner invites you to sign up for your own account. For health and API
+(the ai-service is waking up; re-checked every 5 s) or red (the API can't be
+reached or reports another problem); hover or focus it for the status of each
+hop. In demo mode a slim banner invites you to sign up for your own account. For health and API
 details, see [api.md](./api.md).
 
-## Common scripts
+## Tests, lint and scripts
 
 | Service       | Lint           | Format           | Test           | Type-check          |
 | ------------- | -------------- | ---------------- | -------------- | ------------------- |
@@ -527,11 +237,21 @@ details, see [api.md](./api.md).
 | `api/`        | `npm run lint` | `npm run format` | `npm run test` | `npm run typecheck` |
 | `ai-service/` | `ruff check .` | `ruff format .`  | `pytest`       | (type hints)        |
 
-ai-service operational scripts (run from `ai-service/`):
-`python -m scripts.seed_transcripts`, `python -m scripts.eval_rag` and
-`python -m scripts.eval_chat`.
+- Chat tests need no network: a scripted fake chat model drives the real agent
+  and MCP tools (`ai-service/tests/test_chat_agent.py`).
+- RAG repository integration tests (advisory-lock dedupe, daily cap) run only
+  when `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a
+  direct, non-pooled URL); they apply the migration into a throwaway schema and
+  drop it.
+- Tracing tests cover the disabled path, a handler that raises on every
+  callback, an unreachable host, and the masked spans the real SDK would export
+  (`ai-service/tests/test_tracing.py`, `test_trace_masking.py`).
 
-## Pre-commit hooks & CI
+ai-service operational scripts (run from `ai-service/`):
+`python -m scripts.seed_transcripts` (above), and `python -m scripts.eval_rag`
+and `python -m scripts.eval_chat` ([evaluation.md](evaluation.md)).
+
+### Pre-commit hooks & CI
 
 Pre-commit hooks run automatically. Set them up once:
 
@@ -544,21 +264,9 @@ Husky + lint-staged format/lint staged JS/TS; Ruff handles Python. CI runs lint,
 typecheck, and tests for `client` and `api`, plus Ruff lint/format and Pytest
 for `ai-service`, on every push and PR.
 
-## Docker
+### Docker
 
 Both backend services have Dockerfiles; build and run them locally with
 `docker build` / `docker run` as described in
 [deployment.md](deployment.md#docker-images). The containers read `PORT`; the
 api's liveness check is `GET /api/live` and the ai-service's is `GET /health`.
-
-## Repository layout
-
-```
-equity-lens/
-├── CLAUDE.md          # project guide, rules, and code quality standards
-├── README.md
-├── docs/              # api.md, development.md (this file), deployment.md
-├── client/            # React + TypeScript front end
-├── api/               # Express + TypeScript API gateway
-└── ai-service/        # FastAPI (Python) AI service
-```

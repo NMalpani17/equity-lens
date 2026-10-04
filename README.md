@@ -86,7 +86,7 @@ api's service account can invoke.
   20-question retrieval set, the production setup (hybrid search + rerank over
   chunks with context headers) puts the right earnings call in the top 5 for
   all 20 questions, with MRR 0.94, vs hit@5 0.90 and MRR 0.71 for plain dense
-  search. [Results](docs/development.md#retrieval-results).
+  search. [Results](docs/evaluation.md#retrieval-results).
 - **Evaluated with checks and a blind LLM judge.** 25 labelled questions run
   through the real agent. Each answer gets deterministic checks plus a rubric
   score from a judge that sees the answers anonymised and in shuffled order. In
@@ -94,7 +94,7 @@ api's service account can invoke.
   `gemini-3.5-flash-lite` both passed 25/25 checks. Flash was more complete
   (5.00 vs 4.67) and was preferred 6 to 1 (11 ties); Flash-Lite cost about half
   per turn ($0.0028 vs $0.0059). Flash stays the default. Method and the
-  judge-bias note are in [docs/development.md](docs/development.md#chat-evaluation).
+  judge-bias note are in [docs/evaluation.md](docs/evaluation.md#chat-evaluation).
 - **Privacy-aware tracing.** Every chat turn is traced in Langfuse, including
   agent steps, tool calls with latency, and model calls with tokens and cost.
   User ids are hashed, and portfolio values, contact details and secrets are
@@ -139,9 +139,11 @@ Supabase setup, transcript seeding and per-service commands are in
 ## Documentation
 
 - [docs/development.md](docs/development.md): local setup, configuration,
-  RAG, chat, tracing and evaluation
+  running the services, tests and scripts
+- [docs/architecture.md](docs/architecture.md): how it works: request flow,
+  agent and MCP tools, RAG pipeline, citations, guardrails, tracing and security
+- [docs/evaluation.md](docs/evaluation.md): retrieval and chat evals: methods,
+  how to run them, and results
 - [docs/api.md](docs/api.md): API reference (gateway and ai-service)
 - [docs/deployment.md](docs/deployment.md): Docker images and the Vercel, Cloud
   Run and Supabase setup
-- [CLAUDE.md](CLAUDE.md): conventions, workflow and code-quality rules for
-  contributors

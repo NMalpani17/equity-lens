@@ -36,7 +36,7 @@ Browser ──HTTP──▶ client/ (React, Vercel)
 equity-lens/
 ├── CLAUDE.md          # this file
 ├── README.md          # project overview + how to run locally
-├── docs/              # api.md, development.md, deployment.md
+├── docs/              # development, architecture, evaluation, api, deployment
 ├── client/            # React + Vite + Tailwind + shadcn/ui  (port 5173)
 ├── api/               # Express, Node, Prisma                (port 3001)
 └── ai-service/        # FastAPI, Python 3.12                 (port 8000)
@@ -96,8 +96,9 @@ npm run dev
    `main` only ever advances through reviewed, CI-passing PRs.
 5. **Keep docs in sync.** When a change adds, removes, or alters a user-facing
    feature, endpoint, env var, or run/setup step, update the docs in the same PR:
-   `README.md` for the summary and `docs/` (`api.md`, `development.md`) for the
-   details. Docs are part of "done."
+   `README.md` for the summary and `docs/` (`development.md`, `architecture.md`,
+   `evaluation.md`, `api.md`, `deployment.md`) for the details. Docs are part of
+   "done."
 6. **Claude Code commits only.** It never pushes, never runs `gh`, and never
    merges; the user pushes branches, opens PRs, and merges them.
 
