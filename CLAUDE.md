@@ -4,26 +4,31 @@ Guidance for Claude Code (and humans) working in this repository.
 
 ## Project
 
-**Equity Lens** is an AI-powered investment research platform. It ingests
-market and company data and uses LLM-driven analysis to help users research
-equities. This repo is a **monorepo** with three independently runnable parts
-that talk to each other over HTTP.
+**Equity Lens** is an AI-powered investment research platform. Users track a
+portfolio and ask an analyst agent about companies, earnings calls and their
+holdings, with answers grounded in cited transcript passages and tool data.
+This repo is a **monorepo** with three independently runnable parts that talk
+to each other over HTTP.
 
 ## Architecture
 
 ```
-Browser ──HTTP──▶ client/ (React)
-                     │  fetch
+Browser ──HTTP──▶ client/ (React, Vercel)
+                     │  fetch / SSE + Supabase JWT
                      ▼
-                  api/ (Express)  ──HTTP──▶ ai-service/ (FastAPI)
+                  api/ (Express, Cloud Run)  ──HTTP──▶ ai-service/ (FastAPI, Cloud Run, private)
+                     │                                      │
+                     └──▶ Supabase Postgres ◀───────────────┘  (+ Pinecone, Gemini, Finnhub, Equibles, Langfuse)
 ```
 
 - The **client** never calls the AI service directly. It only talks to the API.
-- The **API** is the gateway/orchestrator. It calls the AI service.
-- The **AI service** owns all LLM / LangChain / MCP logic.
-
-The Phase 1 skeleton wires this up with a single health-check chain:
-`client → GET /api/health → (Express) → GET /health → (FastAPI)`.
+- The **API** is the gateway/orchestrator: it verifies Supabase sessions,
+  enforces chat limits, stores holdings and conversations (Prisma), and calls
+  the AI service with a Google ID token plus `X-Internal-Token`.
+- The **AI service** owns all LLM / RAG / market-data logic: a LangGraph agent
+  whose read-only tools live on a FastMCP server, Pinecone hybrid search
+  (dense + sparse, reranked) over earnings-call transcripts, and Langfuse
+  tracing.
 
 ## Folder structure
 
@@ -31,18 +36,20 @@ The Phase 1 skeleton wires this up with a single health-check chain:
 equity-lens/
 ├── CLAUDE.md          # this file
 ├── README.md          # project overview + how to run locally
+├── docs/              # development, architecture, evaluation, api, deployment
 ├── client/            # React + Vite + Tailwind + shadcn/ui  (port 5173)
-├── api/               # Express, Node                        (port 3001)
+├── api/               # Express, Node, Prisma                (port 3001)
 └── ai-service/        # FastAPI, Python 3.12                 (port 8000)
 ```
 
 ## Tech stack
 
-| Part          | Stack                                                                     |
-| ------------- | ------------------------------------------------------------------------- |
-| `client/`     | React 19, **TypeScript**, Vite, Tailwind CSS v4, shadcn/ui, Vitest        |
-| `api/`        | Node.js, **TypeScript**, Express, Zod, Pino, Vitest                       |
-| `ai-service/` | Python 3.12, FastAPI, Pydantic, Uvicorn, Pytest (LangChain/FastMCP later) |
+| Part          | Stack                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| `client/`     | React 19, **TypeScript**, Vite, Tailwind CSS v4, shadcn/ui, Recharts, Supabase Auth, Vitest |
+| `api/`        | Node.js 22, **TypeScript**, Express, Zod, Prisma (Supabase Postgres), Pino, Vitest          |
+| `ai-service/` | Python 3.12, FastAPI, Pydantic, LangGraph, FastMCP, Gemini, Pinecone, Langfuse, Pytest      |
+| Deployment    | Docker, Google Cloud Run (api, ai-service), Vercel (client)                                 |
 
 ## Ports
 
@@ -54,16 +61,18 @@ equity-lens/
 
 ## Running locally
 
-Each service runs in its own terminal. Full details are in `README.md`.
+`npm run dev` at the repo root starts all three; or run each service in its own
+terminal. Full details are in `docs/development.md`.
 
 ```bash
 # ai-service/
 python -m venv .venv && .venv\Scripts\activate   # Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 
 # api/
 npm install
+npm run prisma:migrate   # first run: creates/updates the Supabase tables
 npm run dev
 
 # client/
@@ -87,8 +96,11 @@ npm run dev
    `main` only ever advances through reviewed, CI-passing PRs.
 5. **Keep docs in sync.** When a change adds, removes, or alters a user-facing
    feature, endpoint, env var, or run/setup step, update the docs in the same PR:
-   `README.md` for the summary and `docs/` (`api.md`, `development.md`) for the
-   details. Docs are part of "done."
+   `README.md` for the summary and `docs/` (`development.md`, `architecture.md`,
+   `evaluation.md`, `api.md`, `deployment.md`) for the details. Docs are part of
+   "done."
+6. **Claude Code commits only.** It never pushes, never runs `gh`, and never
+   merges; the user pushes branches, opens PRs, and merges them.
 
 ## Git workflow
 
@@ -139,8 +151,15 @@ These apply to all code in this repo. If existing code violates them, refactor i
 ## Conventions
 
 - The client reads the API base URL from `VITE_API_URL`.
-- The API reads the AI service base URL from `AI_SERVICE_URL`.
-- Every service exposes `GET /health` returning JSON `{ "status": "ok", ... }`.
+- The API reads the AI service base URL from `AI_SERVICE_URL`; every call to
+  the AI service carries `X-Internal-Token` (`AI_SERVICE_INTERNAL_TOKEN`) and,
+  in production, a Google ID token for `AI_SERVICE_ID_TOKEN_AUDIENCE`.
+- Health: the ai-service exposes `GET /health`; the api exposes `GET /api/live`
+  (liveness, the platform health check) and `GET /api/health` (which also
+  reports the ai-service for signed-in users). Both return JSON
+  `{ "status": "ok", ... }`.
+- Prisma (in `api/`) owns every database table, including the ai-service's
+  RAG tables.
 - Config lives in a single module per service (`api/src/config.ts`,
   `ai-service/app/config.py`); nothing reads `process.env` / `os.environ` directly
   elsewhere.
