@@ -1,6 +1,7 @@
 import { MessageSquareText } from "lucide-react";
 
 import { STARTER_QUESTIONS } from "@/lib/chatFormat";
+import { cn } from "@/lib/utils";
 
 interface StarterQuestionsProps {
   onPick: (question: string) => void;
@@ -20,13 +21,19 @@ export function StarterQuestions({ onPick, disabled = false }: StarterQuestionsP
         </p>
       </div>
       <div className="grid w-full gap-2 sm:grid-cols-2">
-        {STARTER_QUESTIONS.map((question) => (
+        {STARTER_QUESTIONS.map((question, i) => (
           <button
             key={question}
             type="button"
             disabled={disabled}
             onClick={() => onPick(question)}
-            className="rounded-lg border bg-card p-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            className={cn(
+              "rounded-lg border bg-card p-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
+              // An odd last question spans both columns instead of leaving a gap.
+              STARTER_QUESTIONS.length % 2 === 1 &&
+                i === STARTER_QUESTIONS.length - 1 &&
+                "sm:col-span-2",
+            )}
           >
             {question}
           </button>

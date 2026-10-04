@@ -137,6 +137,26 @@ describe("ChatPage", () => {
     expect(screen.getByText(/Vera Rubin timing last quarter/)).toBeInTheDocument();
   });
 
+  it('sends the "What changed?" starter question when picked', async () => {
+    renderPage();
+    await screen.findByText("Ask the AI analyst");
+
+    const question =
+      "What changed in NVIDIA's latest earnings call vs. the previous quarter?";
+    const starter = screen.getByRole("button", { name: question });
+    expect(starter).toHaveClass("sm:col-span-2"); // the odd fifth question
+    fireEvent.click(starter);
+
+    await waitFor(() =>
+      expect(api.streamMessage).toHaveBeenCalledWith(
+        CONV.id,
+        question,
+        expect.any(Function),
+        expect.anything(),
+      ),
+    );
+  });
+
   it("streams tool progress and tokens, then shows the cited answer", async () => {
     let emit: (event: ChatStreamEvent) => void = () => {};
     let finish: () => void = () => {};
