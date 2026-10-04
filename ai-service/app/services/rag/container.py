@@ -13,6 +13,7 @@ from psycopg_pool import ConnectionPool
 from app.config import Settings, get_settings
 
 from .cache import TTLCache
+from .comparison import QuarterComparisonService
 from .embeddings import GeminiEmbedder, PineconeSparseEncoder
 from .equibles import EquiblesClient
 from .errors import RagNotConfiguredError
@@ -42,6 +43,7 @@ class RagComponents:
     pipeline: IngestionPipeline
     coordinator: IngestionCoordinator
     search: RagSearchService
+    comparison: QuarterComparisonService
 
     def close(self, timeout: float = 3.0) -> None:
         """Stop ingestion (bounded by ``timeout``) and close the pool."""
@@ -155,7 +157,16 @@ def build_components(settings: Settings) -> RagComponents:
         alpha=settings.rag_hybrid_alpha,
         freshness=freshness,
     )
-    return RagComponents(pool, executor, repo, store, pipeline, coordinator, search)
+    return RagComponents(
+        pool,
+        executor,
+        repo,
+        store,
+        pipeline,
+        coordinator,
+        search,
+        QuarterComparisonService(repo, search),
+    )
 
 
 @lru_cache

@@ -4,6 +4,7 @@ from typing import Any
 
 _SAFE_ARG_KEYS = {
     "query",
+    "focus",
     "ticker",
     "fiscal_year",
     "fiscal_quarter",
@@ -33,6 +34,8 @@ def tool_label(name: str, args: dict[str, Any]) -> str:
                 if ticker
                 else "Searching earnings call transcripts…"
             )
+        case "compare_quarters":
+            return f"Comparing {ticker} earnings calls…"
         case "get_quote":
             return f"Getting {ticker or 'the'} quote…"
         case "get_price_history":
@@ -57,6 +60,14 @@ def tool_summary(name: str, data: dict[str, Any] | None, *, failed: bool) -> str
         case "search_transcripts":
             count = len(data.get("passages", []))
             return f"Found {count} passage{'s' if count != 1 else ''}"
+        case "compare_quarters":
+            current, prior = data.get("current") or {}, data.get("prior") or {}
+            count = len(data.get("passages", []))
+            return (
+                f"Compared Q{current.get('fiscal_quarter')} FY"
+                f"{current.get('fiscal_year')} with Q{prior.get('fiscal_quarter')} "
+                f"FY{prior.get('fiscal_year')} ({count} passages)"
+            )
         case "get_quote":
             currency = data.get("currency", "")
             return f"{data.get('ticker')} {data.get('price')} {currency}".strip()

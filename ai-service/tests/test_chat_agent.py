@@ -136,7 +136,7 @@ def test_scripted_tool_calling_run_streams_progress_and_validates_citations() ->
     assert result["citations"][0]["fiscal_quarter"] == 2
     assert result["usage"] == {"input_tokens": 400, "output_tokens": 60}
     assert result["tool_calls"][0]["summary"] == "Found 2 passages"
-    assert "search_transcripts" in model.bound_tools and len(model.bound_tools) == 6
+    assert "compare_quarters" in model.bound_tools and len(model.bound_tools) == 7
 
 
 def test_system_prompt_has_date_and_tool_results_stay_out_of_history() -> None:
