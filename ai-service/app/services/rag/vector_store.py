@@ -131,6 +131,10 @@ class PineconeVectorStore:
             logger.info("deleted %d stale vectors under %s", len(stale), prefix)
         return len(stale)
 
+    def delete_prefix(self, prefix: str, *, namespace: str) -> int:
+        """Delete every ID under ``prefix`` (e.g. one quarter of a ticker)."""
+        return self.delete_stale(prefix, set(), namespace=namespace)
+
     def query(
         self,
         *,

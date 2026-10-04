@@ -92,6 +92,25 @@ are throttled client-side (texts and estimated tokens per minute) and honor
 Gemini's `retryDelay`. All RAG state (tickers, jobs, daily usage, transcript
 cache) lives in Postgres because Cloud Run's filesystem is ephemeral.
 
+**Freshness refresh.** Companies report every quarter, so an indexed ticker
+slowly goes stale. When a search (the chat tool or `/rag/search`) hits a ticker
+whose newest indexed call is older than `AI_SERVICE_RAG_FRESHNESS_DAYS` (90), a
+background task asks Equibles for a newer call. Each ticker is checked at most
+once per UTC day (`rag_tickers.freshness_checked_at`, claimed with one atomic
+`UPDATE`, so concurrent searches and instances check once), and every check is
+logged as a `rag_freshness_check` event with its outcome (`up_to_date`,
+`refresh_started`, `refresh_cap_reached`, `already_indexing`, `error`, ...). If
+a newer call exists, a `refresh` job goes through the same claim, advisory lock
+and stale-job handling as any ingestion, but counts against its own daily cap
+(`AI_SERVICE_RAG_DAILY_REFRESH_CAP`, default 3), so refreshes never use up the
+new-ticker cap. The job is incremental: it fetches and embeds only the new
+call, then deletes the vectors of the quarter that falls out of the latest
+`AI_SERVICE_RAG_QUARTERS` (4) by its id prefix (`TICKER#FY2025Q1#`), after the
+new ones are written. The search that triggered the check never waits for it:
+a ticker that was indexed before is always searched from its existing vectors,
+also while it shows `indexing` during a refresh. A failed refresh leaves the
+ticker `indexed` (with `last_error`), and the next day's check tries again.
+
 **Hybrid search and rerank.** A query is embedded both ways and combined as a
 convex mix (alpha 0.75 dense, 0.25 sparse): dense finds paraphrases, sparse
 catches exact names and numbers. Ticker and fiscal-period filters are applied
@@ -162,8 +181,9 @@ When `get_price_history` or `get_portfolio` succeeds, the agent builds a typed
 chart from the tool's structured output, never from the model's text, so a chart
 can't show a number the model made up. Charts stream as `chart` events, are
 attached to `done`, validated by the api with Zod, and saved on the message. The
-client renders them with Recharts, lazy-loaded in its own chunk, with a "View
-data" table for each. Chart shapes are in [api.md](api.md#ai-analyst-chat).
+client renders them below the answer once it has finished streaming (so the
+growing text never pushes a drawn chart down), with Recharts lazy-loaded in its
+own chunk and a "View data" table for each. Chart shapes are in [api.md](api.md#ai-analyst-chat).
 
 ## Tracing and privacy
 

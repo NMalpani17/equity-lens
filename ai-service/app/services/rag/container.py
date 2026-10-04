@@ -16,6 +16,7 @@ from .cache import TTLCache
 from .embeddings import GeminiEmbedder, PineconeSparseEncoder
 from .equibles import EquiblesClient
 from .errors import RagNotConfiguredError
+from .freshness import FreshnessRefresher
 from .ingestion import IngestionPipeline, TranscriptSource
 from .jobs import IngestionCoordinator
 from .rate_limit import SlidingWindowLimiter
@@ -95,16 +96,13 @@ def build_components(settings: Settings) -> RagComponents:
         upsert_batch_size=settings.upsert_batch_size,
         retry_policy=retry,
     )
-    source = TranscriptSource(
-        EquiblesClient(
-            settings.equibles_api_key,
-            base_url=settings.equibles_base_url,
-            timeout=settings.equibles_timeout_seconds,
-            retry_policy=retry,
-        ),
-        repo,
-        quarters=settings.rag_quarters,
+    equibles = EquiblesClient(
+        settings.equibles_api_key,
+        base_url=settings.equibles_base_url,
+        timeout=settings.equibles_timeout_seconds,
+        retry_policy=retry,
     )
+    source = TranscriptSource(equibles, repo, quarters=settings.rag_quarters)
     pipeline = IngestionPipeline(
         source,
         embedder,
@@ -118,12 +116,21 @@ def build_components(settings: Settings) -> RagComponents:
     executor = ThreadPoolExecutor(
         max_workers=settings.rag_ingestion_workers, thread_name_prefix="rag-ingest"
     )
+    stale_job_after = timedelta(minutes=settings.rag_stale_job_minutes)
     coordinator = IngestionCoordinator(
         repo,
         pipeline,
         executor,
         daily_cap=settings.rag_daily_ingestion_cap,
-        stale_after=timedelta(minutes=settings.rag_stale_job_minutes),
+        stale_after=stale_job_after,
+    )
+    freshness = FreshnessRefresher(
+        repo,
+        equibles,
+        coordinator,
+        stale_after_days=settings.rag_freshness_days,
+        daily_cap=settings.rag_daily_refresh_cap,
+        stale_job_after=stale_job_after,
     )
     search = RagSearchService(
         repo,
@@ -146,6 +153,7 @@ def build_components(settings: Settings) -> RagComponents:
         namespace=settings.pinecone_namespace,
         candidate_k=settings.rag_candidate_k,
         alpha=settings.rag_hybrid_alpha,
+        freshness=freshness,
     )
     return RagComponents(pool, executor, repo, store, pipeline, coordinator, search)
 

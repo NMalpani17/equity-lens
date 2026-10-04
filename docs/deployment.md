@@ -116,7 +116,10 @@ Required and production-relevant settings:
 
 Tuning settings are all optional. Every setting and its default is in
 `ai-service/app/config.py`; `ai-service/.env.example` documents the common
-ones. `AI_SERVICE_APP_NAME`, `AI_SERVICE_HOST` and `AI_SERVICE_PORT` aren't
+ones. Two of them spend Equibles quota (100 requests per UTC day):
+`AI_SERVICE_RAG_DAILY_INGESTION_CAP` (8 new tickers, ~5 requests each) and
+`AI_SERVICE_RAG_DAILY_REFRESH_CAP` (3 freshness refreshes, 1–2 requests each,
+plus 1 request per daily freshness check of a stale ticker that is searched). `AI_SERVICE_APP_NAME`, `AI_SERVICE_HOST` and `AI_SERVICE_PORT` aren't
 used by the container (uvicorn's flags and `PORT` decide).
 
 ### client (Vercel)
