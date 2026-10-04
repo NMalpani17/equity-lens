@@ -23,9 +23,13 @@ const envSchema = z.object({
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   AI_SERVICE_URL: z.string().url().default("http://localhost:8000"),
-  // Shared secret proving requests to the ai-service come from this gateway.
-  // Chat returns 503 until it is set.
+  // Shared secret proving requests to the ai-service come from this gateway
+  // (sent as X-Internal-Token). Chat returns 503 until it is set.
   AI_SERVICE_INTERNAL_TOKEN: z.string().default(""),
+  // Production (Cloud Run IAM): the ai-service URL, used as the audience of a
+  // Google ID token sent as "Authorization: Bearer" on every ai-service call.
+  // Empty (local dev, tests): no ID token is fetched or sent.
+  AI_SERVICE_ID_TOKEN_AUDIENCE: z.union([z.literal(""), z.string().url()]).default(""),
   // AI analyst chat limits (user messages per UTC day).
   CHAT_DAILY_LIMIT: z.coerce.number().int().positive().default(20),
   CHAT_DAILY_LIMIT_ANON: z.coerce.number().int().positive().default(5),
@@ -34,7 +38,15 @@ const envSchema = z.object({
   // Context sent to the model: final answers only, newest first.
   CHAT_HISTORY_MESSAGES: z.coerce.number().int().nonnegative().default(6),
   CHAT_HISTORY_TOKENS: z.coerce.number().int().positive().default(3000),
-  // Comma-separated list of origins allowed by CORS (the client dev server).
+  // How long to wait for the ai-service to start answering a chat turn. Covers
+  // a cold start (~15s) with margin; a real timeout shows the friendly
+  // "unavailable" error.
+  CHAT_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  // SSE comment sent this often while a turn is open, so the browser sees the
+  // stream is alive and proxies don't close an idle connection.
+  CHAT_KEEPALIVE_MS: z.coerce.number().int().positive().default(10_000),
+  // Comma-separated origins allowed by CORS (exact matches, no wildcards),
+  // e.g. "https://equity-lens.vercel.app,http://localhost:5173".
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
   // Supabase PostgreSQL connection strings.
   // DATABASE_URL is the pooled (PgBouncer) URL used by the running app;
@@ -48,6 +60,18 @@ const envSchema = z.object({
   // deleting auth users); never expose it to the client.
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
 });
+
+/**
+ * Split a comma-separated origin list: trimmed, empty entries dropped, and a
+ * trailing slash removed (browsers send origins without one). Each entry is
+ * matched exactly; "*" or partial domains are never treated as patterns.
+ */
+export function parseOrigins(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter((origin) => origin.length > 0);
+}
 
 const parsed = envSchema.safeParse(process.env);
 
@@ -66,6 +90,7 @@ export const config = {
   logLevel: parsed.data.LOG_LEVEL,
   aiServiceUrl: parsed.data.AI_SERVICE_URL,
   aiServiceInternalToken: parsed.data.AI_SERVICE_INTERNAL_TOKEN,
+  aiServiceIdTokenAudience: parsed.data.AI_SERVICE_ID_TOKEN_AUDIENCE,
   chat: {
     dailyLimit: parsed.data.CHAT_DAILY_LIMIT,
     dailyLimitAnon: parsed.data.CHAT_DAILY_LIMIT_ANON,
@@ -73,8 +98,10 @@ export const config = {
     maxMessageChars: parsed.data.CHAT_MAX_MESSAGE_CHARS,
     historyMessages: parsed.data.CHAT_HISTORY_MESSAGES,
     historyTokens: parsed.data.CHAT_HISTORY_TOKENS,
+    connectTimeoutMs: parsed.data.CHAT_CONNECT_TIMEOUT_MS,
+    keepaliveMs: parsed.data.CHAT_KEEPALIVE_MS,
   },
-  clientOrigin: parsed.data.CLIENT_ORIGIN,
+  clientOrigins: parseOrigins(parsed.data.CLIENT_ORIGIN),
   databaseUrl: parsed.data.DATABASE_URL,
   directUrl: parsed.data.DIRECT_URL,
   supabaseUrl: parsed.data.SUPABASE_URL,

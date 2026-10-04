@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase";
+import { warmUp } from "@/lib/warmUp";
 import { AuthContext, type AuthContextValue } from "./auth-context";
 
 /** Normalize a Supabase auth error into a thrown Error the UI can display. */
@@ -34,6 +35,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      // Start waking the ai-service as soon as there's a session: on load if
+      // already signed in, or right after login / demo sign-in. Token
+      // refreshes don't count.
+      if (nextSession && (event === "INITIAL_SESSION" || event === "SIGNED_IN")) {
+        warmUp(nextSession.access_token);
+      }
       if (event === "PASSWORD_RECOVERY") {
         setIsPasswordRecovery(true);
       } else if (event === "SIGNED_OUT") {

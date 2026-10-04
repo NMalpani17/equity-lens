@@ -1,11 +1,13 @@
 /** AI analyst chat controller (HTTP layer). */
 import type { Request, Response } from "express";
 
+import { config } from "../config.js";
 import * as chatService from "../services/chat.service.js";
 import { openChatStream } from "../services/chatStream.service.js";
 import {
   loadPortfolioSnapshot,
   relayEvents,
+  type ChatErrorPayload,
   type EventSink,
 } from "../services/chatTurn.service.js";
 import { getUserId, isAnonymousRequest } from "../middleware/auth.js";
@@ -19,7 +21,7 @@ import {
   retryMessageSchema,
   sendMessageSchema,
 } from "../schemas/chat.schema.js";
-import type { TurnStart } from "../services/chat.service.js";
+import type { TurnOutcome, TurnStart } from "../services/chat.service.js";
 import type { PortfolioSummary } from "../types.js";
 
 export async function listConversations(req: Request, res: Response): Promise<void> {
@@ -52,6 +54,52 @@ export async function getUsage(req: Request, res: Response): Promise<void> {
   res
     .status(200)
     .json(await chatService.getUsage(getUserId(req), isAnonymousRequest(req)));
+}
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
+/** The text users see when the ai-service can't be reached (or is too slow). */
+const UNAVAILABLE_TEXT =
+  "The AI analyst is unavailable right now. Please try again shortly.";
+
+/** Start the event stream; from here on, errors are sent as `error` events. */
+function startSse(res: Response): EventSink {
+  res.status(200).set(SSE_HEADERS);
+  res.flushHeaders();
+  return sseSink(res);
+}
+
+/**
+ * Write an SSE comment every `keepaliveMs` until stopped. Browsers ignore
+ * comments; they keep proxies from closing a connection that is waiting on a
+ * cold ai-service or a slow tool.
+ */
+export function startKeepalive(res: Response, keepaliveMs = config.chat.keepaliveMs) {
+  const timer = setInterval(() => {
+    if (!res.writableEnded) res.write(": keepalive\n\n");
+  }, keepaliveMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
+/** The `error` event for a failure to open the upstream stream. */
+export function streamOpenError(error: unknown): ChatErrorPayload {
+  if (error instanceof HttpError) {
+    if (error.code === "chat_unavailable" || error.code === "chat_not_configured") {
+      return { code: error.code, message: UNAVAILABLE_TEXT, retryable: true };
+    }
+    return { code: error.code, message: error.message, retryable: error.status >= 500 };
+  }
+  return {
+    code: "upstream_error",
+    message: "The AI analyst returned an unexpected error. Please try again.",
+    retryable: true,
+  };
 }
 
 function sseSink(res: Response): EventSink {
@@ -167,6 +215,41 @@ export async function retryMessage(req: Request, res: Response): Promise<void> {
 }
 
 async function streamTurn(res: Response, ctx: TurnContext): Promise<void> {
+  const { turn } = ctx;
+
+  // Start streaming right away: the browser shows the saved question while
+  // the (possibly cold) ai-service starts, and keepalives cover the wait.
+  const sink = startSse(res);
+  sink.send("turn", {
+    conversation: turn.conversation,
+    userMessage: turn.userMessage,
+    assistantMessageId: turn.assistantMessageId,
+  });
+  const stopKeepalive = startKeepalive(res);
+  try {
+    await relayTurn(sink, ctx);
+  } finally {
+    stopKeepalive();
+    if (!res.writableEnded) res.end();
+  }
+}
+
+/** Save a turn that never reached the model; a save failure is only logged. */
+async function saveFailedTurn(ctx: TurnContext, outcome: TurnOutcome) {
+  try {
+    return await chatService.finishTurn(
+      ctx.conversationId,
+      ctx.turn.turnId,
+      ctx.turn.assistantMessageId,
+      outcome,
+    );
+  } catch (error) {
+    logger.error({ err: error }, "failed to save chat turn");
+    return null;
+  }
+}
+
+async function relayTurn(sink: EventSink, ctx: TurnContext): Promise<void> {
   const { abort, userId, isAnonymous, conversationId, timeZone, turn, timer } = ctx;
 
   let events;
@@ -186,30 +269,29 @@ async function streamTurn(res: Response, ctx: TurnContext): Promise<void> {
       abort.signal,
     );
   } catch (error) {
-    await chatService.finishTurn(conversationId, turn.turnId, turn.assistantMessageId, {
+    const payload = streamOpenError(error);
+    const saved = await saveFailedTurn(ctx, {
       content: "",
       status: abort.signal.aborted ? "interrupted" : "error",
-      errorCode: error instanceof HttpError ? error.code : "upstream_error",
+      errorCode: payload.code,
     });
+    timer.mark("totalMs");
+    logger.info(
+      {
+        event: "chat_turn",
+        conversationId,
+        outcome: "upstream_failed",
+        ...timer.timings,
+      },
+      "chat turn",
+    );
     if (abort.signal.aborted) return;
-    throw error;
+    sink.send("error", payload);
+    if (saved) sink.send("done", { message: saved });
+    return;
   }
 
   timer.mark("upstreamOpenMs");
-  res.status(200).set({
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  res.flushHeaders();
-  const sink = sseSink(res);
-  sink.send("turn", {
-    conversation: turn.conversation,
-    userMessage: turn.userMessage,
-    assistantMessageId: turn.assistantMessageId,
-  });
-
   const result = await relayEvents(events, sink, abort.signal);
   timer.mark("relayMs");
   try {
@@ -229,7 +311,6 @@ async function streamTurn(res: Response, ctx: TurnContext): Promise<void> {
       retryable: true,
     });
   } finally {
-    if (!res.writableEnded) res.end();
     timer.mark("totalMs");
     logger.info(
       {

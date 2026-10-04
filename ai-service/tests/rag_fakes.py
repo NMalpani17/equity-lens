@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import Sequence
+from concurrent.futures import Future
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -200,7 +201,13 @@ class InlineExecutor:
         self.run = run
         self.submitted: list[tuple[Any, ...]] = []
 
-    def submit(self, fn, *args):
+    def submit(self, fn, *args) -> Future:
+        """Like Executor.submit: returns a Future (already done if it ran)."""
         self.submitted.append(args)
+        future: Future = Future()
         if self.run:
-            fn(*args)
+            future.set_result(fn(*args))
+        return future
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        self.shut_down = True

@@ -184,7 +184,7 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
 `langchain.mcp.MCPAdapter` with a per-turn client that tags each call with a
 turn id; tools resolve the user's portfolio and the turn's citation numbering
 from that id, never from model-supplied arguments. The same server is mounted at
-`/mcp/` for other MCP clients (bearer = internal token).
+`/mcp/` for other MCP clients (`X-Internal-Token` header).
 
 **Transcript search** (`ai-service/app/services/chat/transcripts.py`):
 
@@ -439,8 +439,10 @@ npm run dev
 
 Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
 or click **Try demo**. After authenticating you reach the **portfolio dashboard**
-(positions, summary cards, and add/edit/delete), plus a **System health** card
-that calls `api → ai-service` and reports the status of each hop. In demo mode a
+(positions, summary cards, and add/edit/delete). The **status dot** in the top
+bar, next to the avatar, calls `api → ai-service` and turns green (ok), amber
+(the ai-service is waking up; re-checked every 5 s) or red (degraded); hover or
+focus it for the status of each hop. In demo mode a
 slim banner invites you to sign up for your own account. For health and API
 details, see [api.md](./api.md).
 
@@ -467,13 +469,20 @@ pip install pre-commit # for the Python (Ruff) hook
 Husky + lint-staged format/lint staged JS/TS; Ruff handles Python. CI runs lint,
 typecheck, and tests for all three services on every push and PR.
 
+## Docker
+
+Both backend services have Dockerfiles; build and run them locally with
+`docker build` / `docker run` as described in
+[deployment.md](deployment.md#docker-images). The containers read `PORT`; the
+api's liveness check is `GET /api/live` and the ai-service's is `GET /health`.
+
 ## Repository layout
 
 ```
 equity-lens/
 ├── CLAUDE.md          # project guide, rules, and code quality standards
 ├── README.md
-├── docs/              # api.md (API reference), development.md (this file)
+├── docs/              # api.md, development.md (this file), deployment.md
 ├── client/            # React + TypeScript front end
 ├── api/               # Express + TypeScript API gateway
 └── ai-service/        # FastAPI (Python) AI service

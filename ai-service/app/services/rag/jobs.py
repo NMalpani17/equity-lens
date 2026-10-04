@@ -2,7 +2,7 @@
 
 import logging
 import threading
-from concurrent.futures import Executor
+from concurrent.futures import Executor, Future, wait
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -11,6 +11,7 @@ from .errors import (
     EquiblesNotFoundError,
     EquiblesQuotaError,
     IngestionCapReachedError,
+    IngestionInterruptedError,
     NoTranscriptsError,
     TickerUnavailableError,
 )
@@ -53,7 +54,9 @@ class IngestionCoordinator:
         self._daily_cap = daily_cap
         self._stale_after = stale_after
         self._inflight: set[str] = set()
+        self._futures: set[Future] = set()
         self._lock = threading.Lock()
+        self._stopping = threading.Event()
 
     def request_on_demand(self, ticker: str) -> Claim:
         """Start (or join) background ingestion for a ticker a user searched.
@@ -93,8 +96,20 @@ class IngestionCoordinator:
         self._repo.mark_job_running(job_id)
         try:
             result = self._pipeline.ingest(
-                ticker, refresh=refresh, include_plain=include_plain
+                ticker,
+                refresh=refresh,
+                include_plain=include_plain,
+                should_stop=self._stopping.is_set,
             )
+        except IngestionInterruptedError:
+            # Leave the job as is: the stale-job reclaim restarts it later.
+            logger.warning(
+                "ingestion job %s for %s interrupted by shutdown; it will be "
+                "reclaimed",
+                job_id,
+                ticker,
+            )
+            return JobOutcome(succeeded=False, error="interrupted")
         except (NoTranscriptsError, EquiblesNotFoundError) as exc:
             logger.warning("no transcripts for %s: %s", ticker, exc)
             self._repo.fail_job(job_id, ticker, error=_short(exc), unavailable=True)
@@ -117,7 +132,30 @@ class IngestionCoordinator:
         )
         return JobOutcome(succeeded=True, result=result)
 
+    def shutdown(self, timeout: float) -> bool:
+        """Stop background ingestion, waiting at most ``timeout`` seconds.
+
+        Running jobs stop at their next stage boundary and queued ones are
+        cancelled; either way the claimed job is left for the stale-job
+        reclaim. Returns True if no job was still running when it returned.
+        """
+        self._stopping.set()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        with self._lock:
+            pending = set(self._futures)
+        _, still_running = wait(pending, timeout=timeout)
+        if still_running:
+            logger.warning(
+                "%d ingestion job(s) still running at shutdown; they will be "
+                "reclaimed",
+                len(still_running),
+            )
+        return not still_running
+
     def _submit(self, job_id: str, ticker: str) -> None:
+        if self._stopping.is_set():
+            logger.warning("shutting down; leaving job %s for reclaim", job_id)
+            return
         # The DB claim already dedupes across processes; this guards against
         # double-submitting within one process.
         with self._lock:
@@ -125,7 +163,14 @@ class IngestionCoordinator:
                 return
             self._inflight.add(ticker)
         logger.info("queued background ingestion job %s for %s", job_id, ticker)
-        self._executor.submit(self._run_in_background, job_id, ticker)
+        future = self._executor.submit(self._run_in_background, job_id, ticker)
+        with self._lock:
+            self._futures.add(future)
+        future.add_done_callback(self._forget)
+
+    def _forget(self, future: Future) -> None:
+        with self._lock:
+            self._futures.discard(future)
 
     def _run_in_background(self, job_id: str, ticker: str) -> None:
         try:

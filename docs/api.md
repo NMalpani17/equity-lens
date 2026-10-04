@@ -5,28 +5,30 @@ All application routes are served by the Express gateway at
 
 ## API gateway (`http://localhost:3001`)
 
-| Method   | Path                                               | Description                                                     |
-| -------- | -------------------------------------------------- | --------------------------------------------------------------- |
-| `GET`    | `/api/health`                                      | Health of the API and downstream AI service.                    |
-| `GET`    | `/api/holdings`                                    | List all holdings (lots).                                       |
-| `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`). |
-| `GET`    | `/api/holdings/:id`                                | Get one holding.                                                |
-| `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                               |
-| `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                 |
-| `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).               |
-| `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.   |
-| `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.     |
-| `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).             |
-| `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.               |
-| `POST`   | `/api/conversations`                               | Start a conversation (`title?`).                                |
-| `PATCH`  | `/api/conversations/:id`                           | Rename a conversation (`title`).                                |
-| `DELETE` | `/api/conversations/:id`                           | Delete a conversation and its messages.                         |
-| `GET`    | `/api/conversations/:id/messages`                  | Messages with citations and tool calls.                         |
-| `POST`   | `/api/conversations/:id/messages`                  | Send a message; the reply streams as SSE.                       |
-| `POST`   | `/api/conversations/:id/messages/:messageId/retry` | Regenerate the latest stopped/failed reply in place (SSE).      |
-| `GET`    | `/api/chat/usage`                                  | Today's message allowance (`used`, `limit`, `remaining`).       |
-| `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.      |
-| `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).         |
+| Method   | Path                                               | Description                                                      |
+| -------- | -------------------------------------------------- | ---------------------------------------------------------------- |
+| `GET`    | `/api/health`                                      | API health; plus the AI service's for signed-in users.           |
+| `GET`    | `/api/live`                                        | Liveness only (no dependency checks); the platform health check. |
+| `POST`   | `/api/warmup`                                      | Wake the ai-service ahead of the first question (signed in).     |
+| `GET`    | `/api/holdings`                                    | List all holdings (lots).                                        |
+| `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`).  |
+| `GET`    | `/api/holdings/:id`                                | Get one holding.                                                 |
+| `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                                |
+| `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                  |
+| `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).                |
+| `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.    |
+| `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.      |
+| `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).              |
+| `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.                |
+| `POST`   | `/api/conversations`                               | Start a conversation (`title?`).                                 |
+| `PATCH`  | `/api/conversations/:id`                           | Rename a conversation (`title`).                                 |
+| `DELETE` | `/api/conversations/:id`                           | Delete a conversation and its messages.                          |
+| `GET`    | `/api/conversations/:id/messages`                  | Messages with citations and tool calls.                          |
+| `POST`   | `/api/conversations/:id/messages`                  | Send a message; the reply streams as SSE.                        |
+| `POST`   | `/api/conversations/:id/messages/:messageId/retry` | Regenerate the latest stopped/failed reply in place (SSE).       |
+| `GET`    | `/api/chat/usage`                                  | Today's message allowance (`used`, `limit`, `remaining`).        |
+| `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.       |
+| `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).          |
 
 ### Errors
 
@@ -47,7 +49,8 @@ The gateway verifies the token against the Supabase project's JWKS (configured
 via `SUPABASE_URL`) and scopes every query to the token's user. A missing or
 invalid token returns `401` `unauthorized`. Every holding is owned by a user;
 requesting or editing another user's holding returns `404` (never `403`, so the
-existence of others' data isn't revealed). `/api/health` is public.
+existence of others' data isn't revealed). `/api/health` and `/api/live` are
+public; `/api/health` reports the AI service's status only to signed-in users.
 
 **Account deletion:** `DELETE /api/account` removes the user's holdings and
 `demo_seeds` row in a transaction, then deletes the Supabase auth user via the
@@ -189,13 +192,12 @@ and makes dates and quote timestamps appear in the user's local time.
 
 Errors before streaming starts are normal JSON errors:
 
-| Status | `error`                                    | When                                                                          |
-| ------ | ------------------------------------------ | ----------------------------------------------------------------------------- |
-| `422`  | `validation_error`                         | Empty, or over 2,000 characters ("Messages are limited to 2000 characters."). |
-| `404`  | `not_found`                                | Not the user's conversation.                                                  |
-| `409`  | `turn_in_progress`                         | A reply is still streaming in this conversation (no overlapping turns).       |
-| `429`  | `chat_limit_reached`                       | Daily cap reached; body has `scope` (`user`/`global`), `limit`, `resetsAt`.   |
-| `503`  | `chat_unavailable` / `chat_not_configured` | The ai-service is down or not configured.                                     |
+| Status | `error`              | When                                                                          |
+| ------ | -------------------- | ----------------------------------------------------------------------------- |
+| `422`  | `validation_error`   | Empty, or over 2,000 characters ("Messages are limited to 2000 characters."). |
+| `404`  | `not_found`          | Not the user's conversation.                                                  |
+| `409`  | `turn_in_progress`   | A reply is still streaming in this conversation (no overlapping turns).       |
+| `429`  | `chat_limit_reached` | Daily cap reached; body has `scope` (`user`/`global`), `limit`, `resetsAt`.   |
 
 Daily caps (turns per UTC day — sent messages plus retries, configurable):
 **20** for signed-in users, **5** for demo (anonymous) users, and **60** across
@@ -203,7 +205,15 @@ all users. The window is the UTC day; limit messages don't name a time, and the
 client shows `resetsAt` (from `429` bodies and `GET /api/chat/usage`) in the
 user's local time zone, e.g. "It resets at 8:00 PM EDT".
 
-On success the response is `text/event-stream`:
+Once the turn is claimed, the response is `text/event-stream` and starts at
+once with the `turn` event, before the ai-service has answered (it may be
+waking from a cold start). While the turn is open the stream carries an SSE
+comment (`: keepalive`) every `CHAT_KEEPALIVE_MS` (10 s), which clients ignore.
+If the ai-service doesn't start answering within `CHAT_CONNECT_TIMEOUT_MS`
+(30 s), is down or isn't configured, the stream ends with `error`
+(`chat_unavailable` / `chat_not_configured`, "The AI analyst is unavailable
+right now. Please try again shortly.", `retryable: true`) and `done` with the
+saved failed reply. Events:
 
 | Event           | Data                                                                                        |
 | --------------- | ------------------------------------------------------------------------------------------- |
@@ -323,7 +333,7 @@ A saved assistant message:
 ## AI service (`http://localhost:8000`)
 
 Internal only: every route except `/health` requires the gateway's
-`X-Internal-Token` header (`/mcp/` takes it as a bearer token). Missing or
+`X-Internal-Token` header (`/mcp/` too). Missing or
 wrong tokens get `401` `unauthorized`; if the service has no token
 configured it fails closed with `503`.
 
@@ -348,7 +358,7 @@ Chat and MCP:
 | Method | Path           | Description                                                                                              |
 | ------ | -------------- | -------------------------------------------------------------------------------------------------------- |
 | `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, message, history, portfolio}`. |
-| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `Authorization: Bearer <internal token>`.                  |
+| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                 |
 
 `/chat/stream` emits `token`, `tool_start`, `tool_progress`, `tool_end`,
 `chart` (snake_case fields), `done` (`content`, `status`, `citations`,
@@ -365,16 +375,40 @@ failures are reported per-ticker in the `errors` map.
 
 ## Health check
 
-The health endpoint exercises the full chain:
-
-```
-client → GET http://localhost:3001/api/health → GET http://localhost:8000/health
-```
+Without a session, `/api/health` reports only the API itself and never calls
+the AI service, so anonymous traffic can't wake it (it scales to zero):
 
 ```bash
 curl http://localhost:3001/api/health
+# {"status":"ok","service":"equity-lens-api","version":"0.1.0"}
+```
+
+With a valid access token (a real or anonymous demo user) it exercises the full
+chain, `client → GET /api/health → GET <ai-service>/health`. An invalid token is
+treated like no token:
+
+```bash
+curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:3001/api/health
 # {"status":"ok","service":"equity-lens-api","version":"0.1.0",
 #  "dependencies":{"aiService":{"status":"ok", ...}}}
 ```
 
-If the AI service is down, the API responds `503` with `status: "degraded"`.
+If the AI service is down, a signed-in caller gets `503` with
+`status: "degraded"`. The
+client's top-bar status dot shows that as amber "waking up" (the ai-service
+scales to zero) and re-checks every 5 s until it is `ok`; it's red when the API
+can't be reached or reports another problem.
+
+`GET /api/live` answers `200 {"status":"ok","service":"equity-lens-api"}` as
+long as the process is up and checks nothing else: use it as the platform
+health check, so a sleeping ai-service never fails a deploy or restarts the API.
+
+`POST /api/warmup` (bearer token for a real or anonymous demo user, no body)
+pings the ai-service's `/health` and waits up to 20 s for it, so a
+scaled-to-zero ai-service starts before the user's first question. The client
+fires it, without waiting, as soon as a session exists: on load when already
+signed in, or right after login or demo sign-in. It answers `200` with
+`{"aiService":"ok"}` or `{"aiService":"waking"}`, `401` without a valid
+session, and `429 warmup_rate_limited` (with `Retry-After`) when the same user
+asks again within a minute. Concurrent calls share one ping and a success is
+reused for 60 s.

@@ -6,7 +6,7 @@ Missing transcripts are logged and skipped rather than failing the run.
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from app.models.transcript import Transcript, company_from_event_title
@@ -14,7 +14,11 @@ from app.models.transcript import Transcript, company_from_event_title
 from .chunking import Chunk, chunk_id_prefix, chunk_transcript
 from .embeddings import DenseEmbedder, SparseEncoder
 from .equibles import EquiblesClient
-from .errors import EquiblesNotFoundError, NoTranscriptsError
+from .errors import (
+    EquiblesNotFoundError,
+    IngestionInterruptedError,
+    NoTranscriptsError,
+)
 from .repository import RagRepository
 from .vector_store import PineconeVectorStore
 
@@ -139,13 +143,23 @@ class IngestionPipeline:
         cache_only: bool = False,
         include_plain: bool = False,
         plain_only: bool = False,
+        should_stop: Callable[[], bool] = lambda: False,
     ) -> IngestionResult:
         """Index the latest transcripts for ``ticker``. Safe to re-run.
 
         ``include_plain`` also indexes header-less copies into the evaluation
-        namespace; ``plain_only`` indexes only those.
+        namespace; ``plain_only`` indexes only those. ``should_stop`` is checked
+        between stages; when it returns True the run raises
+        :class:`IngestionInterruptedError` (shutdown), leaving the job to be
+        reclaimed.
         """
+
+        def checkpoint() -> None:
+            if should_stop():
+                raise IngestionInterruptedError(f"ingestion of {ticker} interrupted")
+
         transcripts = self._source.load(ticker, refresh=refresh, cache_only=cache_only)
+        checkpoint()
         if not transcripts:
             raise NoTranscriptsError(f"no transcripts available for {ticker}")
         transcripts = _with_consistent_company(ticker, transcripts)
@@ -165,7 +179,13 @@ class IngestionPipeline:
         if include_plain or plain_only:
             targets.append((self._plain_namespace, False))
         for namespace, with_header in targets:
-            self._index(chunks, namespace=namespace, with_header=with_header)
+            checkpoint()
+            self._index(
+                chunks,
+                namespace=namespace,
+                with_header=with_header,
+                checkpoint=checkpoint,
+            )
 
         result = IngestionResult(
             ticker=ticker,
@@ -182,11 +202,18 @@ class IngestionPipeline:
         return result
 
     def _index(
-        self, chunks: Sequence[Chunk], *, namespace: str, with_header: bool
+        self,
+        chunks: Sequence[Chunk],
+        *,
+        namespace: str,
+        with_header: bool,
+        checkpoint: Callable[[], None] = lambda: None,
     ) -> None:
         texts = [c.embedding_text(with_header=with_header) for c in chunks]
         dense = self._embedder.embed_documents(texts)
+        checkpoint()
         sparse = self._sparse.encode_documents(texts)
+        checkpoint()
         self._store.upsert_chunks(chunks, dense, sparse, namespace=namespace)
         # Drop vectors from quarters that rolled out of the window or from a
         # previous chunking run that produced more chunks.

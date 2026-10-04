@@ -78,3 +78,11 @@ class NoTranscriptsError(Exception):
 
 class RerankUnavailableError(Exception):
     """The reranker failed or its quota is exhausted."""
+
+
+class IngestionInterruptedError(Exception):
+    """Ingestion stopped because the process is shutting down.
+
+    Not a failure: the job is left as it is (ticker "indexing", job "running"),
+    so the stale-job reclaim picks it up again later.
+    """

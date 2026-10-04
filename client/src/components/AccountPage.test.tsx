@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
+// The header's status dot polls /api/health; not under test here.
+vi.mock("@/components/HealthIndicator", () => ({ HealthIndicator: () => null }));
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
 
 import { useAuth } from "@/context/auth-context";

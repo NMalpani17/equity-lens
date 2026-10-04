@@ -323,7 +323,8 @@ describe("POST /api/conversations/:id/messages", () => {
     expect(openStream).not.toHaveBeenCalled();
   });
 
-  it("saves an error and returns 503 when the ai-service is unavailable", async () => {
+  it("streams the turn, then the friendly error when the ai-service is unavailable", async () => {
+    // e.g. the connect timeout on a cold ai-service ran out
     openStream.mockRejectedValue(
       new ServiceUnavailableError(
         "chat_unavailable",
@@ -335,13 +336,36 @@ describe("POST /api/conversations/:id/messages", () => {
       content: "hi",
     });
 
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    const events = parseSse(res.text);
+    expect(events.map((e) => e.event)).toEqual(["turn", "error", "done"]);
+    expect(events[1]!.data).toEqual({
+      code: "chat_unavailable",
+      message: "The AI analyst is unavailable right now. Please try again shortly.",
+      retryable: true,
+    });
+    expect(events[2]!.data).toMatchObject({
+      message: { id: "a1", status: "error", errorCode: "chat_unavailable" },
+    });
     expect(service.finishTurn).toHaveBeenCalledWith(
       CONV,
       "turn-1",
       "a1",
       expect.objectContaining({ status: "error", errorCode: "chat_unavailable" }),
     );
+  });
+
+  it("reports an unexpected upstream failure without leaking details", async () => {
+    openStream.mockRejectedValue(new Error("socket hang up at 10.0.0.7"));
+
+    const res = await post(`/api/conversations/${CONV}/messages`).send({
+      content: "hi",
+    });
+
+    const events = parseSse(res.text);
+    expect(events.map((e) => e.event)).toEqual(["turn", "error", "done"]);
+    expect(events[1]!.data).toMatchObject({ code: "upstream_error", retryable: true });
+    expect(JSON.stringify(events[1]!.data)).not.toContain("10.0.0.7");
   });
 
   it("relays upstream errors as an error event plus the saved message", async () => {
@@ -623,6 +647,65 @@ describe("Stop pressed before streaming starts", () => {
         expect.objectContaining({ status: "interrupted" }),
       );
       expect(upstreamSignal?.aborted ?? true).toBe(true);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe("cold ai-service", () => {
+  it("sends the turn at once and keepalives while the ai-service starts", async () => {
+    let answer: () => void = () => {};
+    const upstreamReady = new Promise<void>((resolve) => (answer = resolve));
+    openStream.mockImplementation(async () => {
+      await upstreamReady; // the ai-service is still starting
+      return stream(
+        { type: "token", text: "Demand was strong." },
+        {
+          type: "done",
+          content: "Demand was strong.",
+          status: "complete",
+          citations: [],
+          charts: [],
+          toolCalls: [],
+          inputTokens: 1,
+          outputTokens: 1,
+          model: "m",
+        },
+      );
+    });
+    const server = app.listen(0);
+    const { port } = server.address() as AddressInfo;
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/conversations/${CONV}/messages`,
+        {
+          method: "POST",
+          headers: { Authorization: AUTH, "Content-Type": "application/json" },
+          body: JSON.stringify({ content: "What did NVDA say?" }),
+        },
+      );
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      // The turn event arrives while the upstream hasn't answered yet.
+      while (!text.includes("event: turn")) {
+        const { value } = await reader.read();
+        text += decoder.decode(value, { stream: true });
+      }
+      expect(text).not.toContain("event: token");
+      answer();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+      }
+      const order = ["event: turn", "event: token", "event: done"].map((e) =>
+        text.indexOf(e),
+      );
+      expect(order.every((i) => i >= 0)).toBe(true);
+      expect(order).toEqual([...order].sort((a, b) => a - b));
     } finally {
       server.close();
     }

@@ -330,13 +330,20 @@ function toSnapshot(summary: PortfolioSummary | null) {
   };
 }
 
+const UNAVAILABLE_MESSAGE = "The AI analyst is unavailable right now.";
+
 /**
- * Open the upstream stream. Throws an HttpError (before any bytes are sent to
- * the client) when the ai-service is unconfigured, unreachable or refuses.
+ * Open the upstream stream. Throws an HttpError when the ai-service is
+ * unconfigured, unreachable, refuses, or doesn't start answering within
+ * `connectTimeoutMs` (time to response headers; allows for a cold start).
+ * The timeout never applies to the stream itself once it has started.
  */
 export async function openChatStream(
   request: ChatStreamRequest,
   signal: AbortSignal,
+  {
+    connectTimeoutMs = config.chat.connectTimeoutMs,
+  }: { connectTimeoutMs?: number } = {},
 ): Promise<AsyncGenerator<AiChatEvent>> {
   if (!config.aiServiceInternalToken) {
     throw new ServiceUnavailableError(
@@ -345,11 +352,22 @@ export async function openChatStream(
     );
   }
   const url = aiServiceUrl("/chat/stream");
+  // One signal for the whole request: aborted by the client going away, or by
+  // the connect timer until the response headers arrive.
+  const upstream = new AbortController();
+  const onClientAbort = () => upstream.abort(signal.reason);
+  if (signal.aborted) upstream.abort(signal.reason);
+  else signal.addEventListener("abort", onClientAbort, { once: true });
+  let timedOut = false;
+  const connectTimer = setTimeout(() => {
+    timedOut = true;
+    upstream.abort(new Error("ai-service connect timeout"));
+  }, connectTimeoutMs);
   let response: Response;
   try {
     response = await aiServiceFetch(url, {
       method: "POST",
-      signal,
+      signal: upstream.signal,
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
@@ -366,11 +384,20 @@ export async function openChatStream(
     });
   } catch (error) {
     if (signal.aborted) throw error;
-    logger.warn({ url: url.toString(), err: error }, "failed to reach ai-service chat");
-    throw new ServiceUnavailableError(
-      "chat_unavailable",
-      "The AI analyst is unavailable right now.",
-    );
+    if (timedOut) {
+      logger.warn(
+        { url: url.toString(), connectTimeoutMs },
+        "ai-service chat did not answer in time",
+      );
+    } else {
+      logger.warn(
+        { url: url.toString(), err: error },
+        "failed to reach ai-service chat",
+      );
+    }
+    throw new ServiceUnavailableError("chat_unavailable", UNAVAILABLE_MESSAGE);
+  } finally {
+    clearTimeout(connectTimer);
   }
 
   if (!response.ok || !response.body) {
@@ -392,10 +419,7 @@ export async function openChatStream(
       );
     }
     if (response.status === 401 || response.status === 503) {
-      throw new ServiceUnavailableError(
-        "chat_unavailable",
-        "The AI analyst is unavailable right now.",
-      );
+      throw new ServiceUnavailableError("chat_unavailable", UNAVAILABLE_MESSAGE);
     }
     throw new UpstreamError("The AI analyst returned an unexpected error.");
   }

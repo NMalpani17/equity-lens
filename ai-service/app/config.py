@@ -97,9 +97,17 @@ class Settings(BaseSettings):
     rag_retry_base_seconds: float = 1.0
     rag_retry_max_seconds: float = 30.0
 
+    # --- Shutdown ---
+    # Cloud Run sends SIGTERM ~10s before killing the instance. Uvicorn first
+    # drains open requests (--timeout-graceful-shutdown 3 in the Dockerfile),
+    # then these budgets bound the lifespan shutdown: stop ingestion, then
+    # flush traces.
+    shutdown_ingestion_timeout_seconds: float = 3.0
+    shutdown_tracing_timeout_seconds: float = 2.0
+
     # --- Internal service auth ---
-    # Shared secret the API gateway sends as X-Internal-Token (and as a bearer
-    # token for /mcp). Chat and MCP endpoints reject requests without it.
+    # Shared secret the API gateway sends as X-Internal-Token on every request
+    # (MCP included). Authorization is left for Cloud Run IAM's ID token.
     internal_token: str = ""
 
     # --- AI analyst chat ---

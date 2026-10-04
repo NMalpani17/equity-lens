@@ -1,0 +1,8 @@
+# Build inputs only; never secrets or local artifacts.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!src/
+!prisma/
