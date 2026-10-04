@@ -69,9 +69,11 @@ api's service account can invoke.
 - **Grounded answers.** Every company claim must cite a passage retrieved in the
   same turn; citation markers that don't match a retrieved passage are dropped
   before the answer is saved. Every figure comes from a tool result, and
-  position math goes through a calculator tool, never the model. Retrieval
-  quality is measured with a labelled 20-question set (hit rate@5 and MRR
-  across dense, hybrid and hybrid + rerank, with and without context headers).
+  position math goes through a calculator tool, never the model. On a labelled
+  20-question retrieval set, the production setup (hybrid search + rerank over
+  chunks with context headers) puts the right earnings call in the top 5 for
+  all 20 questions, with MRR 0.94, vs hit@5 0.90 and MRR 0.71 for plain dense
+  search. [Results](docs/development.md#retrieval-results).
 - **Evaluated with checks and a blind LLM judge.** 25 labelled questions run
   through the real agent. Each answer gets deterministic checks plus a rubric
   score from a judge that sees the answers anonymised and in shuffled order. In

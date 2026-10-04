@@ -124,7 +124,8 @@ with Pinecone's `bge-reranker-v2-m3`.
    python -m scripts.eval_rag
    ```
 
-   Each run makes ~40 rerank calls, so mind the 500/month Starter quota.
+   Each run makes ~40 rerank calls, so mind the 500/month Starter quota. The
+   recorded run is under [Retrieval results](#retrieval-results).
 
 Every search logs one structured JSON line (`event: rag_search`) with the
 filters, candidate count, whether reranking applied, and per-stage latency.
@@ -132,6 +133,49 @@ filters, candidate count, whether reranking applied, and per-stage latency.
 Repository integration tests (advisory-lock dedupe, daily cap) run only when
 `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a direct,
 non-pooled URL); they apply the migration into a throwaway schema and drop it.
+
+### Retrieval results
+
+Run of 2026-10-04 UTC (`20261004T012541Z`; 20 questions, 10 exact and 10
+conceptual; k = 5). Index `equity-lens-transcripts`: `gemini-embedding-001`
+(768-d) dense + `pinecone-sparse-english-v0` sparse, 400-token chunks with
+60-token overlap, hybrid alpha 0.75 (dense weight), 25 candidates reranked by
+`bge-reranker-v2-m3`. "Headers" configs search the production `transcripts`
+namespace; "no headers" configs search `transcripts-noctx`. A hit is any result
+from the expected ticker and fiscal quarter.
+
+| Config                                    | Hit@5    | MRR       | Exact hit / MRR | Conceptual hit / MRR |
+| ----------------------------------------- | -------- | --------- | --------------- | -------------------- |
+| dense, no headers                         | 0.90     | 0.710     | 0.90 / 0.650    | 0.90 / 0.770         |
+| hybrid, no headers                        | 1.00     | 0.858     | 1.00 / 0.925    | 1.00 / 0.792         |
+| hybrid + rerank, no headers               | 1.00     | 0.879     | 1.00 / 0.900    | 1.00 / 0.858         |
+| dense, headers                            | 0.95     | 0.854     | 0.90 / 0.833    | 1.00 / 0.875         |
+| hybrid, headers                           | 0.95     | 0.852     | 1.00 / 0.950    | 0.90 / 0.753         |
+| **hybrid + rerank, headers** (production) | **1.00** | **0.938** | 1.00 / 0.875    | 1.00 / 1.000         |
+
+- **Production config:** hybrid + rerank with headers found the right call in
+  the top 5 for all 20 questions, and ranked it first for every conceptual
+  question. It has the highest overall MRR (0.938, vs 0.710 for plain dense
+  search).
+- **Context headers:** a large gain for dense search (MRR 0.710 → 0.854) and a
+  smaller one with reranking (0.879 → 0.938). No net change for hybrid without
+  reranking (0.858 vs 0.852).
+- **Reranking:** raises MRR in both namespaces (0.858 → 0.879 without headers,
+  0.852 → 0.938 with headers), mostly on conceptual questions. On exact,
+  keyword-style questions, hybrid alone ranks slightly better (exact MRR 0.950
+  vs 0.875 with headers), because reranking moved one correct call from first to
+  fourth.
+- **Misses (not in the top 5):** dense without headers missed two questions,
+  dense with headers one, and hybrid with headers one; hybrid without headers
+  and both rerank configs missed none.
+- **Caveats:** 20 questions, so one question moves hit rate by 0.05 and a rank
+  change from 1 to 2 moves MRR by 0.025. Relevance is judged per call (ticker
+  and quarter), not per passage. The production namespace also holds 12 calls
+  for COST, NKE and SBUX that were indexed on demand after the plain copies were
+  built (52 calls and 3,173 chunks, vs 40 calls and 2,440 chunks). The 40 shared
+  calls have identical chunks, and the extra calls only add distractors to the
+  "headers" configs, so those numbers are, if anything, conservative. The run
+  used 40 rerank requests and had no rerank fallbacks.
 
 ## AI analyst chat setup
 
