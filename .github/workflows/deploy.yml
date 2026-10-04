@@ -1,0 +1,166 @@
+name: Deploy
+
+# Continuous deployment of the api and ai-service to Cloud Run. Runs after CI
+# passes on a push to main, or by hand. See docs/deployment.md.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      services:
+        description: What to deploy ("changed" compares with what is running)
+        type: choice
+        options: [changed, ai-service, api, both]
+        default: changed
+
+# One deploy at a time; a newer run waits instead of cancelling a running one.
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation
+
+env:
+  CLOUDSDK_CORE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+  WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+  DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA }}
+  REGION: us-east4
+  REGISTRY: us-east4-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/equity-lens
+  API_SERVICE: equity-lens-api
+  AI_SERVICE: equity-lens-ai-service
+  MIGRATE_JOB: equity-lens-migrate
+  # The commit CI tested (workflow_run), or main's head (manual run).
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  changes:
+    name: Detect changes
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ai_service: ${{ steps.detect.outputs.ai_service }}
+      api: ${{ steps.detect.outputs.api }}
+      migrations: ${{ steps.detect.outputs.migrations }}
+    steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Deploys run from main only (Workload Identity Federation rejects other refs)."
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0 # diff against the deployed commit
+      - uses: ./.github/actions/setup-gcp
+      - id: detect
+        run: .github/scripts/detect-changes.sh
+        env:
+          MODE: ${{ inputs.services || 'changed' }}
+
+  migrate:
+    name: Migrate database
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: ./.github/actions/setup-gcp
+        with:
+          docker: "true"
+      - name: Build and push the migrate image
+        run: |
+          image="${REGISTRY}/api-migrate:${SHA}"
+          docker build --provenance=false --sbom=false --target migrate -t "$image" api
+          docker push "$image"
+          echo "IMAGE=${image}" >>"$GITHUB_ENV"
+      - name: prisma migrate deploy (Cloud Run job)
+        run: |
+          gcloud run jobs update "$MIGRATE_JOB" --region "$REGION" --image "$IMAGE" --quiet
+          gcloud run jobs execute "$MIGRATE_JOB" --region "$REGION" --wait
+
+  deploy-ai-service:
+    name: Deploy ai-service
+    needs: [changes, migrate]
+    if: >-
+      !cancelled() && needs.changes.outputs.ai_service == 'true' &&
+      contains(fromJSON('["success", "skipped"]'), needs.migrate.result)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      revision: ${{ steps.deploy.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: ./.github/actions/setup-gcp
+        with:
+          docker: "true"
+      - id: deploy
+        run: .github/scripts/deploy-service.sh "$AI_SERVICE" ai-service ai-service
+
+  # After the ai-service, so a new api never calls an old ai-service.
+  deploy-api:
+    name: Deploy api
+    needs: [changes, migrate, deploy-ai-service]
+    if: >-
+      !cancelled() && needs.changes.outputs.api == 'true' &&
+      contains(fromJSON('["success", "skipped"]'), needs.migrate.result) &&
+      contains(fromJSON('["success", "skipped"]'), needs.deploy-ai-service.result)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      revision: ${{ steps.deploy.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: ./.github/actions/setup-gcp
+        with:
+          docker: "true"
+      - id: deploy
+        run: .github/scripts/deploy-service.sh "$API_SERVICE" api api
+
+  verify:
+    name: Verify
+    needs: [deploy-ai-service, deploy-api]
+    if: >-
+      !cancelled() &&
+      contains(fromJSON('["success", "skipped"]'), needs.deploy-ai-service.result) &&
+      contains(fromJSON('["success", "skipped"]'), needs.deploy-api.result) &&
+      (needs.deploy-ai-service.result == 'success' || needs.deploy-api.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: ./.github/actions/setup-gcp
+      - name: GET /api/live returns 200
+        run: |
+          url=$(gcloud run services describe "$API_SERVICE" --region "$REGION" --format='value(status.url)')
+          code=$(curl -sS -f -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 5 \
+            --retry-all-errors --max-time 30 "${url}/api/live") || true
+          echo "${url}/api/live -> ${code}"
+          if [[ "$code" != 200 ]]; then
+            echo "::error::${url}/api/live returned ${code}, expected 200."
+            exit 1
+          fi
+      - name: New revisions
+        env:
+          AI_REVISION: ${{ needs.deploy-ai-service.outputs.revision }}
+          API_REVISION: ${{ needs.deploy-api.outputs.revision }}
+        run: |
+          [[ -n "$AI_REVISION" ]] && echo "::notice title=${AI_SERVICE}::New revision ${AI_REVISION}"
+          [[ -n "$API_REVISION" ]] && echo "::notice title=${API_SERVICE}::New revision ${API_REVISION}"
+          true
