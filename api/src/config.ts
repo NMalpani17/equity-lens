@@ -23,9 +23,13 @@ const envSchema = z.object({
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   AI_SERVICE_URL: z.string().url().default("http://localhost:8000"),
-  // Shared secret proving requests to the ai-service come from this gateway.
-  // Chat returns 503 until it is set.
+  // Shared secret proving requests to the ai-service come from this gateway
+  // (sent as X-Internal-Token). Chat returns 503 until it is set.
   AI_SERVICE_INTERNAL_TOKEN: z.string().default(""),
+  // Production (Cloud Run IAM): the ai-service URL, used as the audience of a
+  // Google ID token sent as "Authorization: Bearer" on every ai-service call.
+  // Empty (local dev, tests): no ID token is fetched or sent.
+  AI_SERVICE_ID_TOKEN_AUDIENCE: z.union([z.literal(""), z.string().url()]).default(""),
   // AI analyst chat limits (user messages per UTC day).
   CHAT_DAILY_LIMIT: z.coerce.number().int().positive().default(20),
   CHAT_DAILY_LIMIT_ANON: z.coerce.number().int().positive().default(5),
@@ -86,6 +90,7 @@ export const config = {
   logLevel: parsed.data.LOG_LEVEL,
   aiServiceUrl: parsed.data.AI_SERVICE_URL,
   aiServiceInternalToken: parsed.data.AI_SERVICE_INTERNAL_TOKEN,
+  aiServiceIdTokenAudience: parsed.data.AI_SERVICE_ID_TOKEN_AUDIENCE,
   chat: {
     dailyLimit: parsed.data.CHAT_DAILY_LIMIT,
     dailyLimitAnon: parsed.data.CHAT_DAILY_LIMIT_ANON,

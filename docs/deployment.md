@@ -68,26 +68,27 @@ be stored that way.
 
 ### api (Cloud Run)
 
-| Name                        | Purpose                                                          | Required                 | Secret  | Production value / source                                                             |
-| --------------------------- | ---------------------------------------------------------------- | ------------------------ | ------- | ------------------------------------------------------------------------------------- |
-| `NODE_ENV`                  | Runtime mode                                                     | Yes                      | No      | `production` (set in the image)                                                       |
-| `PORT`                      | Listen port                                                      | Set by Cloud Run         | No      | Injected by Cloud Run (`8080`); do not set                                            |
-| `LOG_LEVEL`                 | Pino log level                                                   | No (`info`)              | No      | `info`                                                                                |
-| `AI_SERVICE_URL`            | ai-service base URL                                              | Yes                      | No      | The ai-service Cloud Run URL, `https://equity-lens-ai-service-….run.app`              |
-| `AI_SERVICE_INTERNAL_TOKEN` | Shared secret on every api → ai-service call                     | Yes                      | **Yes** | `python -c "import secrets; print(secrets.token_urlsafe(32))"`; same value in both    |
-| `CLIENT_ORIGIN`             | CORS: comma-separated exact origins (no wildcards)               | Yes                      | No      | `https://<project>.vercel.app` (add a custom domain or a fixed preview alias if used) |
-| `DATABASE_URL`              | Supabase **pooled** URL (port 6543, `?pgbouncer=true`)           | Yes                      | **Yes** | Supabase → Project Settings → Database → Connection string (Transaction pooler)       |
-| `DIRECT_URL`                | Supabase direct/session URL (port 5432), used by migrations      | Yes (validated at start) | **Yes** | Supabase → Connection string (Session pooler or direct)                               |
-| `SUPABASE_URL`              | Verifies user JWTs (JWKS, issuer)                                | Yes                      | No      | `https://<project-ref>.supabase.co`                                                   |
-| `SUPABASE_SERVICE_ROLE_KEY` | Admin key (deletes auth users on account deletion)               | Yes                      | **Yes** | Supabase → Project Settings → API Keys → `service_role`                               |
-| `CHAT_DAILY_LIMIT`          | Turns per signed-in user per UTC day                             | No (`20`)                | No      | `20`                                                                                  |
-| `CHAT_DAILY_LIMIT_ANON`     | Turns per demo (anonymous) user per UTC day                      | No (`5`)                 | No      | `5`                                                                                   |
-| `CHAT_GLOBAL_DAILY_LIMIT`   | Turns across all users per UTC day (Gemini budget)               | No (`60`)                | No      | `60`                                                                                  |
-| `CHAT_MAX_MESSAGE_CHARS`    | Max characters per message                                       | No (`2000`)              | No      | `2000`                                                                                |
-| `CHAT_HISTORY_MESSAGES`     | Prior final answers sent as context                              | No (`6`)                 | No      | `6`                                                                                   |
-| `CHAT_HISTORY_TOKENS`       | Token budget for that context                                    | No (`3000`)              | No      | `3000`                                                                                |
-| `CHAT_CONNECT_TIMEOUT_MS`   | Wait for the ai-service to start answering (covers a cold start) | No (`30000`)             | No      | `30000`                                                                               |
-| `CHAT_KEEPALIVE_MS`         | SSE keepalive comment interval during a turn                     | No (`10000`)             | No      | `10000`                                                                               |
+| Name                           | Purpose                                                                                                  | Required                         | Secret  | Production value / source                                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- | -------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                     | Runtime mode                                                                                             | Yes                              | No      | `production` (set in the image)                                                                          |
+| `PORT`                         | Listen port                                                                                              | Set by Cloud Run                 | No      | Injected by Cloud Run (`8080`); do not set                                                               |
+| `LOG_LEVEL`                    | Pino log level                                                                                           | No (`info`)                      | No      | `info`                                                                                                   |
+| `AI_SERVICE_URL`               | ai-service base URL                                                                                      | Yes                              | No      | The ai-service Cloud Run URL, `https://equity-lens-ai-service-….run.app`                                 |
+| `AI_SERVICE_INTERNAL_TOKEN`    | Shared secret on every api → ai-service call (`X-Internal-Token`)                                        | Yes                              | **Yes** | `python -c "import secrets; print(secrets.token_urlsafe(32))"`; same value in both                       |
+| `AI_SERVICE_ID_TOKEN_AUDIENCE` | Audience of the Google ID token sent as `Authorization: Bearer` on every ai-service call (Cloud Run IAM) | Yes in production; empty locally | No      | The ai-service's Cloud Run URL, exactly as `AI_SERVICE_URL` (`https://equity-lens-ai-service-….run.app`) |
+| `CLIENT_ORIGIN`                | CORS: comma-separated exact origins (no wildcards)                                                       | Yes                              | No      | `https://<project>.vercel.app` (add a custom domain or a fixed preview alias if used)                    |
+| `DATABASE_URL`                 | Supabase **pooled** URL (port 6543, `?pgbouncer=true`)                                                   | Yes                              | **Yes** | Supabase → Project Settings → Database → Connection string (Transaction pooler)                          |
+| `DIRECT_URL`                   | Supabase direct/session URL (port 5432), used by migrations                                              | Yes (validated at start)         | **Yes** | Supabase → Connection string (Session pooler or direct)                                                  |
+| `SUPABASE_URL`                 | Verifies user JWTs (JWKS, issuer)                                                                        | Yes                              | No      | `https://<project-ref>.supabase.co`                                                                      |
+| `SUPABASE_SERVICE_ROLE_KEY`    | Admin key (deletes auth users on account deletion)                                                       | Yes                              | **Yes** | Supabase → Project Settings → API Keys → `service_role`                                                  |
+| `CHAT_DAILY_LIMIT`             | Turns per signed-in user per UTC day                                                                     | No (`20`)                        | No      | `20`                                                                                                     |
+| `CHAT_DAILY_LIMIT_ANON`        | Turns per demo (anonymous) user per UTC day                                                              | No (`5`)                         | No      | `5`                                                                                                      |
+| `CHAT_GLOBAL_DAILY_LIMIT`      | Turns across all users per UTC day (Gemini budget)                                                       | No (`60`)                        | No      | `60`                                                                                                     |
+| `CHAT_MAX_MESSAGE_CHARS`       | Max characters per message                                                                               | No (`2000`)                      | No      | `2000`                                                                                                   |
+| `CHAT_HISTORY_MESSAGES`        | Prior final answers sent as context                                                                      | No (`6`)                         | No      | `6`                                                                                                      |
+| `CHAT_HISTORY_TOKENS`          | Token budget for that context                                                                            | No (`3000`)                      | No      | `3000`                                                                                                   |
+| `CHAT_CONNECT_TIMEOUT_MS`      | Wait for the ai-service to start answering (covers a cold start)                                         | No (`30000`)                     | No      | `30000`                                                                                                  |
+| `CHAT_KEEPALIVE_MS`            | SSE keepalive comment interval during a turn                                                             | No (`10000`)                     | No      | `10000`                                                                                                  |
 
 ### ai-service (Cloud Run)
 
@@ -169,7 +170,8 @@ region.
 | Startup CPU boost     | Off (starts in under a second)                                                         | **On** (import-heavy startup)                                                                                                                                                                                                        |
 | Startup probe         | HTTP `GET /api/live` (port 8080)                                                       | HTTP `GET /health` (port 8080), period 2 s, failure threshold 30                                                                                                                                                                     |
 | Liveness probe        | HTTP `GET /api/live`                                                                   | HTTP `GET /health`                                                                                                                                                                                                                   |
-| Ingress / auth        | All; allow unauthenticated (it has its own auth)                                       | All; allow unauthenticated (every route but `/health` requires `AI_SERVICE_INTERNAL_TOKEN`)                                                                                                                                          |
+| Service account       | Dedicated `equity-lens-api@PROJECT.iam.gserviceaccount.com`                            | Dedicated `equity-lens-ai-service@PROJECT.iam.gserviceaccount.com`                                                                                                                                                                   |
+| Ingress / auth        | All; allow unauthenticated (`--allow-unauthenticated`; it authenticates users itself)  | All; **require authentication** (`--no-allow-unauthenticated`). Only the api's service account has `roles/run.invoker`. Every route but `/health` also requires `X-Internal-Token` (defense in depth)                                |
 | Execution environment | Default (gen2)                                                                         | Default (gen2)                                                                                                                                                                                                                       |
 | Secrets               | `AI_SERVICE_INTERNAL_TOKEN`, `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_SERVICE_ROLE_KEY` | `AI_SERVICE_INTERNAL_TOKEN`, `AI_SERVICE_GEMINI_API_KEY`, `DATABASE_URL`, `AI_SERVICE_PINECONE_API_KEY`, `AI_SERVICE_EQUIBLES_API_KEY`, `AI_SERVICE_FINNHUB_API_KEY`, `AI_SERVICE_LANGFUSE_SECRET_KEY`, `AI_SERVICE_TRACE_USER_SALT` |
 
@@ -179,12 +181,23 @@ It's for the client's status dot in the top bar.
 
 With instance-based billing and min instances 0, the ai-service bills for each
 instance from start until Cloud Run scales it in after it has been idle (up to
-about 15 minutes). The max-instances cap of 1 bounds the cost. Only
-signed-in users (including anonymous demo users) can trigger `POST
-/api/warmup`, at most once per minute each, and one successful ping is reused
-for 60 s across all users. `/api/health` is still public and also pings the
-ai-service (3 s timeout), so an unauthenticated caller can still wake it; the
-cap still applies.
+about 15 minutes). The max-instances cap of 1 bounds the cost.
+
+Only the api can start it: Cloud Run rejects any request without a valid ID
+token for the api's service account before an instance is started. The api
+calls the ai-service only for signed-in users (real or anonymous demo): chat,
+quotes, transcript search, warm-up (once per minute per user) and the
+ai-service part of `/api/health`. Anonymous traffic never reaches it.
+
+**How the api authenticates** (`api/src/services/idToken.ts`): with
+`AI_SERVICE_ID_TOKEN_AUDIENCE` set, the api gets a Google ID token for that
+audience from the Cloud Run metadata server (google-auth-library), reuses it
+until 5 minutes before it expires, and sends it as `Authorization: Bearer` on
+every ai-service request, including chat streams and warm-ups. The internal
+token travels separately as `X-Internal-Token` and the ai-service keeps
+checking it. If a token can't be fetched, the user sees the usual "The AI
+analyst is unavailable right now" message. Locally the variable is empty and
+no token is fetched. Cloud Run's startup and liveness probes don't need a token.
 
 Shutdown: Cloud Run sends SIGTERM and kills the instance ~10 s later. The api
 stops accepting connections and exits within 8 s. The ai-service drains open
@@ -196,25 +209,48 @@ Example commands (fill in the project and image paths; secrets created
 beforehand with `gcloud secrets create`):
 
 ```bash
+# One service account per service.
+gcloud iam service-accounts create equity-lens-api --display-name "Equity Lens api"
+gcloud iam service-accounts create equity-lens-ai-service --display-name "Equity Lens ai-service"
+
+# Each account may read only its own secrets (repeat per secret), e.g.:
+gcloud secrets add-iam-policy-binding internal-token \
+  --member serviceAccount:equity-lens-api@PROJECT.iam.gserviceaccount.com \
+  --role roles/secretmanager.secretAccessor
+gcloud secrets add-iam-policy-binding internal-token \
+  --member serviceAccount:equity-lens-ai-service@PROJECT.iam.gserviceaccount.com \
+  --role roles/secretmanager.secretAccessor
+
 gcloud run deploy equity-lens-ai-service --region us-east4 \
   --image us-east4-docker.pkg.dev/PROJECT/equity-lens/ai-service:TAG \
+  --service-account equity-lens-ai-service@PROJECT.iam.gserviceaccount.com \
   --no-cpu-throttling --cpu-boost --cpu 1 --memory 1Gi \
   --min-instances 0 --max-instances 1 --concurrency 20 --timeout 600 \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --set-env-vars AI_SERVICE_ENVIRONMENT=production \
   --set-secrets AI_SERVICE_INTERNAL_TOKEN=internal-token:latest,AI_SERVICE_GEMINI_API_KEY=gemini-api-key:latest,DATABASE_URL=database-url:latest,AI_SERVICE_PINECONE_API_KEY=pinecone-api-key:latest,AI_SERVICE_EQUIBLES_API_KEY=equibles-api-key:latest,AI_SERVICE_FINNHUB_API_KEY=finnhub-api-key:latest
 
+# Only the api's service account may invoke the ai-service.
+gcloud run services add-iam-policy-binding equity-lens-ai-service --region us-east4 \
+  --member serviceAccount:equity-lens-api@PROJECT.iam.gserviceaccount.com \
+  --role roles/run.invoker
+
 gcloud run deploy equity-lens-api --region us-east4 \
   --image us-east4-docker.pkg.dev/PROJECT/equity-lens/api:TAG \
+  --service-account equity-lens-api@PROJECT.iam.gserviceaccount.com \
   --cpu-throttling --cpu 1 --memory 512Mi \
   --min-instances 0 --max-instances 2 --concurrency 80 --timeout 600 \
   --allow-unauthenticated \
-  --set-env-vars AI_SERVICE_URL=https://AI_SERVICE_URL,CLIENT_ORIGIN=https://PROJECT.vercel.app,SUPABASE_URL=https://REF.supabase.co \
+  --set-env-vars AI_SERVICE_URL=https://AI_SERVICE_URL,AI_SERVICE_ID_TOKEN_AUDIENCE=https://AI_SERVICE_URL,CLIENT_ORIGIN=https://PROJECT.vercel.app,SUPABASE_URL=https://REF.supabase.co \
   --set-secrets AI_SERVICE_INTERNAL_TOKEN=internal-token:latest,DATABASE_URL=database-url:latest,DIRECT_URL=direct-url:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest
 ```
 
 Configure the HTTP startup and liveness probes from the table in the console
 (Edit & deploy new revision → Container → Health checks) or a service YAML.
+
+Check that nothing else can invoke the ai-service: `gcloud run services
+get-iam-policy equity-lens-ai-service --region us-east4` should list
+`roles/run.invoker` for the api's service account only (no `allUsers`).
 
 ## Vercel (client)
 

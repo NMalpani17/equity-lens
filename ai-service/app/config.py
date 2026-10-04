@@ -106,8 +106,8 @@ class Settings(BaseSettings):
     shutdown_tracing_timeout_seconds: float = 2.0
 
     # --- Internal service auth ---
-    # Shared secret the API gateway sends as X-Internal-Token (and as a bearer
-    # token for /mcp). Chat and MCP endpoints reject requests without it.
+    # Shared secret the API gateway sends as X-Internal-Token on every request
+    # (MCP included). Authorization is left for Cloud Run IAM's ID token.
     internal_token: str = ""
 
     # --- AI analyst chat ---

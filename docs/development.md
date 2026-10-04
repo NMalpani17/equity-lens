@@ -184,7 +184,7 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
 `langchain.mcp.MCPAdapter` with a per-turn client that tags each call with a
 turn id; tools resolve the user's portfolio and the turn's citation numbering
 from that id, never from model-supplied arguments. The same server is mounted at
-`/mcp/` for other MCP clients (bearer = internal token).
+`/mcp/` for other MCP clients (`X-Internal-Token` header).
 
 **Transcript search** (`ai-service/app/services/chat/transcripts.py`):
 

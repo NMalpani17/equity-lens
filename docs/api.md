@@ -333,7 +333,7 @@ A saved assistant message:
 ## AI service (`http://localhost:8000`)
 
 Internal only: every route except `/health` requires the gateway's
-`X-Internal-Token` header (`/mcp/` takes it as a bearer token). Missing or
+`X-Internal-Token` header (`/mcp/` too). Missing or
 wrong tokens get `401` `unauthorized`; if the service has no token
 configured it fails closed with `503`.
 
@@ -358,7 +358,7 @@ Chat and MCP:
 | Method | Path           | Description                                                                                              |
 | ------ | -------------- | -------------------------------------------------------------------------------------------------------- |
 | `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, message, history, portfolio}`. |
-| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `Authorization: Bearer <internal token>`.                  |
+| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                 |
 
 `/chat/stream` emits `token`, `tool_start`, `tool_progress`, `tool_end`,
 `chart` (snake_case fields), `done` (`content`, `status`, `citations`,

@@ -131,12 +131,22 @@ def test_mcp_http_endpoint_requires_the_internal_token(monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "internal_token", "secret-token")
     with TestClient(create_app()) as client:
         denied = client.post("/mcp/", json={})
-        wrong = client.post("/mcp/", json={}, headers={"Authorization": "Bearer nope"})
-        allowed = client.post(
+        wrong = client.post("/mcp/", json={}, headers={"X-Internal-Token": "nope"})
+        # The internal token moved out of Authorization (now the IAM ID token).
+        as_bearer = client.post(
             "/mcp/", json={}, headers={"Authorization": "Bearer secret-token"}
+        )
+        allowed = client.post(
+            "/mcp/",
+            json={},
+            headers={
+                "Authorization": "Bearer google-id-token",
+                "X-Internal-Token": "secret-token",
+            },
         )
 
     assert denied.status_code == 401 and wrong.status_code == 401
+    assert as_bearer.status_code == 401
     assert allowed.status_code != 401
 
 
