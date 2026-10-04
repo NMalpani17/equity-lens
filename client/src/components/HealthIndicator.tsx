@@ -12,8 +12,9 @@ import { cn } from "@/lib/utils";
 /** Re-check this often while the ai-service is waking. */
 const WAKING_POLL_MS = 5000;
 
-type Overall = "checking" | "ok" | "waking" | "degraded";
-type ServiceState = "checking" | "ok" | "waking up" | "down" | "unreachable";
+type Overall = "checking" | "ok" | "waking" | "degraded" | "unknown";
+type ServiceState =
+  "checking" | "ok" | "waking up" | "down" | "unreachable" | "unknown";
 
 interface Status {
   overall: Overall;
@@ -30,6 +31,11 @@ function toStatus(body: unknown): Status {
     dependencies?: { aiService?: { status?: unknown } };
   } | null;
   const ai = data?.dependencies?.aiService?.status;
+  // The ai-service's status is only reported with a valid session (e.g. not
+  // after the token expired); don't guess.
+  if (data?.status === "ok" && ai === undefined) {
+    return { overall: "unknown", api: "ok", ai: "unknown" };
+  }
   if (data?.status === "ok" && ai === "ok") {
     return { overall: "ok", api: "ok", ai: "ok" };
   }
@@ -46,6 +52,7 @@ const OVERALL_LABEL: Record<Overall, string> = {
   ok: "All systems ok",
   waking: "AI service waking up",
   degraded: "Degraded",
+  unknown: "AI service status unknown",
 };
 
 const DOT_CLASS: Record<Overall, string> = {
@@ -53,6 +60,7 @@ const DOT_CLASS: Record<Overall, string> = {
   ok: "bg-emerald-600",
   waking: "bg-amber-600 motion-safe:animate-pulse",
   degraded: "bg-destructive",
+  unknown: "bg-muted-foreground/40",
 };
 
 /**

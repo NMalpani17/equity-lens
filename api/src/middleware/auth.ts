@@ -51,6 +51,32 @@ export async function requireAuth(
 }
 
 /**
+ * Identify the user when a valid token is present, but never reject: requests
+ * without a token, or with an invalid one, continue unauthenticated (no
+ * `req.userId`). For public routes that reveal more to signed-in users.
+ */
+export async function optionalAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const token = bearerToken(req.headers.authorization);
+  if (token) {
+    try {
+      const { userId, isAnonymous } = await verifySupabaseToken(token);
+      req.userId = userId;
+      req.isAnonymous = isAnonymous;
+    } catch (error) {
+      logger.debug(
+        { err: error instanceof Error ? error.message : error },
+        "optional auth: ignoring invalid token",
+      );
+    }
+  }
+  next();
+}
+
+/**
  * Read the authenticated user id from a request. Throws if it is missing, which
  * indicates a route was not guarded by `requireAuth` (a programming error).
  */

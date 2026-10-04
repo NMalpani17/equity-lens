@@ -7,7 +7,7 @@ All application routes are served by the Express gateway at
 
 | Method   | Path                                               | Description                                                      |
 | -------- | -------------------------------------------------- | ---------------------------------------------------------------- |
-| `GET`    | `/api/health`                                      | Health of the API and downstream AI service.                     |
+| `GET`    | `/api/health`                                      | API health; plus the AI service's for signed-in users.           |
 | `GET`    | `/api/live`                                        | Liveness only (no dependency checks); the platform health check. |
 | `POST`   | `/api/warmup`                                      | Wake the ai-service ahead of the first question (signed in).     |
 | `GET`    | `/api/holdings`                                    | List all holdings (lots).                                        |
@@ -49,7 +49,8 @@ The gateway verifies the token against the Supabase project's JWKS (configured
 via `SUPABASE_URL`) and scopes every query to the token's user. A missing or
 invalid token returns `401` `unauthorized`. Every holding is owned by a user;
 requesting or editing another user's holding returns `404` (never `403`, so the
-existence of others' data isn't revealed). `/api/health` is public.
+existence of others' data isn't revealed). `/api/health` and `/api/live` are
+public; `/api/health` reports the AI service's status only to signed-in users.
 
 **Account deletion:** `DELETE /api/account` removes the user's holdings and
 `demo_seeds` row in a transaction, then deletes the Supabase auth user via the
@@ -374,19 +375,26 @@ failures are reported per-ticker in the `errors` map.
 
 ## Health check
 
-The health endpoint exercises the full chain:
-
-```
-client → GET http://localhost:3001/api/health → GET http://localhost:8000/health
-```
+Without a session, `/api/health` reports only the API itself and never calls
+the AI service, so anonymous traffic can't wake it (it scales to zero):
 
 ```bash
 curl http://localhost:3001/api/health
+# {"status":"ok","service":"equity-lens-api","version":"0.1.0"}
+```
+
+With a valid access token (a real or anonymous demo user) it exercises the full
+chain, `client → GET /api/health → GET <ai-service>/health`. An invalid token is
+treated like no token:
+
+```bash
+curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:3001/api/health
 # {"status":"ok","service":"equity-lens-api","version":"0.1.0",
 #  "dependencies":{"aiService":{"status":"ok", ...}}}
 ```
 
-If the AI service is down, the API responds `503` with `status: "degraded"`. The
+If the AI service is down, a signed-in caller gets `503` with
+`status: "degraded"`. The
 client's top-bar status dot shows that as amber "waking up" (the ai-service
 scales to zero) and re-checks every 5 s until it is `ok`; it's red when the API
 can't be reached or reports another problem.

@@ -13,10 +13,21 @@ import type { HealthResponse } from "../types.js";
 const VERSION = "0.1.0";
 
 /**
- * Report the API's health and the health of its downstream dependencies.
- * Returns 200 when everything is healthy, 503 when a dependency is down.
+ * Report the API's health, and for signed-in users (real or demo) the
+ * ai-service's too: 200 when everything is healthy, 503 when it's down.
+ * Anonymous callers get only the API's own status, so they can never wake
+ * the ai-service (it scales to zero and is billed while running).
  */
-export async function getHealth(_req: Request, res: Response): Promise<void> {
+export async function getHealth(req: Request, res: Response): Promise<void> {
+  if (!req.userId) {
+    const body: HealthResponse = {
+      status: "ok",
+      service: "equity-lens-api",
+      version: VERSION,
+    };
+    res.status(200).json(body);
+    return;
+  }
   const aiService = await getAiServiceHealth();
   const healthy = aiService.status === "ok";
 

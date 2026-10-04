@@ -85,8 +85,8 @@ export interface HealthResponse {
   status: "ok" | "degraded";
   service: string;
   version: string;
-  /** Health of downstream dependencies. */
-  dependencies: {
+  /** Health of downstream dependencies (signed-in callers only). */
+  dependencies?: {
     aiService: ServiceHealth;
   };
 }

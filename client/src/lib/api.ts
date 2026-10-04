@@ -81,7 +81,8 @@ export interface HealthResponse {
   status: "ok" | "degraded";
   service: string;
   version: string;
-  dependencies: {
+  /** Only reported to signed-in (or demo) users. */
+  dependencies?: {
     aiService: ServiceHealth;
   };
 }
@@ -94,7 +95,10 @@ export interface HealthResponse {
  * non-OK statuses (the API itself being unreachable) are treated as errors.
  */
 export async function getApiHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_URL}/api/health`);
+  // The ai-service's status is only reported to signed-in (or demo) users.
+  const response = await fetch(`${API_URL}/api/health`, {
+    headers: await authHeaders(),
+  });
   if (!response.ok && response.status !== 503) {
     throw new Error(`API health request failed: ${response.status}`);
   }

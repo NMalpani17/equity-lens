@@ -85,6 +85,20 @@ describe("HealthIndicator", () => {
     await waitFor(() => expect(dotState()).toBe("degraded"));
   });
 
+  it("is grey (unknown) when the API doesn't report the AI service", async () => {
+    // e.g. the session expired, so /api/health answers like for anonymous callers
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      respond({ status: "ok", service: "equity-lens-api", version: "0.1.0" }),
+    );
+
+    render(<HealthIndicator />);
+
+    await waitFor(() => expect(dotState()).toBe("unknown"));
+    expect(dot()).toHaveAccessibleName(
+      "System status: AI service status unknown. API: ok. AI service: unknown.",
+    );
+  });
+
   it("shows per-service status in a tooltip on keyboard focus", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(respond(waking, 503));
     render(<HealthIndicator pollMs={60_000} />);
