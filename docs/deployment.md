@@ -205,48 +205,160 @@ requests for 3 s (`--timeout-graceful-shutdown 3`), stops background ingestion
 (3 s), and flushes traces (2 s). An interrupted ingestion job is left as
 `indexing` and is reclaimed after 30 minutes (`AI_SERVICE_RAG_STALE_JOB_MINUTES`).
 
-Example commands (fill in the project and image paths; secrets created
-beforehand with `gcloud secrets create`):
+### First deployment, step by step
+
+This is the sequence used for the first production deploy. Replace `PROJECT`
+with the project id and `TAG` with the git short SHA being deployed. Every
+command takes `--project PROJECT`; it's omitted below for readability.
+
+**1. Enable the APIs**
 
 ```bash
-# One service account per service.
-gcloud iam service-accounts create equity-lens-api --display-name "Equity Lens api"
-gcloud iam service-accounts create equity-lens-ai-service --display-name "Equity Lens ai-service"
-
-# Each account may read only its own secrets (repeat per secret), e.g.:
-gcloud secrets add-iam-policy-binding internal-token \
-  --member serviceAccount:equity-lens-api@PROJECT.iam.gserviceaccount.com \
-  --role roles/secretmanager.secretAccessor
-gcloud secrets add-iam-policy-binding internal-token \
-  --member serviceAccount:equity-lens-ai-service@PROJECT.iam.gserviceaccount.com \
-  --role roles/secretmanager.secretAccessor
-
-gcloud run deploy equity-lens-ai-service --region us-east4 \
-  --image us-east4-docker.pkg.dev/PROJECT/equity-lens/ai-service:TAG \
-  --service-account equity-lens-ai-service@PROJECT.iam.gserviceaccount.com \
-  --no-cpu-throttling --cpu-boost --cpu 1 --memory 1Gi \
-  --min-instances 0 --max-instances 1 --concurrency 20 --timeout 600 \
-  --no-allow-unauthenticated \
-  --set-env-vars AI_SERVICE_ENVIRONMENT=production \
-  --set-secrets AI_SERVICE_INTERNAL_TOKEN=internal-token:latest,AI_SERVICE_GEMINI_API_KEY=gemini-api-key:latest,DATABASE_URL=database-url:latest,AI_SERVICE_PINECONE_API_KEY=pinecone-api-key:latest,AI_SERVICE_EQUIBLES_API_KEY=equibles-api-key:latest,AI_SERVICE_FINNHUB_API_KEY=finnhub-api-key:latest
-
-# Only the api's service account may invoke the ai-service.
-gcloud run services add-iam-policy-binding equity-lens-ai-service --region us-east4 \
-  --member serviceAccount:equity-lens-api@PROJECT.iam.gserviceaccount.com \
-  --role roles/run.invoker
-
-gcloud run deploy equity-lens-api --region us-east4 \
-  --image us-east4-docker.pkg.dev/PROJECT/equity-lens/api:TAG \
-  --service-account equity-lens-api@PROJECT.iam.gserviceaccount.com \
-  --cpu-throttling --cpu 1 --memory 512Mi \
-  --min-instances 0 --max-instances 2 --concurrency 80 --timeout 600 \
-  --allow-unauthenticated \
-  --set-env-vars AI_SERVICE_URL=https://AI_SERVICE_URL,AI_SERVICE_ID_TOKEN_AUDIENCE=https://AI_SERVICE_URL,CLIENT_ORIGIN=https://PROJECT.vercel.app,SUPABASE_URL=https://REF.supabase.co \
-  --set-secrets AI_SERVICE_INTERNAL_TOKEN=internal-token:latest,DATABASE_URL=database-url:latest,DIRECT_URL=direct-url:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
+  secretmanager.googleapis.com iam.googleapis.com
 ```
 
-Configure the HTTP startup and liveness probes from the table in the console
-(Edit & deploy new revision → Container → Health checks) or a service YAML.
+**2. Artifact Registry repo, cleanup policy, Docker login**
+
+```bash
+gcloud artifacts repositories create equity-lens --repository-format=docker \
+  --location=us-east4 --description="Equity Lens images"
+gcloud artifacts repositories set-cleanup-policies equity-lens --location=us-east4 \
+  --policy=cleanup-policy.json --no-dry-run
+gcloud auth configure-docker us-east4-docker.pkg.dev --quiet
+```
+
+`cleanup-policy.json` keeps the 2 most recent images per package (the
+running revision and one to roll back to) and deletes everything else,
+untagged images included. Keep rules always win over delete rules, and
+Artifact Registry applies the policy periodically, not on every push.
+
+```json
+[
+  {
+    "name": "delete-untagged",
+    "action": { "type": "Delete" },
+    "condition": { "tagState": "UNTAGGED" }
+  },
+  {
+    "name": "delete-old-versions",
+    "action": { "type": "Delete" },
+    "condition": { "tagState": "ANY" }
+  },
+  {
+    "name": "keep-2-most-recent",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": { "keepCount": 2 }
+  }
+]
+```
+
+`docker push` calls the `docker-credential-gcloud` helper from the Cloud SDK's
+`bin` directory, so that directory must be on `PATH` in the shell that pushes
+(open a new terminal after installing the SDK).
+
+**3. One service account per service** (no project-level roles)
+
+```bash
+gcloud iam service-accounts create equity-lens-api --display-name="Equity Lens api (Cloud Run)"
+gcloud iam service-accounts create equity-lens-ai-service --display-name="Equity Lens ai-service (Cloud Run)"
+```
+
+**4. Secrets**, each readable only by the service(s) that need it. Create
+every secret from a temporary file and delete the file afterwards, so values
+never appear in shell history or output:
+
+```bash
+gcloud secrets create NAME --replication-policy=automatic --data-file=TMPFILE
+gcloud secrets add-iam-policy-binding NAME \
+  --member=serviceAccount:SA@PROJECT.iam.gserviceaccount.com \
+  --role=roles/secretmanager.secretAccessor
+```
+
+| Secret                      | Value                                                         | Readable by     |
+| --------------------------- | ------------------------------------------------------------- | --------------- |
+| `internal-token`            | New random value for production (`secrets.token_urlsafe(48)`) | api, ai-service |
+| `database-url`              | Supabase pooled URL (the same value both services use)        | api, ai-service |
+| `direct-url`                | Supabase session/direct URL                                   | api             |
+| `supabase-service-role-key` | Supabase `service_role` key                                   | api             |
+| `gemini-api-key`            | Gemini API key                                                | ai-service      |
+| `pinecone-api-key`          | Pinecone API key                                              | ai-service      |
+| `equibles-api-key`          | Equibles API key                                              | ai-service      |
+| `finnhub-api-key`           | Finnhub API key                                               | ai-service      |
+| `langfuse-secret-key`       | Langfuse secret key                                           | ai-service      |
+| `trace-user-salt`           | HMAC key for hashed user ids in traces                        | ai-service      |
+
+**5. Build and push the images**
+
+```bash
+IMG=us-east4-docker.pkg.dev/PROJECT/equity-lens
+docker build --provenance=false --sbom=false -t $IMG/ai-service:TAG ai-service
+docker build --provenance=false --sbom=false -t $IMG/api:TAG api
+docker push $IMG/ai-service:TAG
+docker push $IMG/api:TAG
+```
+
+`--provenance=false --sbom=false` pushes a single image manifest instead of an
+index with attestations, which the "delete untagged" cleanup rule would treat as
+clutter.
+
+**6. Deploy the ai-service (private) and let only the api invoke it**
+
+Non-secret settings go in a temporary `--env-vars-file` (YAML `KEY: "value"`
+lines): `AI_SERVICE_ENVIRONMENT: "production"`,
+`AI_SERVICE_LANGFUSE_PUBLIC_KEY`, `AI_SERVICE_LANGFUSE_BASE_URL`.
+
+```bash
+gcloud run deploy equity-lens-ai-service --image $IMG/ai-service:TAG --region us-east4 \
+  --service-account equity-lens-ai-service@PROJECT.iam.gserviceaccount.com \
+  --no-allow-unauthenticated --no-cpu-throttling --cpu-boost --cpu 1 --memory 1Gi \
+  --min-instances 0 --max-instances 1 --concurrency 20 --timeout 600 \
+  --execution-environment gen2 --env-vars-file ai-env.yaml \
+  --set-secrets AI_SERVICE_INTERNAL_TOKEN=internal-token:latest,DATABASE_URL=database-url:latest,AI_SERVICE_GEMINI_API_KEY=gemini-api-key:latest,AI_SERVICE_PINECONE_API_KEY=pinecone-api-key:latest,AI_SERVICE_EQUIBLES_API_KEY=equibles-api-key:latest,AI_SERVICE_FINNHUB_API_KEY=finnhub-api-key:latest,AI_SERVICE_LANGFUSE_SECRET_KEY=langfuse-secret-key:latest,AI_SERVICE_TRACE_USER_SALT=trace-user-salt:latest \
+  --startup-probe=httpGet.path=/health,periodSeconds=2,timeoutSeconds=2,failureThreshold=30 \
+  --liveness-probe=httpGet.path=/health,periodSeconds=30,timeoutSeconds=5,failureThreshold=3
+
+gcloud run services add-iam-policy-binding equity-lens-ai-service --region us-east4 \
+  --member=serviceAccount:equity-lens-api@PROJECT.iam.gserviceaccount.com \
+  --role=roles/run.invoker
+```
+
+Cloud Run gives each service two URLs (`https://SERVICE-PROJECTNUMBER.REGION.run.app`
+and a hash-based `…a.run.app`); either works as the ID-token audience. Use the
+project-number URL for both `AI_SERVICE_URL` and `AI_SERVICE_ID_TOKEN_AUDIENCE`.
+The probes need no token: Cloud Run runs them inside the instance.
+
+**7. Deploy the api (public)**
+
+`api-env.yaml`: `NODE_ENV: "production"`, `AI_SERVICE_URL` and
+`AI_SERVICE_ID_TOKEN_AUDIENCE` (both the ai-service URL), `CLIENT_ORIGIN`,
+`SUPABASE_URL`.
+
+```bash
+gcloud run deploy equity-lens-api --image $IMG/api:TAG --region us-east4 \
+  --service-account equity-lens-api@PROJECT.iam.gserviceaccount.com \
+  --allow-unauthenticated --cpu-throttling --no-cpu-boost --cpu 1 --memory 512Mi \
+  --min-instances 0 --max-instances 2 --concurrency 80 --timeout 600 \
+  --execution-environment gen2 --env-vars-file api-env.yaml \
+  --set-secrets AI_SERVICE_INTERNAL_TOKEN=internal-token:latest,DATABASE_URL=database-url:latest,DIRECT_URL=direct-url:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest \
+  --startup-probe=httpGet.path=/api/live,periodSeconds=2,timeoutSeconds=2,failureThreshold=15 \
+  --liveness-probe=httpGet.path=/api/live,periodSeconds=30,timeoutSeconds=5,failureThreshold=3
+```
+
+Pass `--no-cpu-boost` explicitly: gcloud turns startup CPU boost on for new
+services by default.
+
+**8. Verify**
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" https://API_URL/api/live   # 200
+curl -s -o /dev/null -w "%{http_code}" https://AI_URL/health      # 403: Google rejects it
+curl -s https://API_URL/api/health                                # api status only
+```
+
+With a signed-in (or anonymous demo) user's access token, `/api/health` also
+returns `"aiService": {"status": "ok", "environment": "production"}`, which
+proves the ID token, the invoker binding and the internal token work together.
 
 Check that nothing else can invoke the ai-service: `gcloud run services
 get-iam-policy equity-lens-ai-service --region us-east4` should list
