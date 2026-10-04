@@ -262,7 +262,9 @@ pip install pre-commit # for the Python (Ruff) hook
 
 Husky + lint-staged format/lint staged JS/TS; Ruff handles Python. CI runs lint,
 typecheck, and tests for `client` and `api`, plus Ruff lint/format and Pytest
-for `ai-service`, on every push and PR.
+for `ai-service`, on every push and PR. After CI passes on `main`, the Deploy
+workflow ships changed services to Cloud Run
+([deployment.md](deployment.md#continuous-deployment)).
 
 ### Docker
 

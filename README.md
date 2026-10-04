@@ -109,6 +109,13 @@ api's service account can invoke.
   `--no-allow-unauthenticated`. The api calls it with a cached Google ID token
   from the Cloud Run metadata server plus a separate internal-token header, and
   only the api's service account holds `roles/run.invoker`; direct calls get a 403.
+- **Keyless continuous deployment.** After CI passes on `main`, GitHub
+  Actions deploys only the service whose folder changed (ai-service before
+  api), runs pending Prisma migrations first as a Cloud Run job, updates only
+  the image, and fails unless `/api/live` returns 200. It signs in through
+  Workload Identity Federation as a deployer limited to these two services, so
+  there are no service account keys.
+  [How it works and how to roll back](docs/deployment.md#continuous-deployment).
 - **Cold-start handling.** The ai-service scales to zero. A rate-limited
   warm-up fires after sign-in, chat streams start immediately with SSE
   keepalives and a connect timeout, and both services shut down within Cloud
@@ -145,5 +152,5 @@ Supabase setup, transcript seeding and per-service commands are in
 - [docs/evaluation.md](docs/evaluation.md): retrieval and chat evals: methods,
   how to run them, and results
 - [docs/api.md](docs/api.md): API reference (gateway and ai-service)
-- [docs/deployment.md](docs/deployment.md): Docker images and the Vercel, Cloud
-  Run and Supabase setup
+- [docs/deployment.md](docs/deployment.md): Docker images, the Vercel, Cloud
+  Run and Supabase setup, and continuous deployment

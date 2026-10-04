@@ -119,6 +119,9 @@ Branch name prefixes match the commit types: `feat/`, `fix/`, `chore/`, `docs/`.
 - **CI** (`.github/workflows/ci.yml`) runs on every push and PR: lint, typecheck,
   and tests for `client` and `api`, plus Ruff lint/format and Pytest for
   `ai-service`. PRs should merge only when CI is green.
+- **CD** (`.github/workflows/deploy.yml`) deploys the api and ai-service to
+  Cloud Run after CI passes on `main` (or by hand), via Workload Identity
+  Federation. Details in `docs/deployment.md#continuous-deployment`.
 - **Pre-commit hooks** (Husky + lint-staged) auto-format and lint staged JS/TS
   files; Ruff (via the `pre-commit` framework) does the same for Python. Install
   once with `npm install` at the repo root (sets up Husky) and

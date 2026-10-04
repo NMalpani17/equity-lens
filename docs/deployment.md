@@ -18,7 +18,9 @@ Browser ──▶ client (Vercel, static) ──▶ api (Cloud Run) ──▶ ai
 
 Deploy order for a release that changes the schema: **migrations → ai-service →
 api → client**. Otherwise any order works; the api tolerates a missing or cold
-ai-service.
+ai-service. The api and ai-service deploy automatically in that order on every
+push to `main` ([Continuous deployment](#continuous-deployment)); Vercel
+deploys the client.
 
 ## Docker images
 
@@ -185,9 +187,11 @@ requests for 3 s (`--timeout-graceful-shutdown 3`), stops background ingestion
 
 ### First deployment, step by step
 
-This is the sequence used for the first production deploy. Replace `PROJECT`
-with the project id and `TAG` with the git short SHA being deployed. Every
-command takes `--project PROJECT`; it's omitted below for readability.
+This is the sequence used for the first production deploy. Later deploys only
+change the image and go through [continuous deployment](#continuous-deployment).
+Replace `PROJECT` with the project id and `TAG` with the git SHA being
+deployed. Every command takes `--project PROJECT`; it's omitted below for
+readability.
 
 **1. Enable the APIs**
 
@@ -373,6 +377,131 @@ Check that nothing else can invoke the ai-service: `gcloud run services
 get-iam-policy equity-lens-ai-service --region us-east4` should list
 `roles/run.invoker` for the api's service account only (no `allUsers`).
 
+## Continuous deployment
+
+`.github/workflows/deploy.yml` deploys the api and ai-service to Cloud Run
+with GitHub Actions. It signs in through Workload Identity Federation, so no
+service account key exists anywhere.
+
+### How it works
+
+- **Trigger**: when the `CI` workflow finishes successfully for a push to
+  `main` (`workflow_run`), or by hand (below). It deploys the commit CI tested.
+  Deploys never overlap: a newer run waits for the running one
+  (`concurrency: deploy-cloud-run`, no cancelling).
+- **What gets deployed**: each service is compared with the commit it is
+  running (its image tag is the commit SHA). A service deploys only if its
+  folder (`api/` or `ai-service/`) changed since then, so commits whose CI run
+  was cancelled or whose deploy failed are picked up by the next run. A run
+  for a commit older than the one deployed does nothing, so production never
+  goes backwards. Docs-only changes deploy nothing.
+- **Order**: migrations → ai-service → api → verify. A failed step stops
+  everything after it.
+- **Migrations**: if `api/prisma/migrations/` changed, the workflow builds the
+  `migrate` target (`api-migrate:<sha>`), points the `equity-lens-migrate`
+  Cloud Run job at it and runs it with `--wait` (`prisma migrate deploy`). If
+  the job fails, nothing is deployed.
+- **Deploy**: `docker build --provenance=false --sbom=false`, tag
+  `<service>:<full commit sha>`, push, then `gcloud run services update
+SERVICE --image …`. Only the image changes; every setting, env var, secret,
+  probe and IAM binding stays as it is. gcloud waits until the new revision
+  passes its startup probe. If traffic was pinned to an older revision (a
+  rollback), the workflow sends 100% to the new one and logs a warning.
+- **Verify**: `GET /api/live` must return `200` (with retries) or the run
+  fails. The new revision names are printed in the log and the run summary.
+
+The job summary shows the deploy plan (running commit and decision per
+target) and the new revisions.
+
+### Roll back
+
+Each deploy creates a new revision; rolling back sends traffic to an earlier
+one without rebuilding anything:
+
+```bash
+gcloud run revisions list --service equity-lens-api --region us-east4 --limit 5
+gcloud run services update-traffic equity-lens-api --region us-east4 \
+  --to-revisions equity-lens-api-00012-abc=100
+```
+
+Same for `equity-lens-ai-service`. This pins traffic to that revision; the
+next deploy from `main` (the fix) unpins it and serves the new revision. To
+undo the rollback without a new deploy, use `--to-latest`.
+
+- Migrations are not rolled back, so keep schema changes backward compatible
+  with the previous revision (add first, remove in a later release).
+- The Artifact Registry cleanup policy keeps the 2 most recent images per
+  package, so the previous revision can always be rolled back to. Older
+  revisions may no longer be able to start new instances.
+
+### Run it by hand
+
+GitHub → **Actions** → **Deploy** → **Run workflow**, branch `main`, and pick
+`services`: `changed` (default, same detection as above), `ai-service`, `api`
+or `both` (redeploys even if nothing changed). Or from a terminal:
+
+```bash
+gh workflow run deploy.yml --ref main -f services=both
+```
+
+Pending migrations always run first. Runs from any other branch are refused.
+
+### One-time setup
+
+Already done for production; kept here so it can be recreated. `PROJECT` and
+`PROJECT_NUMBER` come from `gcloud projects describe PROJECT`; `REPO_ID` and
+`OWNER_ID` are the numeric ids from
+`https://api.github.com/repos/NMalpani17/equity-lens` (`.id`, `.owner.id`).
+`DEPLOYER` is `equity-lens-deployer@PROJECT.iam.gserviceaccount.com`.
+
+```bash
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com
+gcloud iam service-accounts create equity-lens-deployer --display-name="Equity Lens CD (GitHub Actions)"
+
+# GitHub OIDC: only this repo, only main, only deploy.yml
+gcloud iam workload-identity-pools create github --location=global --display-name="GitHub Actions"
+gcloud iam workload-identity-pools providers create-oidc equity-lens --location=global \
+  --workload-identity-pool=github --display-name="NMalpani17/equity-lens" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_id=assertion.repository_id,attribute.ref=assertion.ref,attribute.workflow_ref=assertion.workflow_ref" \
+  --attribute-condition="assertion.repository_id == 'REPO_ID' && assertion.repository_owner_id == 'OWNER_ID' && assertion.ref == 'refs/heads/main' && assertion.workflow_ref == 'NMalpani17/equity-lens/.github/workflows/deploy.yml@refs/heads/main'"
+gcloud iam service-accounts add-iam-policy-binding DEPLOYER --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository_id/REPO_ID"
+
+# Least privilege, each on one resource (no project-level roles)
+gcloud artifacts repositories add-iam-policy-binding equity-lens --location=us-east4 \
+  --member=serviceAccount:DEPLOYER --role=roles/artifactregistry.writer
+gcloud run services add-iam-policy-binding equity-lens-api --region us-east4 \
+  --member=serviceAccount:DEPLOYER --role=roles/run.developer
+gcloud run services add-iam-policy-binding equity-lens-ai-service --region us-east4 \
+  --member=serviceAccount:DEPLOYER --role=roles/run.developer
+gcloud iam service-accounts add-iam-policy-binding equity-lens-api@PROJECT.iam.gserviceaccount.com \
+  --member=serviceAccount:DEPLOYER --role=roles/iam.serviceAccountUser
+gcloud iam service-accounts add-iam-policy-binding equity-lens-ai-service@PROJECT.iam.gserviceaccount.com \
+  --member=serviceAccount:DEPLOYER --role=roles/iam.serviceAccountUser
+
+# Migration job: runs as the api's service account (already reads both URLs).
+# The placeholder image is replaced on the first run that migrates.
+gcloud run jobs create equity-lens-migrate --region us-east4 \
+  --image us-docker.pkg.dev/cloudrun/container/job:latest \
+  --service-account equity-lens-api@PROJECT.iam.gserviceaccount.com \
+  --set-secrets DATABASE_URL=database-url:latest,DIRECT_URL=direct-url:latest \
+  --max-retries 0 --task-timeout 10m
+gcloud run jobs add-iam-policy-binding equity-lens-migrate --region us-east4 \
+  --member=serviceAccount:DEPLOYER --role=roles/run.developer
+```
+
+`roles/run.developer` can update a service or job but not change its IAM
+policy, so the workflow can't make the ai-service public. Then add three
+repository **variables** (Settings → Secrets and variables → Actions →
+Variables; they're identifiers, not secrets):
+
+| Variable           | Value                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `GCP_PROJECT_ID`   | `PROJECT`                                                                                     |
+| `GCP_WIF_PROVIDER` | `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/equity-lens` |
+| `GCP_DEPLOYER_SA`  | `equity-lens-deployer@PROJECT.iam.gserviceaccount.com`                                        |
+
 ## Vercel (client)
 
 | Setting          | Value                                                                                                                  |
@@ -411,16 +540,17 @@ project's JWKS).
 The api's Prisma schema owns every table (chat, holdings, RAG state). Apply
 migrations **before** deploying an api or ai-service revision that needs them,
 never from a serving container (the runtime image has no Prisma CLI).
+[Continuous deployment](#continuous-deployment) does this automatically when
+`api/prisma/migrations/` changes. To run them by hand:
 
 ```bash
 # Option A: from a workstation (needs DIRECT_URL and DATABASE_URL in api/.env)
 npm --prefix api run prisma:deploy           # = prisma migrate deploy
 
-# Option B: as a Cloud Run job using the migrate image
-docker build -t us-east4-docker.pkg.dev/PROJECT/equity-lens/api-migrate:TAG --target migrate api
-gcloud run jobs deploy equity-lens-migrate --region us-east4 \
-  --image us-east4-docker.pkg.dev/PROJECT/equity-lens/api-migrate:TAG \
-  --set-secrets DATABASE_URL=database-url:latest,DIRECT_URL=direct-url:latest
+# Option B: the equity-lens-migrate Cloud Run job (runs as equity-lens-api)
+IMG=us-east4-docker.pkg.dev/PROJECT/equity-lens/api-migrate:TAG
+docker build --provenance=false --sbom=false -t $IMG --target migrate api && docker push $IMG
+gcloud run jobs update equity-lens-migrate --region us-east4 --image $IMG
 gcloud run jobs execute equity-lens-migrate --region us-east4 --wait
 ```
 
