@@ -8,7 +8,10 @@ companies, earnings calls and your holdings, with every claim cited.
 **Live demo: [equitylens-research.vercel.app](https://equitylens-research.vercel.app)**.
 Click **Try demo**; no sign-up needed.
 
-![Equity Lens portfolio dashboard in demo mode, with the system status dot next to the user avatar](docs/screenshot.png)
+<p align="center">
+  <img src="docs/images/dashboard.png" width="63%" alt="Portfolio dashboard in demo mode: total value, total gain/loss, today's change and holdings count above a table of AAPL, MSFT, TSLA and NVDA positions with expandable lots, average buy price, live price, market value and gains in green or red">
+  <img src="docs/images/chat-answer.png" width="34%" alt="AI analyst answer to how NVIDIA's stock did over six months and what management said about data center demand: price figures, bullet points with inline citation markers from the latest earnings call, and a six-month NVDA price chart">
+</p>
 
 ## Features
 
@@ -16,13 +19,23 @@ Click **Try demo**; no sign-up needed.
   markets and your portfolio, with inline citations that open the exact
   transcript passage. A LangGraph agent calls read-only tools over MCP:
   transcript search, quotes, price history, portfolio, company and fiscal-period
-  resolution, and exact position math.
+  resolution, and exact position math. It gives facts and trade-offs, never
+  buy/sell advice.
+
+  <p>
+    <img src="docs/images/citation-source.png" width="44%" alt="Citation popover over a chat answer showing source [1]: the Nvidia Q2 FY2027 earnings call, dated 2026-08-26, prepared remarks by CFO Colette Kress, with the full quoted transcript passage">
+    <img src="docs/images/guardrail.png" width="53%" alt="The analyst answering 'Should I sell my TSLA and buy more NVDA?' without a recommendation: a table of both positions, the concentration, realized-loss and reallocation figures, an allocation chart, and a not-financial-advice note">
+  </p>
+
 - **Earnings-call search (RAG).** Hybrid dense + keyword search over each
   company's last four earnings calls, reranked, with speaker and quarter on
   every passage. New tickers are indexed on demand.
 - **Charts in answers.** Price and allocation charts built only from tool data,
   never from numbers the model wrote. They stream in with the answer and are
   saved with the conversation.
+
+  <img src="docs/images/portfolio-chat.png" width="600" alt="The analyst answering 'How is my portfolio allocated?' with a table of each holding's shares, market value, weight, gain/loss and return, a one-line insight, and a horizontal bar chart of portfolio weights">
+
 - **Portfolio tracking.** Lots grouped into positions with average cost,
   gain/loss and today's change. Live quotes come from Finnhub, with a yfinance
   fallback.
@@ -86,6 +99,9 @@ api's service account can invoke.
   agent steps, tool calls with latency, and model calls with tokens and cost.
   User ids are hashed, and portfolio values, contact details and secrets are
   masked before export. Tracing is optional and can't slow or break a turn.
+
+  <img src="docs/images/langfuse-trace.png" width="600" alt="Langfuse trace of one chat turn: the LangGraph tree of model calls and tool calls (resolve_company, get_price_history, search_transcripts) with per-step latency and cost, total latency, cost and tokens, a hashed user id, and the arguments and response of each tool call">
+
 - **Guardrails.** Off-topic and prompt-injection requests are refused before
   the model runs. The agent gives facts rather than buy/sell advice, and daily
   per-user and global caps bound the spend.
