@@ -69,27 +69,27 @@ be stored that way.
 
 ### api (Cloud Run)
 
-| Name                           | Purpose                                                                                                  | Required                         | Secret  | Production value / source                                                                                              |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------- | -------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                     | Runtime mode                                                                                             | Yes                              | No      | `production` (set in the image)                                                                                        |
-| `PORT`                         | Listen port                                                                                              | Set by Cloud Run                 | No      | Injected by Cloud Run (`8080`); do not set                                                                             |
-| `LOG_LEVEL`                    | Pino log level                                                                                           | No (`info`)                      | No      | `info`                                                                                                                 |
-| `AI_SERVICE_URL`               | ai-service base URL                                                                                      | Yes                              | No      | The ai-service Cloud Run URL, `https://equity-lens-ai-service-….run.app`                                               |
-| `AI_SERVICE_INTERNAL_TOKEN`    | Shared secret on every api → ai-service call (`X-Internal-Token`)                                        | Yes                              | **Yes** | `python -c "import secrets; print(secrets.token_urlsafe(32))"`; same value in both                                     |
-| `AI_SERVICE_ID_TOKEN_AUDIENCE` | Audience of the Google ID token sent as `Authorization: Bearer` on every ai-service call (Cloud Run IAM) | Yes in production; empty locally | No      | The ai-service's Cloud Run URL, exactly as `AI_SERVICE_URL` (`https://equity-lens-ai-service-….run.app`)               |
-| `CLIENT_ORIGIN`                | CORS: comma-separated exact origins (no wildcards)                                                       | Yes                              | No      | `https://equity-lens-pi.vercel.app,http://localhost:5173` (production client, plus local dev against the deployed api) |
-| `DATABASE_URL`                 | Supabase **pooled** URL (port 6543, `?pgbouncer=true`)                                                   | Yes                              | **Yes** | Supabase → Project Settings → Database → Connection string (Transaction pooler)                                        |
-| `DIRECT_URL`                   | Supabase direct/session URL (port 5432), used by migrations                                              | Yes (validated at start)         | **Yes** | Supabase → Connection string (Session pooler or direct)                                                                |
-| `SUPABASE_URL`                 | Verifies user JWTs (JWKS, issuer)                                                                        | Yes                              | No      | `https://<project-ref>.supabase.co`                                                                                    |
-| `SUPABASE_SERVICE_ROLE_KEY`    | Admin key (deletes auth users on account deletion)                                                       | Yes                              | **Yes** | Supabase → Project Settings → API Keys → `service_role`                                                                |
-| `CHAT_DAILY_LIMIT`             | Turns per signed-in user per UTC day                                                                     | No (`20`)                        | No      | `20`                                                                                                                   |
-| `CHAT_DAILY_LIMIT_ANON`        | Turns per demo (anonymous) user per UTC day                                                              | No (`5`)                         | No      | `5`                                                                                                                    |
-| `CHAT_GLOBAL_DAILY_LIMIT`      | Turns across all users per UTC day (Gemini budget)                                                       | No (`60`)                        | No      | `60`                                                                                                                   |
-| `CHAT_MAX_MESSAGE_CHARS`       | Max characters per message                                                                               | No (`2000`)                      | No      | `2000`                                                                                                                 |
-| `CHAT_HISTORY_MESSAGES`        | Prior final answers sent as context                                                                      | No (`6`)                         | No      | `6`                                                                                                                    |
-| `CHAT_HISTORY_TOKENS`          | Token budget for that context                                                                            | No (`3000`)                      | No      | `3000`                                                                                                                 |
-| `CHAT_CONNECT_TIMEOUT_MS`      | Wait for the ai-service to start answering (covers a cold start)                                         | No (`30000`)                     | No      | `30000`                                                                                                                |
-| `CHAT_KEEPALIVE_MS`            | SSE keepalive comment interval during a turn                                                             | No (`10000`)                     | No      | `10000`                                                                                                                |
+| Name                           | Purpose                                                                                                  | Required                         | Secret  | Production value / source                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- | -------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                     | Runtime mode                                                                                             | Yes                              | No      | `production` (set in the image)                                                                                             |
+| `PORT`                         | Listen port                                                                                              | Set by Cloud Run                 | No      | Injected by Cloud Run (`8080`); do not set                                                                                  |
+| `LOG_LEVEL`                    | Pino log level                                                                                           | No (`info`)                      | No      | `info`                                                                                                                      |
+| `AI_SERVICE_URL`               | ai-service base URL                                                                                      | Yes                              | No      | The ai-service Cloud Run URL, `https://equity-lens-ai-service-….run.app`                                                    |
+| `AI_SERVICE_INTERNAL_TOKEN`    | Shared secret on every api → ai-service call (`X-Internal-Token`)                                        | Yes                              | **Yes** | `python -c "import secrets; print(secrets.token_urlsafe(32))"`; same value in both                                          |
+| `AI_SERVICE_ID_TOKEN_AUDIENCE` | Audience of the Google ID token sent as `Authorization: Bearer` on every ai-service call (Cloud Run IAM) | Yes in production; empty locally | No      | The ai-service's Cloud Run URL, exactly as `AI_SERVICE_URL` (`https://equity-lens-ai-service-….run.app`)                    |
+| `CLIENT_ORIGIN`                | CORS: comma-separated exact origins (no wildcards)                                                       | Yes                              | No      | `https://equitylens-research.vercel.app,http://localhost:5173` (production client, plus local dev against the deployed api) |
+| `DATABASE_URL`                 | Supabase **pooled** URL (port 6543, `?pgbouncer=true`)                                                   | Yes                              | **Yes** | Supabase → Project Settings → Database → Connection string (Transaction pooler)                                             |
+| `DIRECT_URL`                   | Supabase direct/session URL (port 5432), used by migrations                                              | Yes (validated at start)         | **Yes** | Supabase → Connection string (Session pooler or direct)                                                                     |
+| `SUPABASE_URL`                 | Verifies user JWTs (JWKS, issuer)                                                                        | Yes                              | No      | `https://<project-ref>.supabase.co`                                                                                         |
+| `SUPABASE_SERVICE_ROLE_KEY`    | Admin key (deletes auth users on account deletion)                                                       | Yes                              | **Yes** | Supabase → Project Settings → API Keys → `service_role`                                                                     |
+| `CHAT_DAILY_LIMIT`             | Turns per signed-in user per UTC day                                                                     | No (`20`)                        | No      | `20`                                                                                                                        |
+| `CHAT_DAILY_LIMIT_ANON`        | Turns per demo (anonymous) user per UTC day                                                              | No (`5`)                         | No      | `5`                                                                                                                         |
+| `CHAT_GLOBAL_DAILY_LIMIT`      | Turns across all users per UTC day (Gemini budget)                                                       | No (`60`)                        | No      | `60`                                                                                                                        |
+| `CHAT_MAX_MESSAGE_CHARS`       | Max characters per message                                                                               | No (`2000`)                      | No      | `2000`                                                                                                                      |
+| `CHAT_HISTORY_MESSAGES`        | Prior final answers sent as context                                                                      | No (`6`)                         | No      | `6`                                                                                                                         |
+| `CHAT_HISTORY_TOKENS`          | Token budget for that context                                                                            | No (`3000`)                      | No      | `3000`                                                                                                                      |
+| `CHAT_CONNECT_TIMEOUT_MS`      | Wait for the ai-service to start answering (covers a cold start)                                         | No (`30000`)                     | No      | `30000`                                                                                                                     |
+| `CHAT_KEEPALIVE_MS`            | SSE keepalive comment interval during a turn                                                             | No (`10000`)                     | No      | `10000`                                                                                                                     |
 
 ### ai-service (Cloud Run)
 
@@ -336,8 +336,8 @@ The probes need no token: Cloud Run runs them inside the instance.
 `SUPABASE_URL`.
 
 **Production client origin**: the client is served from
-`https://equity-lens-pi.vercel.app`, so the api runs with
-`CLIENT_ORIGIN=https://equity-lens-pi.vercel.app,http://localhost:5173`. To
+`https://equitylens-research.vercel.app`, so the api runs with
+`CLIENT_ORIGIN=https://equitylens-research.vercel.app,http://localhost:5173`. To
 change only this variable on the running service, use a flags file. The comma
 in the value would otherwise split `--update-env-vars`, and on Windows `cmd.exe`
 strips gcloud's `^DELIM^` escape:
@@ -345,7 +345,7 @@ strips gcloud's `^DELIM^` escape:
 ```yaml
 # client-origin-flags.yaml
 --update-env-vars:
-  CLIENT_ORIGIN: "https://equity-lens-pi.vercel.app,http://localhost:5173"
+  CLIENT_ORIGIN: "https://equitylens-research.vercel.app,http://localhost:5173"
 ```
 
 ```bash
@@ -359,7 +359,7 @@ the browser blocks it:
 
 ```bash
 curl -s -D - -o /dev/null -X OPTIONS https://API_URL/api/holdings \
-  -H "Origin: https://equity-lens-pi.vercel.app" \
+  -H "Origin: https://equitylens-research.vercel.app" \
   -H "Access-Control-Request-Method: POST" \
   -H "Access-Control-Request-Headers: authorization,content-type"
 ```
@@ -420,10 +420,10 @@ Supabase's redirect URLs) or test against production only.
 
 Authentication → URL Configuration:
 
-| Setting       | Value                                                                                                                 |
-| ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Site URL      | `https://equity-lens-pi.vercel.app` (or your custom domain)                                                           |
-| Redirect URLs | `https://equity-lens-pi.vercel.app/reset-password`, plus `http://localhost:5173/reset-password` for local development |
+| Setting       | Value                                                                                                                      |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Site URL      | `https://equitylens-research.vercel.app` (or your custom domain)                                                           |
+| Redirect URLs | `https://equitylens-research.vercel.app/reset-password`, plus `http://localhost:5173/reset-password` for local development |
 
 Also keep: Email provider enabled, **Anonymous sign-ins** enabled ("Try
 demo"), and asymmetric JWT signing keys (the api verifies tokens against the
