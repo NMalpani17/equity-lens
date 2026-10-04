@@ -112,33 +112,10 @@ Required and production-relevant settings:
 | `AI_SERVICE_LANGFUSE_BASE_URL`   | Langfuse host                                                    | No (`https://cloud.langfuse.com`)  | No      | Your Langfuse region URL                    |
 | `AI_SERVICE_TRACE_USER_SALT`     | HMAC key for hashed user ids in traces                           | No (recommended with tracing)      | **Yes** | Any random string; keep it stable           |
 
-Tuning settings (all optional; defaults shown):
-
-| Name                                                                                                 | Default                                                       |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `AI_SERVICE_CHAT_MODEL`                                                                              | `google_genai:gemini-3.8-flash`                               |
-| `AI_SERVICE_CHAT_THINKING_LEVEL`                                                                     | `low`                                                         |
-| `AI_SERVICE_CHAT_MAX_OUTPUT_TOKENS` / `_TIMEOUT_SECONDS`                                             | `2048` / `60`                                                 |
-| `AI_SERVICE_CHAT_MAX_MODEL_CALLS` / `_MAX_TOOL_CALLS`                                                | `6` / `8`                                                     |
-| `AI_SERVICE_CHAT_MAX_MESSAGE_CHARS`                                                                  | `2000`                                                        |
-| `AI_SERVICE_CHAT_HISTORY_MAX_MESSAGES` / `_HISTORY_MAX_TOKENS`                                       | `6` / `3000`                                                  |
-| `AI_SERVICE_CHAT_SEARCH_TOP_K` / `_INDEX_WAIT_SECONDS`                                               | `5` / `45`                                                    |
-| `AI_SERVICE_LANGFUSE_SAMPLE_RATE` / `_TIMEOUT_SECONDS` / `_FLUSH_INTERVAL_SECONDS`                   | `1.0` / `2` / `5`                                             |
-| `AI_SERVICE_SHUTDOWN_INGESTION_TIMEOUT_SECONDS` / `_SHUTDOWN_TRACING_TIMEOUT_SECONDS`                | `3` / `2`                                                     |
-| `AI_SERVICE_FINNHUB_BASE_URL`, `_MARKET_CACHE_TTL_SECONDS`, `_MARKET_HTTP_TIMEOUT_SECONDS`           | `https://finnhub.io/api/v1`, `60`, `5`                        |
-| `AI_SERVICE_EQUIBLES_BASE_URL`, `_EQUIBLES_TIMEOUT_SECONDS`                                          | `https://api.equibles.com/v1`, `20`                           |
-| `AI_SERVICE_DB_POOL_MAX_SIZE`                                                                        | `5`                                                           |
-| `AI_SERVICE_GEMINI_EMBEDDING_MODEL`, `_EMBEDDING_DIMENSION`, `_EMBEDDING_BATCH_SIZE`                 | `gemini-embedding-001`, `768`, `100`                          |
-| `AI_SERVICE_GEMINI_EMBED_TEXTS_PER_MINUTE`, `_GEMINI_EMBED_TOKENS_PER_MINUTE`                        | `100`, `24000`                                                |
-| `AI_SERVICE_PINECONE_INDEX_NAME`, `_CLOUD`, `_REGION`                                                | `equity-lens-transcripts`, `aws`, `us-east-1`                 |
-| `AI_SERVICE_PINECONE_NAMESPACE`, `_PLAIN_NAMESPACE`                                                  | `transcripts`, `transcripts-noctx`                            |
-| `AI_SERVICE_PINECONE_SPARSE_MODEL`, `_RERANK_MODEL`                                                  | `pinecone-sparse-english-v0`, `bge-reranker-v2-m3`            |
-| `AI_SERVICE_SPARSE_BATCH_SIZE`, `_UPSERT_BATCH_SIZE`                                                 | `96`, `100`                                                   |
-| `AI_SERVICE_RAG_QUARTERS`, `_CHUNK_TOKENS`, `_CHUNK_OVERLAP_TOKENS`, `_CANDIDATE_K`, `_HYBRID_ALPHA` | `4`, `400`, `60`, `25`, `0.75`                                |
-| `AI_SERVICE_RAG_DAILY_INGESTION_CAP`, `_STALE_JOB_MINUTES`, `_INGESTION_WORKERS`                     | `8`, `30`, `2`                                                |
-| `AI_SERVICE_RAG_QUERY_CACHE_SIZE`, `_QUERY_CACHE_TTL_SECONDS`                                        | `512`, `3600`                                                 |
-| `AI_SERVICE_RAG_MAX_RETRIES`, `_RETRY_BASE_SECONDS`, `_RETRY_MAX_SECONDS`                            | `5`, `1.0`, `30`                                              |
-| `AI_SERVICE_APP_NAME`, `AI_SERVICE_HOST`, `AI_SERVICE_PORT`                                          | Not used by the container (uvicorn's flags and `PORT` decide) |
+Tuning settings are all optional. Every setting and its default is in
+`ai-service/app/config.py`; `ai-service/.env.example` documents the common
+ones. `AI_SERVICE_APP_NAME`, `AI_SERVICE_HOST` and `AI_SERVICE_PORT` aren't
+used by the container (uvicorn's flags and `PORT` decide).
 
 ### client (Vercel)
 
