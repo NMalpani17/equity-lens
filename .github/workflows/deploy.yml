@@ -43,7 +43,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       ai_service: ${{ steps.detect.outputs.ai_service }}
@@ -55,7 +55,7 @@ jobs:
         run: |
           echo "::error::Deploys run from main only (Workload Identity Federation rejects other refs)."
           exit 1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }}
           fetch-depth: 0 # diff against the deployed commit
@@ -69,10 +69,10 @@ jobs:
     name: Migrate database
     needs: changes
     if: needs.changes.outputs.migrations == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }}
       - uses: ./.github/actions/setup-gcp
@@ -95,12 +95,12 @@ jobs:
     if: >-
       !cancelled() && needs.changes.outputs.ai_service == 'true' &&
       contains(fromJSON('["success", "skipped"]'), needs.migrate.result)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       revision: ${{ steps.deploy.outputs.revision }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }}
       - uses: ./.github/actions/setup-gcp
@@ -117,12 +117,12 @@ jobs:
       !cancelled() && needs.changes.outputs.api == 'true' &&
       contains(fromJSON('["success", "skipped"]'), needs.migrate.result) &&
       contains(fromJSON('["success", "skipped"]'), needs.deploy-ai-service.result)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       revision: ${{ steps.deploy.outputs.revision }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }}
       - uses: ./.github/actions/setup-gcp
@@ -139,10 +139,10 @@ jobs:
       contains(fromJSON('["success", "skipped"]'), needs.deploy-ai-service.result) &&
       contains(fromJSON('["success", "skipped"]'), needs.deploy-api.result) &&
       (needs.deploy-ai-service.result == 'success' || needs.deploy-api.result == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }}
       - uses: ./.github/actions/setup-gcp
