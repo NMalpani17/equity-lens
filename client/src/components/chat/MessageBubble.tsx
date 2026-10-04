@@ -50,7 +50,9 @@ export function MessageBubble({
   const fallback = isStreaming ? null : fallbackText(message);
   const note = STATUS_NOTES[message.status];
   const usedTools = !isStreaming ? message.toolCalls : [];
-  const charts = message.charts ?? [];
+  // Charts arrive mid-stream; show them once the text is done so the growing
+  // answer doesn't push an already-drawn chart down the page.
+  const charts = isStreaming ? [] : (message.charts ?? []);
   const canRetry =
     !isStreaming && onRetry !== undefined && RETRYABLE.includes(message.status);
 

@@ -258,7 +258,7 @@ describe("ChatPage", () => {
     );
   }
 
-  it("shows a chart as soon as its tool returns and keeps the saved one", async () => {
+  it("shows a reply's chart only after the answer finishes streaming", async () => {
     let emit: (event: ChatStreamEvent) => void = () => {};
     let finish: () => void = () => {};
     api.streamMessage.mockImplementation(async (_id, _content, onEvent) => {
@@ -271,8 +271,12 @@ describe("ChatPage", () => {
     sendViaComposer("How has NVDA traded over 6 months?");
     await waitFor(() => expect(api.streamMessage).toHaveBeenCalled());
     emit({ type: "chart", chart: priceChart });
+    emit({ type: "token", text: "NVDA rose 20%" });
 
-    expect(await screen.findByText("NVDA · 6 months")).toBeInTheDocument();
+    // The text streams in with no chart (or chart placeholder) above or below it.
+    expect(await screen.findByText("NVDA rose 20%")).toBeInTheDocument();
+    expect(screen.queryByText("NVDA · 6 months")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Loading chart" })).toBeNull();
 
     emit({
       type: "done",
@@ -287,7 +291,7 @@ describe("ChatPage", () => {
     expect(
       await screen.findByText("NVDA rose 20% over six months."),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("NVDA · 6 months")).toHaveLength(1);
+    expect(await screen.findAllByText("NVDA · 6 months")).toHaveLength(1);
   });
 
   it("shows saved charts when an earlier conversation is reopened", async () => {
