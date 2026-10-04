@@ -145,7 +145,3 @@ Supabase setup, transcript seeding and per-service commands are in
   Run and Supabase setup
 - [CLAUDE.md](CLAUDE.md): conventions, workflow and code-quality rules for
   contributors
-
-## License
-
-[MIT](LICENSE)
