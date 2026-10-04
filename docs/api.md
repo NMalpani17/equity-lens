@@ -38,8 +38,9 @@ Errors are JSON with a machine-readable `error` code and a plain-language
 
 ### Authentication
 
-All `/api/holdings`, `/api/portfolio`, `/api/account` and `/api/rag` routes require a **Supabase access
-token** sent as a bearer header:
+Every route except `/api/health` and `/api/live` (holdings, portfolio, account,
+RAG, chat and warm-up) requires a **Supabase access token** sent as a bearer
+header:
 
 ```
 Authorization: Bearer <supabase-access-token>
@@ -52,8 +53,9 @@ requesting or editing another user's holding returns `404` (never `403`, so the
 existence of others' data isn't revealed). `/api/health` and `/api/live` are
 public; `/api/health` reports the AI service's status only to signed-in users.
 
-**Account deletion:** `DELETE /api/account` removes the user's holdings and
-`demo_seeds` row in a transaction, then deletes the Supabase auth user via the
+**Account deletion:** `DELETE /api/account` removes the user's holdings,
+conversations (with their messages), chat usage events and `demo_seeds` row in a
+transaction, then deletes the Supabase auth user via the
 Admin API (using the server-only `SUPABASE_SERVICE_ROLE_KEY`). It returns `204`.
 
 **Demo users:** anonymous ("Try demo") tokens carry an `is_anonymous` claim. The
@@ -355,10 +357,10 @@ Transcript search (same semantics as the gateway routes above, snake_case JSON):
 
 Chat and MCP:
 
-| Method | Path           | Description                                                                                              |
-| ------ | -------------- | -------------------------------------------------------------------------------------------------------- |
-| `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, message, history, portfolio}`. |
-| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                 |
+| Method | Path           | Description                                                                                                                          |
+| ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, conversation_id, message, history, portfolio, time_zone}`. |
+| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                                             |
 
 `/chat/stream` emits `token`, `tool_start`, `tool_progress`, `tool_end`,
 `chart` (snake_case fields), `done` (`content`, `status`, `citations`,

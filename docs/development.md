@@ -1,7 +1,7 @@
 # Development
 
-Local setup, running services, and common scripts. For a fast path, see the
-[Quick start](../README.md#quick-start) in the README.
+Local setup, running services, and common scripts. For a fast path, see
+[Run locally](../README.md#run-locally) in the README.
 
 ## Prerequisites
 
@@ -10,8 +10,9 @@ Local setup, running services, and common scripts. For a fast path, see the
 - Git
 - A **Supabase** project (free tier) for the PostgreSQL database
 - A free **Finnhub** API key ([finnhub.io](https://finnhub.io/dashboard))
-- For transcript search: free **Equibles**, **Gemini** and **Pinecone** keys
-  (see [Transcript search (RAG) setup](#transcript-search-rag-setup))
+- For transcript search and chat: **Equibles** and **Pinecone** keys (free
+  tiers) and a **Gemini** key with billing enabled (see
+  [Transcript search (RAG) setup](#transcript-search-rag-setup))
 
 ## Environment files
 
@@ -69,27 +70,27 @@ with **Gemini** (dense) and Pinecone's hosted sparse model (keywords), and
 stores both in one **Pinecone** serverless index for hybrid search, reranked
 with Pinecone's `bge-reranker-v2-m3`.
 
-1. **Keys** (all free tiers) in `ai-service/.env`:
+1. **Keys** in `ai-service/.env`:
    - `AI_SERVICE_EQUIBLES_API_KEY` — [equibles.com/dashboard/apikeys](https://equibles.com/dashboard/apikeys)
-     (100 requests/day, resets 00:00 UTC; one new ticker costs ~5 requests).
-   - `AI_SERVICE_GEMINI_API_KEY` — [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-     The free tier counts **each embedded text** as a request (100/minute), so
-     the service throttles itself to `AI_SERVICE_GEMINI_EMBED_TEXTS_PER_MINUTE`
-     (default 100) plus an estimated-token budget
-     (`AI_SERVICE_GEMINI_EMBED_TOKENS_PER_MINUTE`, default 24,000), and honors
-     Gemini's `retryDelay` on 429s. **The free tier also caps embeddings at
-     1,000 texts per day** (reset at midnight Pacific), and query embeddings
-     count too. The ten default tickers are ~2,400 chunks, so on the free tier
-     seeding spans several days (the seed stops cleanly when the daily quota
-     runs out and resumes on the next run). Enabling billing on the Gemini
-     project removes this limit; embedding everything costs well under $1.
+     (free tier: 100 requests/day, resets 00:00 UTC; one new ticker costs ~5 requests).
+   - `AI_SERVICE_GEMINI_API_KEY` — [aistudio.google.com/apikey](https://aistudio.google.com/apikey),
+     on a project with **billing enabled** (as the live deployment uses;
+     embedding the ten default tickers costs well under $1). The service throttles
+     embeddings to `AI_SERVICE_GEMINI_EMBED_TEXTS_PER_MINUTE` (default 100)
+     plus an estimated-token budget (`AI_SERVICE_GEMINI_EMBED_TOKENS_PER_MINUTE`,
+     default 24,000), and honors Gemini's `retryDelay` on 429s. _If you run it
+     yourself on the free tier:_ each embedded text counts as a request
+     (100/minute) and embeddings are capped at 1,000 texts per day (reset at
+     midnight Pacific; query embeddings count too). The ten default tickers are
+     ~2,400 chunks, so seeding then spans several days (the seed stops cleanly
+     when the daily quota runs out and resumes on the next run).
    - `AI_SERVICE_PINECONE_API_KEY` — [app.pinecone.io](https://app.pinecone.io).
      The Starter plan only allows indexes in AWS `us-east-1` and 500 rerank
      requests/month; when reranking is unavailable search falls back to hybrid
      order (`reranked: false`).
    - `DATABASE_URL` — the **same Supabase database** as the API (pooled URL is
      fine; the service disables prepared statements for the pooler).
-2. **Tables:** RAG state lives in Postgres, not on local disk (Render's
+2. **Tables:** RAG state lives in Postgres, not on local disk (Cloud Run's
    filesystem is ephemeral). Prisma owns the schema, so run the API migrations:
    `npm --prefix api run prisma:migrate` (dev) or `prisma:deploy` (prod). This
    creates `rag_tickers`, `rag_ingestion_jobs`, `rag_daily_usage` and
@@ -206,7 +207,7 @@ Browser ──SSE── api (auth, caps, Prisma) ──SSE + X-Internal-Token─
    Defaults: `gemini-3.8-flash` with `low` thinking and a 2,048-token output cap
    (thinking included). The provider is swappable: `AI_SERVICE_CHAT_MODEL` is a
    LangChain `provider:model` string for `init_chat_model`. A typical turn uses
-   ~6–7K input and ~0.5K output tokens, about $0.006 at 3.8 Flash's 2026 prices.
+   ~6–7K input and ~0.3K output tokens, about $0.006 at 3.8 Flash's 2026 prices.
    When prepaid credits run out Gemini returns HTTP 402, shown to users as
    "out of credits".
 
@@ -352,7 +353,8 @@ spans are exported by a background thread with a short timeout
 (`AI_SERVICE_LANGFUSE_TIMEOUT_SECONDS`, 2); if Langfuse is slow or down, the
 turn doesn't wait. Client start-up errors disable tracing with a warning, every
 SDK call is guarded, LangChain logs (not raises) callback errors, and shutdown
-waits at most 3 seconds. `AI_SERVICE_LANGFUSE_SAMPLE_RATE` (1.0) traces a
+waits at most 2 seconds
+(`AI_SERVICE_SHUTDOWN_TRACING_TIMEOUT_SECONDS`). `AI_SERVICE_LANGFUSE_SAMPLE_RATE` (1.0) traces a
 fraction of turns. Tests cover the disabled path, a handler that raises on
 every callback, an unreachable host, and the masked spans the real SDK would
 export (`ai-service/tests/test_tracing.py`, `test_trace_masking.py`).
@@ -496,7 +498,7 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 cd api
 npm install                 # also runs `prisma generate`
-npm run prisma:migrate      # creates the holdings table in Supabase (first run)
+npm run prisma:migrate      # creates/updates the tables in Supabase (first run)
 npm run dev
 ```
 
@@ -526,7 +528,8 @@ details, see [api.md](./api.md).
 | `ai-service/` | `ruff check .` | `ruff format .`  | `pytest`       | (type hints)        |
 
 ai-service operational scripts (run from `ai-service/`):
-`python -m scripts.seed_transcripts` and `python -m scripts.eval_rag`.
+`python -m scripts.seed_transcripts`, `python -m scripts.eval_rag` and
+`python -m scripts.eval_chat`.
 
 ## Pre-commit hooks & CI
 
@@ -538,7 +541,8 @@ pip install pre-commit # for the Python (Ruff) hook
 ```
 
 Husky + lint-staged format/lint staged JS/TS; Ruff handles Python. CI runs lint,
-typecheck, and tests for all three services on every push and PR.
+typecheck, and tests for `client` and `api`, plus Ruff lint/format and Pytest
+for `ai-service`, on every push and PR.
 
 ## Docker
 
