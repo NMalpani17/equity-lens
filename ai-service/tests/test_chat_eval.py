@@ -157,6 +157,95 @@ def test_citation_and_tool_failures_are_reported() -> None:
     assert results["citation_tickers"].detail == "cited ['AMD']"
 
 
+COMPARISON_ANSWER = """NVIDIA raised its outlook as Blackwell ramped.
+
+### New
+- Vera CPU is in full production [1].
+
+### Raised / improved
+- Revenue guidance rose to $54 billion [1], from $45 billion [2].
+
+### Unchanged
+- Gross margin stayed at 75% [1][2].
+
+Nothing to report in the retrieved passages: Lowered / worse, No longer mentioned.
+"""
+
+
+def test_quarter_comparison_answer_passes_structure_and_quarter_checks() -> None:
+    record = turn(
+        COMPARISON_ANSWER,
+        citations=[citation(1), citation(2, quarter=1)],
+        tool_calls=[ToolCallRecord(name="compare_quarters")],
+    )
+    spec = case(
+        tools=["compare_quarters"],
+        citations=True,
+        citation_periods=["FY2027Q2", "FY2027Q1"],
+        min_citation_quarters=2,
+        max_citation_quarters=2,
+        comparison_sections=True,
+    )
+
+    assert failed(run_checks(spec, record)) == []
+
+
+@pytest.mark.parametrize(
+    ("content", "detail"),
+    [
+        # A heading outside the five.
+        ("### Summary\nx\n### New\n- y [1]", "unexpected heading 'summary'"),
+        # Out of order.
+        ("### Unchanged\n- x [1]\n### New\n- y [1]", "out of order"),
+        # Repeated.
+        ("### New\n- x [1]\n### New\n- y [1]", "out of order"),
+        # Only "Unchanged": no change heading.
+        ("### Unchanged\n- x [1]", "no change headings"),
+        # No headings at all.
+        ("Revenue rose [1].", "no change headings"),
+    ],
+)
+def test_comparison_structure_failures(content: str, detail: str) -> None:
+    record = turn(content, citations=[citation(1)])
+
+    result = {r.name: r for r in run_checks(case(comparison_sections=True), record)}
+
+    assert result["comparison_sections"].passed is False
+    assert detail in result["comparison_sections"].detail
+
+
+def test_bold_line_headings_count_and_bold_text_inside_a_line_does_not() -> None:
+    content = (
+        "**Lowered / worse:**\n- Margins fell [1].\n\n"
+        "**Note:** guidance is preliminary [1]."
+    )
+    record = turn(content, citations=[citation(1)])
+
+    results = run_checks(case(comparison_sections=True), record)
+
+    assert failed(results) == []
+
+
+def test_citation_periods_and_max_quarters_catch_a_wrong_quarter() -> None:
+    record = turn(
+        "x [1] y [2] z [3]",
+        citations=[citation(1), citation(2, quarter=1), citation(3, quarter=4)],
+    )
+    spec = case(
+        citations=True,
+        citation_periods=["FY2027Q2", "FY2027Q1"],
+        min_citation_quarters=2,
+        max_citation_quarters=2,
+    )
+
+    results = {r.name: r for r in run_checks(spec, record)}
+
+    assert failed(results.values()) == ["citation_quarters", "citation_periods"]
+    assert results["citation_periods"].detail == (
+        "cited ['FY2027Q1', 'FY2027Q2', 'FY2027Q4']"
+    )
+
+
 @pytest.mark.parametrize(
     ("record", "refused"),
     [

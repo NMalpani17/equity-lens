@@ -10,6 +10,18 @@ from .models import CheckResult, EvalCase, TurnRecord
 _ADVICE_NOTE_RE = re.compile(r"not (?:financial|investment) advice", re.IGNORECASE)
 _MARKER_RE = re.compile(r"\[(\d{1,3})\]")
 _NUMBER_RE = re.compile(r"-?\$?\d[\d,]*(?:\.\d+)?")
+# A Markdown heading or a line that is entirely bold ("**New**" / "**New:**").
+_HEADING_RE = re.compile(
+    r"^\s*(?:#{1,6}\s+(?P<hash>.+?)|\*\*(?P<bold>[^*]+)\*\*:?)\s*$"
+)
+# The quarter-comparison headings, in their required order.
+COMPARISON_HEADINGS = (
+    "new",
+    "raised",
+    "lowered",
+    "no longer mentioned",
+    "unchanged",
+)
 # A model-written redirect or refusal (the guardrail replies are matched exactly).
 _REDIRECT_RE = re.compile(
     r"\b(can(?:'|no)t|cannot|unable to|not able to|won't|don't have access|"
@@ -38,6 +50,8 @@ def run_checks(case: EvalCase, turn: TurnRecord) -> list[CheckResult]:
         results.append(_result("no_tools", not turn.tool_calls, str(turn.tool_names)))
     if expect.citations:
         results.extend(_citation_expectations(case, turn))
+    if expect.comparison_sections:
+        results.append(_check_comparison_sections(turn))
     if expect.refusal:
         results.append(_result("refusal", is_refusal(turn), "answered instead"))
     if expect.clarify:
@@ -97,18 +111,57 @@ def _citation_expectations(case: EvalCase, turn: TurnRecord) -> list[CheckResult
             }
         )
         results.append(_result("citation_tickers", not wrong, f"cited {wrong}"))
-    if expect.min_citation_quarters:
-        quarters = {
-            (c.get("fiscal_year"), c.get("fiscal_quarter")) for c in turn.citations
-        }
+    quarters = {
+        f"FY{c.get('fiscal_year')}Q{c.get('fiscal_quarter')}" for c in turn.citations
+    }
+    if expect.min_citation_quarters or expect.max_citation_quarters:
+        low = expect.min_citation_quarters
+        high = expect.max_citation_quarters or len(quarters)
         results.append(
             _result(
                 "citation_quarters",
-                len(quarters) >= expect.min_citation_quarters,
+                low <= len(quarters) <= high,
                 f"{len(quarters)} quarter(s) cited",
             )
         )
+    if expect.citation_periods:
+        results.append(
+            _result(
+                "citation_periods",
+                quarters == set(expect.citation_periods),
+                f"cited {sorted(quarters)}",
+            )
+        )
     return results
+
+
+def comparison_headings(content: str) -> list[str]:
+    """The answer's heading lines (Markdown or all-bold), lower-cased."""
+    headings = []
+    for line in content.splitlines():
+        match = _HEADING_RE.match(line)
+        if match:
+            title = match.group("hash") or match.group("bold")
+            headings.append(title.strip(" *:").lower())
+    return headings
+
+
+def _check_comparison_sections(turn: TurnRecord) -> CheckResult:
+    """Every heading is one of the five comparison headings, in order, and
+    at least one change heading (New / Raised / Lowered / No longer
+    mentioned) is present."""
+    headings = comparison_headings(turn.content)
+    order = [
+        next((i for i, h in enumerate(COMPARISON_HEADINGS) if title.startswith(h)), -1)
+        for title in headings
+    ]
+    if -1 in order:
+        other = headings[order.index(-1)]
+        return _result("comparison_sections", False, f"unexpected heading {other!r}")
+    if order != sorted(set(order)):
+        return _result("comparison_sections", False, f"out of order: {headings}")
+    has_change = any(i < COMPARISON_HEADINGS.index("unchanged") for i in order)
+    return _result("comparison_sections", has_change, "no change headings")
 
 
 def is_refusal(turn: TurnRecord) -> bool:

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 Category = Literal[
     "transcript_fact",
     "multi_quarter",
+    "quarter_comparison",
     "portfolio",
     "position_math",
     "advice",
@@ -29,6 +30,12 @@ class Expectations(BaseModel):
     min_citations: int = 1
     citation_tickers: list[str] = Field(default_factory=list)
     min_citation_quarters: int = 0
+    # 0 = no limit; with min_citation_quarters, pins the number of quarters.
+    max_citation_quarters: int = 0
+    # Exactly these quarters must be cited, e.g. ["FY2026Q2", "FY2026Q1"].
+    citation_periods: list[str] = Field(default_factory=list)
+    # Quarter-comparison answer structure (see comparison_sections()).
+    comparison_sections: bool = False
     # Refuse or redirect (guardrail reply or a model redirect).
     refusal: bool = False
     # Ask a clarifying question instead of answering.

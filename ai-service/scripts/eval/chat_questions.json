@@ -78,12 +78,55 @@
     "category": "multi_quarter",
     "question": "Compare what Meta said about capital expenditures in its last two earnings calls.",
     "expect": {
-      "tools": ["search_transcripts"],
+      "any_tools": ["search_transcripts", "compare_quarters"],
       "citations": true,
       "citation_tickers": ["META"],
       "min_citation_quarters": 2
     },
     "reference": "States what each of the two most recent calls said about capex and how it changed."
+  },
+  {
+    "id": "q01",
+    "category": "quarter_comparison",
+    "question": "What changed in NVIDIA's latest earnings call compared with the previous quarter?",
+    "expect": {
+      "tools": ["compare_quarters"],
+      "citations": true,
+      "min_citations": 3,
+      "citation_tickers": ["NVDA"],
+      "citation_periods": ["FY2027Q2", "FY2027Q1"],
+      "comparison_sections": true
+    },
+    "reference": "Compares Q2 FY2027 with Q1 FY2027 under the change headings (only those with content), citing each claim from the quarter it describes and calling missing topics not discussed in the retrieved passages rather than dropped."
+  },
+  {
+    "id": "q02",
+    "category": "quarter_comparison",
+    "question": "Compare Microsoft's last two quarters: what changed on margins?",
+    "expect": {
+      "tools": ["compare_quarters"],
+      "citations": true,
+      "min_citations": 2,
+      "citation_tickers": ["MSFT"],
+      "citation_periods": ["FY2026Q4", "FY2026Q3"],
+      "comparison_sections": true,
+      "mentions": ["margin"]
+    },
+    "reference": "Focuses on gross and operating margin commentary in Q4 FY2026 vs Q3 FY2026, with what improved, worsened or stayed the same, each claim cited to its quarter."
+  },
+  {
+    "id": "q03",
+    "category": "quarter_comparison",
+    "question": "What changed between Apple's Q1 and Q2 FY2026 earnings calls?",
+    "expect": {
+      "tools": ["compare_quarters"],
+      "citations": true,
+      "min_citations": 3,
+      "citation_tickers": ["AAPL"],
+      "citation_periods": ["FY2026Q2", "FY2026Q1"],
+      "comparison_sections": true
+    },
+    "reference": "Compares exactly Q2 FY2026 with Q1 FY2026 (not Apple's latest call), under the change headings, citing both quarters."
   },
   {
     "id": "p01",
