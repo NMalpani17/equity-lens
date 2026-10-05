@@ -72,7 +72,7 @@ from the expected ticker and fiscal quarter.
 
 ## Chat evaluation
 
-`ai-service/scripts/eval_chat.py` runs a labeled set of 25 questions
+`ai-service/scripts/eval_chat.py` runs a labeled set of 28 questions
 (`scripts/eval/chat_questions.json`) through the real agent — real tools,
 transcripts and Gemini — with a fixed demo portfolio, for each model compared:
 
@@ -83,13 +83,17 @@ python -m scripts.eval_chat --yes        # run it (spends Gemini credit)
 python -m scripts.eval_chat --yes --cases t01,pm01 --models google_genai:gemini-3.8-flash
 ```
 
-Categories: transcript facts, multi-quarter trends, portfolio, position math,
-buy/sell advice, off-topic, prompt injection and ambiguous companies. Each
+Categories: transcript facts, multi-quarter trends, quarter-over-quarter
+comparisons, portfolio, position math, buy/sell advice, off-topic, prompt
+injection and ambiguous companies. Each
 answer is scored two ways (`ai-service/app/services/evals/`):
 
 - **Deterministic checks**: expected tools called (and forbidden ones not),
   every `[n]` marker resolves to a returned passage, citations come from the
-  right company and enough distinct quarters, refusal or redirect when
+  right company and enough (or exactly the expected) quarters, the
+  comparison structure (every heading is one of New, Raised / improved,
+  Lowered / worse, No longer mentioned, Unchanged, in that order, with at
+  least one change heading), refusal or redirect when
   expected, a clarifying question (without searching) for ambiguous names, the
   not-financial-advice note, expected numbers (position math, portfolio
   totals) and expected charts.
@@ -104,7 +108,8 @@ against a $1.13 estimate (turns averaged ~6.4K input / ~0.3K output tokens). The
 judge is `gemini-3.1-pro-preview` when the whole run is estimated under
 `--budget` ($1.50), otherwise `gemini-3.8-flash`. During the run on-demand
 indexing is disabled (no Equibles quota) and the rerank cache is off so models
-pay the same retrieval latency; expect ~40–60 Pinecone rerank requests. Results
+pay the same retrieval latency; expect ~45–65 Pinecone rerank requests
+(each comparison case uses two). Results
 print as Markdown tables and are saved to `scripts/eval/results/` (git-ignored).
 With Langfuse on, eval turns are tagged `eval` and `eval-run:<id>` and get
 `eval_checks_passed` and `judge_*` scores.
@@ -135,6 +140,45 @@ judge scores are means over the 18 judged questions, 1–5):
 - **Decision:** keep `gemini-3.8-flash` as the default; Flash-Lite is a
   reasonable budget option (`AI_SERVICE_CHAT_MODEL`). The run cost $0.46
   ($0.22 agent turns, $0.24 judge).
+
+### Quarter comparison results
+
+The three `quarter_comparison` cases were added after the full run above and
+run on their own on 2026-10-04 (`20261004T235917Z`; `gemini-3.8-flash`, judge
+`gemini-3.1-pro-preview`):
+
+| Case  | Question                                                        | Checks | Faithfulness | Relevance | Completeness |
+| ----- | --------------------------------------------------------------- | ------ | ------------ | --------- | ------------ |
+| `q01` | NVIDIA's latest call vs the previous quarter (default quarters) | pass   | 2            | 5         | 3            |
+| `q02` | Microsoft's last two quarters, focus on margins                 | pass   | 2            | 5         | 5            |
+| `q03` | Apple Q1 vs Q2 FY2026 (explicit quarters, not the latest pair)  | pass   | 2            | 5         | 3            |
+
+- **Deterministic checks: 3/3.** Each answer called `compare_quarters`, cited
+  exactly the two compared quarters, and used only the five headings in order
+  (headings without content left out, the empty categories named in a closing
+  line).
+- **The faithfulness scores of 2 are mostly a judge-evidence limit, not
+  invented figures.** The judge sees at most 12,000 characters of evidence per
+  answer (`_MAX_EVIDENCE_CHARS` in `app/services/evals/judge.py`); these
+  answers cite 11–16 passages (~17–22K characters), so the judge saw only
+  passages [1]–[8] or [9]. Every figure its rationales called unsupported is
+  in a cited passage past that cut-off; we checked each against the saved
+  passages (e.g. MSFT's 58% and 60% segment operating margins in [9] and [10],
+  NVIDIA's $91 billion outlook in [9] and DSO of 60 and 45 days in [10] and
+  [13], Apple's 26-cent dividend in [7] and the 3 nm constraint in [14]). In
+  the recorded 25-case run only one answer exceeded the limit, so those
+  scores are unaffected.
+- **One real issue the judge missed:** `q03` said a CEO transition was new
+  because it "did not occur" in the Q1 FY2026 call, citing Q1 opening
+  passages. That treats absence from the retrieved passages as fact, which the
+  prompt forbids; the "No longer mentioned" item in the same answer was worded
+  correctly.
+- **Cost and budget:** $0.102 ($0.048 agent turns at ~17K input / 0.85K output
+  tokens and $0.016 per turn, $0.055 judge); 6 Pinecone reranks. Median
+  latency 9.1s.
+- **Follow-ups:** raise the judge's evidence limit (or give it the passages
+  each claim cites) and re-judge these cases; strengthen the absence rule for
+  the "New" heading.
 
 **Judge bias.** LLM judges favor answers from their own model family
 (self-preference), longer and more confident answers (verbosity bias), and

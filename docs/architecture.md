@@ -57,9 +57,10 @@ as plain sentences (`client/src/lib/chatErrors.ts`), never status codes.
 
 The chat is a LangGraph tool-calling agent. Its tools are defined once, on a
 FastMCP server (`ai-service/app/services/chat/mcp_server.py`), and are all
-read-only: `search_transcripts`, `get_quote`, `get_price_history`,
-`get_portfolio`, `resolve_company` (name → ticker, period phrase → fiscal
-quarter) and `calculate_position` (exact position math, so the model never does
+read-only: `search_transcripts`, `compare_quarters` (quarter-over-quarter
+"what changed", below), `get_quote`, `get_price_history`, `get_portfolio`,
+`resolve_company` (name → ticker, period phrase → fiscal quarter) and
+`calculate_position` (exact position math, so the model never does
 arithmetic).
 
 - **Turn-scoped context.** The agent loads the tools through
@@ -147,6 +148,54 @@ transcripts…", so the user gets an answer instead of "try again later".
 - Share classes (GOOG/GOOGL, BRK.A/BRK.B) map to the class that is indexed, so
   transcript questions never ask which class and never index a duplicate;
   the agent asks about the class only for prices.
+
+## Quarter-over-quarter comparison
+
+"What changed in NVIDIA's latest call?" questions go to the `compare_quarters`
+tool, backed by `QuarterComparisonService`
+(`ai-service/app/services/rag/comparison.py`). The service has no chat
+concepts (it returns passages grouped by theme and quarter as plain models in
+`app/models/comparison.py`), so other consumers, such as a future multi-agent
+report, can call it directly; the chat tool
+(`app/services/chat/comparison.py`) adds share-class mapping, the usual
+wait-for-indexing, turn citation ids and the model-facing text.
+
+- **Quarters.** By default the latest indexed call is compared with the one
+  before it; a requested pair (or one quarter, compared with the indexed call
+  before it) is supported. If a transcript is missing, the previous indexed
+  call is used and a note says so. A ticker that isn't indexed goes through the
+  normal on-demand flow; one indexed quarter only, a quarter that isn't
+  indexed, or the same quarter twice come back as clear statuses listing the
+  indexed quarters.
+- **Themes.** Guidance/outlook, demand and growth drivers, margins and costs,
+  capital allocation, risks/headwinds and new initiatives, plus the user's
+  focus (first, with more passages). Each theme gets its own filtered hybrid
+  query **per quarter**, so neither quarter nor any theme crowds out another.
+  The theme queries carry no company name, so their embeddings come from the
+  query caches for every ticker and quarter. A passage belongs to the theme
+  whose query ranked it highest.
+- **Rerank budget.** Pinecone Starter allows 500 reranks a month, so each
+  quarter's candidates (at most 7 themes × 6, under the reranker's 100-document
+  limit) are reranked in **one** call against a combined query: at most two
+  calls per comparison, none for a repeat within the rerank cache's TTL, and a
+  hybrid-order fallback if the reranker is unavailable. Two passages are kept
+  per theme per quarter (with a focus: three for the focus, one for the others).
+- **No relevance cut.** Single-topic searches drop reranked passages scoring
+  under 0.02, but against one combined multi-topic query the reranker scores
+  everything low: in a live check on NVDA's FY2027 Q1 and Q2 calls, the best
+  of 17 and 21 candidates scored 0.044 and 0.011, and substantive passages
+  (margin guidance, demand commentary) scored 0.001–0.007. A 0.02 cut would
+  have emptied whole quarters, so comparisons rely on the rerank order within
+  each theme and the per-theme limits instead (boilerplate such as the IR
+  welcome ranked below the kept passages).
+- **Answer rules.** The system prompt routes "what changed" questions to the
+  tool and asks for the headings New, Raised / improved, Lowered / worse, No
+  longer mentioned and Unchanged, in that order, using only those with
+  content, then one line naming the empty categories. Every claim cites a
+  passage from the quarter it describes (a change cites both). A theme with no
+  retrieved passage for a quarter is marked `NOT DISCUSSED IN THE RETRIEVED
+PASSAGES`, and the model must say "not discussed in the retrieved passages",
+  never that management dropped a topic. Forecasts keep management's wording.
 
 ## Citations and answer validation
 
