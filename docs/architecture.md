@@ -195,7 +195,10 @@ wait-for-indexing, turn citation ids and the model-facing text.
   passage from the quarter it describes (a change cites both). A theme with no
   retrieved passage for a quarter is marked `NOT DISCUSSED IN THE RETRIEVED
 PASSAGES`, and the model must say "not discussed in the retrieved passages",
-  never that management dropped a topic. Forecasts keep management's wording.
+  never that management dropped a topic. Likewise, items under "New" are
+  described only as newly discussed in the retrieved passages, never as
+  something that didn't happen or wasn't said in the earlier call. Forecasts
+  keep management's wording.
 
 ## Citations and answer validation
 

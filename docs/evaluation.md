@@ -100,7 +100,10 @@ answer is scored two ways (`ai-service/app/services/evals/`):
 - **LLM judge** (rubric 1–5: faithfulness to the answer's own cited passages
   and tool results, relevance, completeness): one call per question sees every
   model's answer labeled only "A"/"B" in a seeded random order, each with its
-  evidence. Refusal and clarification cases are scored deterministically only.
+  evidence: every passage the answer cites, in full, then each tool's result
+  (cut to 2,500 characters per call). A 60,000-character bound per answer only
+  guards against runaway prompts; anything it cuts is logged. Refusal and
+  clarification cases are scored deterministically only.
 
 The script prints a cost estimate first and refuses to run without `--yes`.
 The estimate is deliberately conservative: the 2026-10-02 run cost $0.46
@@ -144,41 +147,43 @@ judge scores are means over the 18 judged questions, 1–5):
 ### Quarter comparison results
 
 The three `quarter_comparison` cases were added after the full run above and
-run on their own on 2026-10-04 (`20261004T235917Z`; `gemini-3.8-flash`, judge
+run on their own on 2026-10-05 (`20261005T000714Z`; `gemini-3.8-flash`, judge
 `gemini-3.1-pro-preview`):
 
-| Case  | Question                                                        | Checks | Faithfulness | Relevance | Completeness |
-| ----- | --------------------------------------------------------------- | ------ | ------------ | --------- | ------------ |
-| `q01` | NVIDIA's latest call vs the previous quarter (default quarters) | pass   | 2            | 5         | 3            |
-| `q02` | Microsoft's last two quarters, focus on margins                 | pass   | 2            | 5         | 5            |
-| `q03` | Apple Q1 vs Q2 FY2026 (explicit quarters, not the latest pair)  | pass   | 2            | 5         | 3            |
+| Case  | Question                                                        | Checks | Faithfulness | Relevance | Completeness | Citations |
+| ----- | --------------------------------------------------------------- | ------ | ------------ | --------- | ------------ | --------- |
+| `q01` | NVIDIA's latest call vs the previous quarter (default quarters) | pass   | 5            | 5         | 5            | 15        |
+| `q02` | Microsoft's last two quarters, focus on margins                 | pass   | 5            | 5         | 5            | 10        |
+| `q03` | Apple Q1 vs Q2 FY2026 (explicit quarters, not the latest pair)  | pass   | 5            | 5         | 5            | 18        |
 
 - **Deterministic checks: 3/3.** Each answer called `compare_quarters`, cited
   exactly the two compared quarters, and used only the five headings in order
   (headings without content left out, the empty categories named in a closing
   line).
-- **The faithfulness scores of 2 are mostly a judge-evidence limit, not
-  invented figures.** The judge sees at most 12,000 characters of evidence per
-  answer (`_MAX_EVIDENCE_CHARS` in `app/services/evals/judge.py`); these
-  answers cite 11–16 passages (~17–22K characters), so the judge saw only
-  passages [1]–[8] or [9]. Every figure its rationales called unsupported is
-  in a cited passage past that cut-off; we checked each against the saved
-  passages (e.g. MSFT's 58% and 60% segment operating margins in [9] and [10],
-  NVIDIA's $91 billion outlook in [9] and DSO of 60 and 45 days in [10] and
-  [13], Apple's 26-cent dividend in [7] and the 3 nm constraint in [14]). In
-  the recorded 25-case run only one answer exceeded the limit, so those
-  scores are unaffected.
-- **One real issue the judge missed:** `q03` said a CEO transition was new
-  because it "did not occur" in the Q1 FY2026 call, citing Q1 opening
-  passages. That treats absence from the retrieved passages as fact, which the
-  prompt forbids; the "No longer mentioned" item in the same answer was worded
-  correctly.
-- **Cost and budget:** $0.102 ($0.048 agent turns at ~17K input / 0.85K output
-  tokens and $0.016 per turn, $0.055 judge); 6 Pinecone reranks. Median
-  latency 9.1s.
-- **Follow-ups:** raise the judge's evidence limit (or give it the passages
-  each claim cites) and re-judge these cases; strengthen the absence rule for
-  the "New" heading.
+- **Absence is never stated as fact.** Every item under "New" says it was
+  "not discussed in the retrieved [earlier quarter] passages" rather than
+  that it didn't happen or wasn't said before (checked by hand in all three
+  answers).
+- **Cost:** $0.104 ($0.050 agent turns at ~17K input / ~1K output tokens, about
+  $0.017 per turn; $0.054 judge); 6 Pinecone reranks. Latency 9.2s / 14.2s /
+  29.6s; `q02`'s 29.6s had the same tool calls and tokens as its earlier 7.9s
+  run and no retries, so it reads as a one-off upstream delay.
+
+**Why this was re-run.** The first run (2026-10-04) passed every check but
+scored faithfulness 2 on all three cases: the judge then saw at most 12,000
+characters of evidence per answer, while these answers cite 10–18 passages
+(18–27K characters), so it never saw the later passages and marked their
+figures unsupported (each was checked and found in its cited passage). That
+run also exposed one real flaw: an answer called a CEO transition new because
+it "did not occur" in the earlier call. The judge now sees every cited passage,
+and the prompt requires "New" items to be described only as newly discussed in
+the retrieved passages; this run reflects both fixes.
+
+**Earlier results are unaffected.** In the recorded 25-case run, four turns
+went past the old 12,000-character limit: in three only the tail of a tool
+result was cut, and in one (`m01`, Flash) the end of its eighth cited passage.
+All four scored faithfulness 5 regardless, so no score in that table was
+capped by the old limit.
 
 **Judge bias.** LLM judges favor answers from their own model family
 (self-preference), longer and more confident answers (verbosity bias), and
