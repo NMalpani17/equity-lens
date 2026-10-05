@@ -20,10 +20,12 @@ from app.services.chat.guardrails import ADVICE_NOTE, OFF_TOPIC_REPLY
 from app.services.chat.tools import ToolDeps, calculate_position_tool
 from app.services.evals.checks import run_checks
 from app.services.evals.judge import (
+    MAX_EVIDENCE_CHARS,
     JudgedAnswer,
     JudgeVerdict,
     assign_labels,
     build_prompt,
+    evidence_for,
     judge_case,
     llm_judge,
 )
@@ -368,6 +370,51 @@ def test_judge_scores_are_mapped_back_to_the_right_model() -> None:
     assert judgement.scores[labels["A"]].faithfulness == 5
     assert judgement.scores[labels["B"]].faithfulness == 3
     assert (judgement.input_tokens, judgement.output_tokens) == (1000, 200)
+
+
+def long_citation(i: int) -> dict:
+    return {**citation(i), "text": f"passage {i} " + "x" * 1500 + f" end {i}"}
+
+
+def test_judge_evidence_includes_every_cited_passage_in_full() -> None:
+    # 16 citations of ~1.5K characters: well past the old 12,000 cut-off.
+    record = turn(
+        "Answer.",
+        citations=[long_citation(i) for i in range(1, 17)],
+        tool_calls=[ToolCallRecord(name="compare_quarters", output="y" * 9000)],
+    )
+
+    evidence = evidence_for(record)
+
+    assert all(f"end {i}" in evidence for i in range(1, 17))
+    assert evidence.index("end 16") < evidence.index("Tool compare_quarters")
+    assert "y" * 2500 in evidence and "y" * 2501 not in evidence  # per-tool cut
+
+
+def test_judge_evidence_over_the_bound_is_cut_and_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    record = turn(
+        "Answer.",
+        case_id="q01",
+        citations=[long_citation(i) for i in range(1, 60)],
+    )
+
+    with caplog.at_level("WARNING", logger="app.services.evals.judge"):
+        evidence = evidence_for(record)
+
+    assert len(evidence) == MAX_EVIDENCE_CHARS
+    assert evidence.startswith("[1] NVDA")
+    assert "judge evidence cut for q01" in caplog.text
+
+
+def test_judge_evidence_under_the_bound_logs_nothing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="app.services.evals.judge"):
+        evidence_for(turn("Answer.", citations=[citation(1)]))
+
+    assert caplog.text == ""
 
 
 def test_a_tie_prefers_no_model() -> None:
