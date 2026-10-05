@@ -72,7 +72,7 @@ from the expected ticker and fiscal quarter.
 
 ## Chat evaluation
 
-`ai-service/scripts/eval_chat.py` runs a labeled set of 25 questions
+`ai-service/scripts/eval_chat.py` runs a labeled set of 28 questions
 (`scripts/eval/chat_questions.json`) through the real agent — real tools,
 transcripts and Gemini — with a fixed demo portfolio, for each model compared:
 
@@ -83,20 +83,27 @@ python -m scripts.eval_chat --yes        # run it (spends Gemini credit)
 python -m scripts.eval_chat --yes --cases t01,pm01 --models google_genai:gemini-3.8-flash
 ```
 
-Categories: transcript facts, multi-quarter trends, portfolio, position math,
-buy/sell advice, off-topic, prompt injection and ambiguous companies. Each
+Categories: transcript facts, multi-quarter trends, quarter-over-quarter
+comparisons, portfolio, position math, buy/sell advice, off-topic, prompt
+injection and ambiguous companies. Each
 answer is scored two ways (`ai-service/app/services/evals/`):
 
 - **Deterministic checks**: expected tools called (and forbidden ones not),
   every `[n]` marker resolves to a returned passage, citations come from the
-  right company and enough distinct quarters, refusal or redirect when
+  right company and enough (or exactly the expected) quarters, the
+  comparison structure (every heading is one of New, Raised / improved,
+  Lowered / worse, No longer mentioned, Unchanged, in that order, with at
+  least one change heading), refusal or redirect when
   expected, a clarifying question (without searching) for ambiguous names, the
   not-financial-advice note, expected numbers (position math, portfolio
   totals) and expected charts.
 - **LLM judge** (rubric 1–5: faithfulness to the answer's own cited passages
   and tool results, relevance, completeness): one call per question sees every
   model's answer labeled only "A"/"B" in a seeded random order, each with its
-  evidence. Refusal and clarification cases are scored deterministically only.
+  evidence: every passage the answer cites, in full, then each tool's result
+  (cut to 2,500 characters per call). A 60,000-character bound per answer only
+  guards against runaway prompts; anything it cuts is logged. Refusal and
+  clarification cases are scored deterministically only.
 
 The script prints a cost estimate first and refuses to run without `--yes`.
 The estimate is deliberately conservative: the 2026-10-02 run cost $0.46
@@ -104,7 +111,8 @@ against a $1.13 estimate (turns averaged ~6.4K input / ~0.3K output tokens). The
 judge is `gemini-3.1-pro-preview` when the whole run is estimated under
 `--budget` ($1.50), otherwise `gemini-3.8-flash`. During the run on-demand
 indexing is disabled (no Equibles quota) and the rerank cache is off so models
-pay the same retrieval latency; expect ~40–60 Pinecone rerank requests. Results
+pay the same retrieval latency; expect ~45–65 Pinecone rerank requests
+(each comparison case uses two). Results
 print as Markdown tables and are saved to `scripts/eval/results/` (git-ignored).
 With Langfuse on, eval turns are tagged `eval` and `eval-run:<id>` and get
 `eval_checks_passed` and `judge_*` scores.
@@ -135,6 +143,47 @@ judge scores are means over the 18 judged questions, 1–5):
 - **Decision:** keep `gemini-3.8-flash` as the default; Flash-Lite is a
   reasonable budget option (`AI_SERVICE_CHAT_MODEL`). The run cost $0.46
   ($0.22 agent turns, $0.24 judge).
+
+### Quarter comparison results
+
+The three `quarter_comparison` cases were added after the full run above and
+run on their own on 2026-10-05 (`20261005T000714Z`; `gemini-3.8-flash`, judge
+`gemini-3.1-pro-preview`):
+
+| Case  | Question                                                        | Checks | Faithfulness | Relevance | Completeness | Citations |
+| ----- | --------------------------------------------------------------- | ------ | ------------ | --------- | ------------ | --------- |
+| `q01` | NVIDIA's latest call vs the previous quarter (default quarters) | pass   | 5            | 5         | 5            | 15        |
+| `q02` | Microsoft's last two quarters, focus on margins                 | pass   | 5            | 5         | 5            | 10        |
+| `q03` | Apple Q1 vs Q2 FY2026 (explicit quarters, not the latest pair)  | pass   | 5            | 5         | 5            | 18        |
+
+- **Deterministic checks: 3/3.** Each answer called `compare_quarters`, cited
+  exactly the two compared quarters, and used only the five headings in order
+  (headings without content left out, the empty categories named in a closing
+  line).
+- **Absence is never stated as fact.** Every item under "New" says it was
+  "not discussed in the retrieved [earlier quarter] passages" rather than
+  that it didn't happen or wasn't said before (checked by hand in all three
+  answers).
+- **Cost:** $0.104 ($0.050 agent turns at ~17K input / ~1K output tokens, about
+  $0.017 per turn; $0.054 judge); 6 Pinecone reranks. Latency 9.2s / 14.2s /
+  29.6s; `q02`'s 29.6s had the same tool calls and tokens as its earlier 7.9s
+  run and no retries, so it reads as a one-off upstream delay.
+
+**Why this was re-run.** The first run (2026-10-04) passed every check but
+scored faithfulness 2 on all three cases: the judge then saw at most 12,000
+characters of evidence per answer, while these answers cite 10–18 passages
+(18–27K characters), so it never saw the later passages and marked their
+figures unsupported (each was checked and found in its cited passage). That
+run also exposed one real flaw: an answer called a CEO transition new because
+it "did not occur" in the earlier call. The judge now sees every cited passage,
+and the prompt requires "New" items to be described only as newly discussed in
+the retrieved passages; this run reflects both fixes.
+
+**Earlier results are unaffected.** In the recorded 25-case run, four turns
+went past the old 12,000-character limit: in three only the tail of a tool
+result was cut, and in one (`m01`, Flash) the end of its eighth cited passage.
+All four scored faithfulness 5 regardless, so no score in that table was
+capped by the old limit.
 
 **Judge bias.** LLM judges favor answers from their own model family
 (self-preference), longer and more confident answers (verbosity bias), and

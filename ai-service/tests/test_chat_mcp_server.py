@@ -17,6 +17,7 @@ from tests.chat_fakes import portfolio, position, search_result, turn
 
 EXPECTED_TOOLS = {
     "search_transcripts",
+    "compare_quarters",
     "get_quote",
     "get_price_history",
     "get_portfolio",

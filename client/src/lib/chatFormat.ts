@@ -53,4 +53,5 @@ export const STARTER_QUESTIONS = [
   "How is my portfolio allocated, and where am I most concentrated?",
   "Compare Microsoft's and Alphabet's cloud growth commentary.",
   "How has AAPL performed over the last 6 months?",
+  "What changed in NVIDIA's latest earnings call vs. the previous quarter?",
 ];

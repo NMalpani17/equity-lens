@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 from app.models.rag import RagIndexingResponse, RagSearchRequest, RagSearchResult
 from app.models.transcript import parse_period_label
+from app.services.rag.comparison import QuarterComparisonService
 from app.services.rag.errors import (
     IngestionCapReachedError,
     RagNotConfiguredError,
@@ -72,6 +73,8 @@ MIN_QUARTER_RELEVANCE = 0.02
 class SearchDeps:
     search: Callable[[], RagSearchService]
     resolver: Callable[[], CompanyResolver]
+    # Only the compare_quarters tool needs it.
+    comparison: Callable[[], QuarterComparisonService] | None = None
     ticker_record: Callable[[str], TickerRecord | None] = lambda _: None
     search_top_k: int = 5
     index_wait_seconds: float = 45.0
@@ -86,7 +89,7 @@ class SearchOutput:
     data: dict
 
 
-def _of(data: dict) -> SearchOutput:
+def json_output(data: dict) -> SearchOutput:
     return SearchOutput(text=json.dumps(data, default=str), data=data)
 
 
@@ -197,7 +200,7 @@ def _run_search(
     return list(response.results)
 
 
-def _await_index(
+def await_index(
     deps: SearchDeps, turn: TurnContext | None, ticker: str
 ) -> SearchOutput | None:
     """Wait for indexing; None once searchable, else the result to return."""
@@ -206,7 +209,7 @@ def _await_index(
         raise TickerUnavailableError(ticker)
     if status == "indexed":
         return None
-    return _of(
+    return json_output(
         {
             "status": "indexing",
             "ticker": ticker,
@@ -242,7 +245,7 @@ def search_transcripts(
     k = max(1, min(top_k or deps.search_top_k, 8))
     ticker, class_note = transcript_ticker(ticker, deps.ticker_record)
     if quarters and ticker:
-        return _guarded(
+        return run_guarded(
             lambda: _search_each_quarter(
                 deps,
                 turn,
@@ -271,15 +274,15 @@ def search_transcripts(
     def run() -> SearchOutput | list[RagSearchResult]:
         outcome = _run_search(deps, request())
         if isinstance(outcome, RagIndexingResponse):
-            waiting = _await_index(deps, turn, outcome.ticker)
+            waiting = await_index(deps, turn, outcome.ticker)
             if waiting is not None:
                 return waiting
             outcome = _run_search(deps, request())
             if isinstance(outcome, RagIndexingResponse):  # pragma: no cover - race
-                return _of({"status": "indexing", "ticker": outcome.ticker})
+                return json_output({"status": "indexing", "ticker": outcome.ticker})
         return outcome
 
-    outcome = _guarded(run, ticker)
+    outcome = run_guarded(run, ticker)
     if isinstance(outcome, SearchOutput):
         return outcome
     results = outcome
@@ -304,7 +307,7 @@ def search_transcripts(
             }.items()
             if value is not None
         },
-        "passages": [_passage_data(s) for s in sources],
+        "passages": [passage_data(s) for s in sources],
     }
     if class_note:
         data["note"] = class_note
@@ -322,12 +325,12 @@ def search_transcripts(
     return SearchOutput(text=f"{header}\n\n{passages}", data=data)
 
 
-def _guarded[T](run: Callable[[], T], ticker: str | None) -> T | SearchOutput:
+def run_guarded[T](run: Callable[[], T], ticker: str | None) -> T | SearchOutput:
     """Run a search, turning expected failures into results the model can relay."""
     try:
         return run()
     except IngestionCapReachedError as exc:
-        return _of(
+        return json_output(
             {
                 "status": "cap_reached",
                 "ticker": ticker,
@@ -337,7 +340,7 @@ def _guarded[T](run: Callable[[], T], ticker: str | None) -> T | SearchOutput:
             }
         )
     except TickerUnavailableError:
-        return _of(
+        return json_output(
             {
                 "status": "unavailable",
                 "ticker": ticker,
@@ -346,7 +349,7 @@ def _guarded[T](run: Callable[[], T], ticker: str | None) -> T | SearchOutput:
         )
     except (SearchUpstreamError, RagNotConfiguredError) as exc:
         logger.warning("transcript search unavailable: %s", exc)
-        return _of(
+        return json_output(
             {
                 "status": "error",
                 "message": "Transcript search is temporarily unavailable.",
@@ -354,7 +357,7 @@ def _guarded[T](run: Callable[[], T], ticker: str | None) -> T | SearchOutput:
         )
 
 
-def _passage_data(source: Source) -> dict:
+def passage_data(source: Source) -> dict:
     return {
         "id": source.id,
         "ticker": source.ticker,
@@ -386,7 +389,7 @@ def _search_each_quarter(
     """
     pending = deps.search().ensure_indexed(ticker)
     if pending is not None:
-        waiting = _await_index(deps, turn, pending.ticker)
+        waiting = await_index(deps, turn, pending.ticker)
         if waiting is not None:
             return waiting
     record = deps.ticker_record(ticker)
@@ -395,7 +398,7 @@ def _search_each_quarter(
     ]
     periods = sorted({p for p in parsed if p is not None}, reverse=True)[:count]
     if not periods:
-        return _of(
+        return json_output(
             {
                 "status": "no_results",
                 "ticker": ticker,
@@ -440,7 +443,7 @@ def _search_each_quarter(
         "ticker": ticker,
         "quarters_searched": len(periods),
         "coverage": coverage,
-        "passages": [_passage_data(s) for s in sources],
+        "passages": [passage_data(s) for s in sources],
     }
     notes = []
     if len(periods) < count:

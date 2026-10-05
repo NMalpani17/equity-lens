@@ -8,6 +8,7 @@ completeness, and names the better answer (or a tie).
 """
 
 import json
+import logging
 import random
 import string
 from collections.abc import Awaitable, Callable
@@ -18,6 +19,8 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from .models import EvalCase, JudgeScore, TurnRecord
+
+logger = logging.getLogger(__name__)
 
 JUDGE_SYSTEM_PROMPT = """\
 You grade answers produced by an equity-research assistant. Each answer comes \
@@ -41,8 +44,12 @@ for buy/sell questions and is not a flaw.
 - Then name the better answer overall in "preferred", or "tie".
 """
 
+# The judge sees every passage the answer cites, in full, then each tool's
+# result (cut per call; cited passages already carry the transcript text).
 _MAX_TOOL_OUTPUT_CHARS = 2500
-_MAX_EVIDENCE_CHARS = 12000
+# Only a guard against runaway prompts: a 16-citation comparison answer needs
+# about 22K characters plus tool results. Anything cut is logged.
+MAX_EVIDENCE_CHARS = 60_000
 
 
 class JudgedAnswer(BaseModel):
@@ -72,7 +79,12 @@ class CaseJudgement:
 
 
 def evidence_for(turn: TurnRecord) -> str:
-    """The passages and tool results an answer could draw on."""
+    """The passages and tool results an answer could draw on.
+
+    Every cited passage comes first and in full, so a long answer is judged
+    against all of its citations; if the total still exceeds
+    ``MAX_EVIDENCE_CHARS``, the tail (tool results first) is cut and logged.
+    """
     parts = []
     for c in turn.citations:
         parts.append(
@@ -84,7 +96,16 @@ def evidence_for(turn: TurnRecord) -> str:
         output = call.output[:_MAX_TOOL_OUTPUT_CHARS]
         parts.append(f"Tool {call.name}({args}) returned:\n{output}")
     text = "\n\n".join(parts) or "(no tool results or citations)"
-    return text[:_MAX_EVIDENCE_CHARS]
+    if len(text) > MAX_EVIDENCE_CHARS:
+        logger.warning(
+            "judge evidence cut for %s (%s): kept %d of %d characters",
+            turn.case_id,
+            turn.model,
+            MAX_EVIDENCE_CHARS,
+            len(text),
+        )
+        text = text[:MAX_EVIDENCE_CHARS]
+    return text
 
 
 def assign_labels(models: list[str], case_id: str, seed: int) -> dict[str, str]:

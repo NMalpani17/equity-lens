@@ -236,6 +236,99 @@ class RagSearchService:
         )
         return by_quarter, reranked
 
+    def retrieve_themes(
+        self,
+        ticker: str,
+        period: tuple[int, int],
+        queries: Sequence[tuple[str, str]],
+        *,
+        rerank_query: str,
+        candidates_per_theme: int,
+        min_score: float,
+    ) -> tuple[dict[str, list[RagSearchResult]], bool]:
+        """Passages per theme for one quarter of one ticker, best first.
+
+        ``queries`` is ``(theme key, query)`` in priority order. Each theme gets
+        its own filtered hybrid query, so no theme crowds out another; the
+        union is then reranked in **one** call against ``rerank_query``
+        (through the rerank cache, so a repeat costs nothing). A passage
+        belongs to the theme whose query ranked it highest (ties go to the
+        earlier theme). Reranked passages below ``min_score`` are dropped;
+        without the reranker, hybrid order is kept and nothing is dropped.
+        Returns the passages per theme and whether they were reranked.
+        """
+        timer = _Timer()
+        year, quarter = period
+        metadata_filter = build_filter(
+            RagFilters(ticker=ticker, fiscal_year=year, fiscal_quarter=quarter)
+        )
+        candidates: list[SearchHit] = []
+        best_rank: dict[str, tuple[int, int]] = {}  # hit id -> (rank, theme order)
+        theme_of: dict[str, str] = {}
+        try:
+            for order, (key, query) in enumerate(queries):
+                dense = self._embedder.embed_query(query)
+                sparse = self._sparse.encode_query(query)
+                dense, sparse = hybrid_scale(dense, sparse, self._alpha)
+                hits = self._store.query(
+                    dense=dense,
+                    sparse=sparse,
+                    metadata_filter=metadata_filter,
+                    top_k=candidates_per_theme,
+                    namespace=self._namespace,
+                )
+                for rank, hit in enumerate(hits):
+                    if hit.id not in best_rank:
+                        candidates.append(hit)
+                    if hit.id not in best_rank or (rank, order) < best_rank[hit.id]:
+                        best_rank[hit.id] = (rank, order)
+                        theme_of[hit.id] = key
+            timer.lap("query_ms")
+        except Exception as exc:
+            logger.exception("rag theme retrieval failed")
+            raise SearchUpstreamError(
+                "transcript search is temporarily unavailable"
+            ) from exc
+
+        scored: list[tuple[SearchHit, float | None]] = [(h, None) for h in candidates]
+        reranked = False
+        if candidates:
+            request = RagSearchRequest(query=rerank_query, ticker=ticker).model_copy(
+                update={"top_k": len(candidates)}
+            )
+            items = self._rerank(request, candidates, with_header=True)
+            if items is not None:
+                scored = [
+                    (candidates[i.index], i.score)
+                    for i in items
+                    if i.score >= min_score
+                ]
+                reranked = True
+            timer.lap("rerank_ms")
+
+        by_theme: dict[str, list[RagSearchResult]] = {key: [] for key, _ in queries}
+        for hit, score in scored:
+            by_theme[theme_of[hit.id]].append(_to_result(hit, score))
+        for results in by_theme.values():
+            results.sort(key=lambda r: r.score, reverse=True)
+        logger.info(
+            "rag search by theme",
+            extra={
+                "fields": {
+                    "event": "rag_search_themes",
+                    "ticker": ticker,
+                    "period": f"FY{year}Q{quarter}",
+                    "themes": len(queries),
+                    "candidate_count": len(candidates),
+                    "kept": sum(len(r) for r in by_theme.values()),
+                    "reranked": reranked,
+                    "latency_ms": timer.total_ms,
+                    **timer.stages,
+                }
+            },
+        )
+        return by_theme, reranked
+
     def retrieve(
         self,
         request: RagSearchRequest,

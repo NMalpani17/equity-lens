@@ -31,6 +31,11 @@ Click **Try demo**; no sign-up needed.
   company's last four earnings calls, reranked, with speaker and quarter on
   every passage. New tickers are indexed on demand, and a stale ticker picks
   up its newest call in the background without slowing the answer.
+- **"What changed?" comparisons.** Compares a company's latest earnings call
+  with the previous one (or any two indexed quarters), theme by theme:
+  guidance, demand, margins, capital allocation, risks and new initiatives,
+  plus an optional focus. Each claim is cited to the quarter it describes,
+  and each comparison costs at most two rerank calls.
 - **Charts in answers.** Price and allocation charts built only from tool data,
   never from numbers the model wrote. They stream in with the answer and are
   saved with the conversation.

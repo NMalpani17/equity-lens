@@ -19,11 +19,12 @@ from app.services.market_data.history import PriceHistoryService
 from app.services.market_data.service import MarketDataService
 
 from .calculator import PositionMathError, calculate_position
+from .comparison import compare_quarters
 from .context import TurnContext
 from .formatting import whole_shares
 from .transcripts import SearchDeps, search_transcripts
 
-__all__ = ["ToolDeps", "ToolOutput", "search_transcripts"]
+__all__ = ["ToolDeps", "ToolOutput", "compare_quarters", "search_transcripts"]
 
 logger = logging.getLogger(__name__)
 

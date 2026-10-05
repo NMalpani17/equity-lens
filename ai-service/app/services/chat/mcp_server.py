@@ -117,6 +117,7 @@ def default_tool_deps() -> ToolDeps:
     settings = get_settings()
     return ToolDeps(
         search=lambda: get_rag_components().search,
+        comparison=lambda: get_rag_components().comparison,
         market=get_market_data_service,
         history=get_price_history_service,
         resolver=_resolver,
@@ -223,6 +224,73 @@ def search_transcripts(
             fiscal_quarter=fiscal_quarter,
             top_k=top_k,
             quarters=quarters,
+        )
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def compare_quarters(
+    ctx: Context,
+    ticker: Ticker,
+    focus: Annotated[
+        str | None,
+        Field(
+            description="Optional topic the user cares most about, e.g. "
+            "'margins' or 'data center demand'.",
+            max_length=200,
+        ),
+    ] = None,
+    current_fiscal_year: Annotated[
+        int | None,
+        Field(
+            description="Fiscal year of the newer call (with "
+            "current_fiscal_quarter; see resolve_company). Omit both for the "
+            "latest indexed call.",
+            ge=1990,
+            le=2100,
+        ),
+        _clamped(1990, 2100),
+    ] = None,
+    current_fiscal_quarter: Annotated[
+        int | None,
+        Field(description="Fiscal quarter 1-4 of the newer call.", ge=1, le=4),
+        BeforeValidator(_quarter_or_none),
+    ] = None,
+    prior_fiscal_year: Annotated[
+        int | None,
+        Field(
+            description="Fiscal year of the earlier call (with "
+            "prior_fiscal_quarter). Omit both for the call before the newer one.",
+            ge=1990,
+            le=2100,
+        ),
+        _clamped(1990, 2100),
+    ] = None,
+    prior_fiscal_quarter: Annotated[
+        int | None,
+        Field(description="Fiscal quarter 1-4 of the earlier call.", ge=1, le=4),
+        BeforeValidator(_quarter_or_none),
+    ] = None,
+) -> ToolResult:
+    """Compare two of a company's earnings calls quarter over quarter.
+
+    Use for "what changed" questions. Passages on guidance/outlook, demand and
+    growth drivers, margins and costs, capital allocation, risks/headwinds
+    and new initiatives (plus `focus`) are retrieved separately for each
+    quarter and grouped by theme, newer quarter first; cite them as [n].
+    Defaults to the latest indexed call vs the one before. If the company
+    isn't indexed yet, indexing starts and the tool waits for it.
+    """
+    return _result(
+        tools.compare_quarters(
+            _deps_provider(),
+            _turn(ctx),
+            ticker=ticker,
+            focus=focus,
+            current_fiscal_year=current_fiscal_year,
+            current_fiscal_quarter=current_fiscal_quarter,
+            prior_fiscal_year=prior_fiscal_year,
+            prior_fiscal_quarter=prior_fiscal_quarter,
         )
     )
 

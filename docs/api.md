@@ -365,6 +365,59 @@ Chat and MCP:
 | `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, conversation_id, message, history, portfolio, time_zone}`. |
 | any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                                             |
 
+The MCP server exposes the agent's read-only tools: `search_transcripts`,
+`compare_quarters`, `get_quote`, `get_price_history`, `get_portfolio`,
+`resolve_company` and `calculate_position`.
+
+**`compare_quarters`** — a quarter-over-quarter comparison of one company's
+earnings calls. Arguments: `ticker` (required), `focus` (optional topic, up to
+200 characters), `current_fiscal_year` + `current_fiscal_quarter` and
+`prior_fiscal_year` + `prior_fiscal_quarter` (each pair optional; a year
+without its quarter is rejected). With no quarters it compares the latest
+indexed call with the one before it. The structured result:
+
+```json
+{
+  "status": "ok",
+  "ticker": "NVDA",
+  "company_name": "Nvidia Corp",
+  "current": { "fiscal_year": 2027, "fiscal_quarter": 2, "label": "FY2027Q2" },
+  "prior": { "fiscal_year": 2027, "fiscal_quarter": 1, "label": "FY2027Q1" },
+  "focus": "margins",
+  "reranked": true,
+  "themes": [
+    {
+      "key": "focus",
+      "label": "Focus: margins",
+      "current": [1, 2, 3],
+      "prior": [4, 5]
+    },
+    {
+      "key": "guidance",
+      "label": "Guidance and outlook",
+      "current": [6],
+      "prior": []
+    }
+  ],
+  "passages": [
+    {
+      "id": 1,
+      "ticker": "NVDA",
+      "fiscal_year": 2027,
+      "fiscal_quarter": 2,
+      "…": "…"
+    }
+  ]
+}
+```
+
+`themes[].current` / `prior` are the citation ids of each theme's passages per
+quarter (an empty list means nothing relevant was retrieved). Other statuses,
+each with a `message` and `available_quarters`: `indexing` (still indexing
+after the wait), `not_enough_quarters`, `quarter_not_indexed`,
+`invalid_quarters`, plus the shared `unavailable`, `cap_reached` and `error`.
+Each comparison uses at most two Pinecone rerank calls.
+
 `/chat/stream` emits `token`, `tool_start`, `tool_progress`, `tool_end`,
 `chart` (snake_case fields), `done` (`content`, `status`, `citations`,
 `charts`, `tool_calls`, `usage`, `model`, `trace_id`) and `error` events.
