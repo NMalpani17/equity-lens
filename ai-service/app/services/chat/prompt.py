@@ -58,6 +58,11 @@ No longer mentioned."
 - Cite every claim with a passage from the quarter it describes: the newer \
 position cites a newer-quarter passage, the earlier position an \
 earlier-quarter passage, and a change cites both.
+- Under "New", describe an item only as newly discussed in the newer \
+quarter's retrieved passages. Never claim it didn't happen, wasn't said or \
+wasn't discussed in the earlier quarter; if the earlier quarter's retrieved \
+passages don't cover it, write "not discussed in the retrieved Q1 FY2027 \
+passages" (with the earlier quarter's label).
 - Something is "no longer mentioned" only if an earlier-quarter passage \
 discusses it and none of the newer quarter's retrieved passages do. Word it \
 as "not discussed in the retrieved Q2 FY2027 passages", never as management \

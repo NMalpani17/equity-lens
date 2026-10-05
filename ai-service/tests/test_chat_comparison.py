@@ -126,6 +126,7 @@ def test_a_quarter_without_passages_is_not_discussed_never_dropped() -> None:
     capital = out.text[out.text.index("## Capital allocation") :]
     assert capital.index(NOT_DISCUSSED) < capital.index("### Q1 FY2027 (earlier)")
     assert "never that management dropped the topic" in out.text
+    assert "or that something didn't happen or wasn't said" in out.text
 
 
 def test_explicit_quarters_are_passed_through() -> None:
@@ -329,5 +330,8 @@ def test_system_prompt_sets_the_comparison_rules() -> None:
     assert "using only the ones that have content" in prompt
     assert "nothing to report in the retrieved passages" in prompt
     assert "not discussed in the retrieved" in prompt
+    # "New" never rests on absence from the earlier quarter's passages.
+    assert 'Under "New", describe an item only as newly discussed' in prompt
+    assert "Never claim it didn't happen, wasn't said" in prompt
     assert "a change cites both" in prompt
     assert "Keep management's wording for forecasts" in prompt

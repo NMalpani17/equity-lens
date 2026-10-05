@@ -137,7 +137,8 @@ def _render(
     header += (
         f' "{NOT_DISCUSSED}" means no relevant passage was retrieved for that '
         'quarter: say "not discussed in the retrieved passages", never that '
-        "management dropped the topic."
+        "management dropped the topic, or that something didn't happen or "
+        "wasn't said in that quarter."
     )
     if notes:
         header += "\nNote: " + " ".join(notes)
