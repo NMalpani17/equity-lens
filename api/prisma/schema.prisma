@@ -213,16 +213,54 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
-/// One row per chat turn (a sent message or a retry), so daily caps count
-/// every model run, including retries that don't add a user message.
+/// One row per model run (a chat turn, a retry, or a research report), so
+/// daily caps count every run, including retries that don't add a message.
 model ChatUsageEvent {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @map("user_id") @db.Uuid
-  /// "message" (a new question) or "retry" (regenerating a stopped/failed reply).
+  /// "message" (a new question), "retry" (regenerating a stopped/failed
+  /// reply) or "report" (generating a research report).
   kind      String
+  /// Units counted against the global daily cap (a report costs about three
+  /// chat turns, so it weighs 3).
+  weight    Int      @default(1)
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("chat_usage_events")
+}
+
+// ---------------------------------------------------------------------------
+// Research reports. Shared across users (no user data in them), keyed by
+// ticker + the latest indexed quarter. Owned by Prisma, written by the
+// ai-service via psycopg (ai-service/app/services/report/repository.py) and
+// read by the API gateway. Keep column names in sync.
+// ---------------------------------------------------------------------------
+
+/// One multi-agent research report per ticker and fiscal quarter (the newest
+/// indexed earnings call when it was generated). Regenerating overwrites it.
+model ResearchReport {
+  id              String    @id @default(uuid()) @db.Uuid
+  ticker          String
+  fiscalYear      Int       @map("fiscal_year")
+  fiscalQuarter   Int       @map("fiscal_quarter")
+  companyName     String?   @map("company_name")
+  /// The report (sections, citations, chart, "as of" dates); null until the
+  /// first generation for this quarter succeeds.
+  content         Json?
+  generatedAt     DateTime? @map("generated_at")
+  /// Set while a generation runs (one at a time per ticker and quarter); a
+  /// lock older than the stale window may be re-claimed.
+  generatingSince DateTime? @map("generating_since")
+  /// Identifies the generation holding the lock.
+  generationId    String?   @map("generation_id") @db.Uuid
+  /// Langfuse trace of the generation that produced `content`.
+  traceId         String?   @map("trace_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([ticker, fiscalYear, fiscalQuarter])
+  @@index([ticker, generatedAt])
+  @@map("research_reports")
 }

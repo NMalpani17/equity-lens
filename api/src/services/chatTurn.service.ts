@@ -9,10 +9,8 @@ import { getPortfolioSummary } from "./portfolio.service.js";
 import { logger } from "../logger.js";
 import type { PortfolioSummary } from "../types.js";
 
-/** Where relayed events go (the SSE response, in production). */
-export interface EventSink {
-  send(event: string, data: unknown): void;
-}
+export type { EventSink } from "../types.js";
+import type { EventSink } from "../types.js";
 
 export interface ChatErrorPayload {
   code: string;

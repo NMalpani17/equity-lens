@@ -11,6 +11,12 @@ import { Prisma, type ChatMessage, type ChatMessageStatus } from "@prisma/client
 import { config } from "../config.js";
 import { prisma } from "../db/prisma.js";
 import {
+  CHAT_USAGE_KINDS,
+  countUserEvents,
+  globalUnitsUsed,
+  utcDayWindow,
+} from "./usage.service.js";
+import {
   ChatLimitError,
   NotFoundError,
   RetryNotAllowedError,
@@ -120,13 +126,7 @@ export function toMessageDto(m: ChatMessage): ChatMessageDto {
   };
 }
 
-/** Start of the current UTC day and the next reset. */
-export function utcDayWindow(now = new Date()): { start: Date; resetsAt: Date } {
-  const start = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  return { start, resetsAt: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
-}
+export { utcDayWindow };
 
 /** Title for a new conversation, from its first message. */
 export function titleFromMessage(content: string): string {
@@ -227,10 +227,9 @@ export async function getUsage(
 ): Promise<ChatUsage> {
   const { start, resetsAt } = utcDayWindow();
   const limit = isAnonymous ? config.chat.dailyLimitAnon : config.chat.dailyLimit;
-  // Every turn (new message or retry) is one usage event.
-  const used = await prisma.chatUsageEvent.count({
-    where: { userId, createdAt: { gte: start } },
-  });
+  // Every turn (new message or retry) is one usage event; reports have
+  // their own cap and don't count here.
+  const used = await countUserEvents(userId, CHAT_USAGE_KINDS, start);
   return {
     used,
     limit,
@@ -250,7 +249,8 @@ export async function assertWithinLimits(userId: string, isAnonymous: boolean) {
   // Both counts are independent; run them together to keep turn latency low.
   const [usage, globalUsed] = await Promise.all([
     getUsage(userId, isAnonymous),
-    prisma.chatUsageEvent.count({ where: { createdAt: { gte: start } } }),
+    // Weighted: a research report uses several units of the global cap.
+    globalUnitsUsed(start),
   ]);
   if (usage.remaining <= 0) {
     throw new ChatLimitError(

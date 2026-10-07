@@ -65,11 +65,12 @@ jobs:
       - run: ruff format --check .
       - run: pytest
 
-  # Migrations and backups against a throwaway Postgres 17 (Supabase runs 17):
-  # migrations apply cleanly and match schema.prisma, RLS covers every table,
-  # and backup-db.sh / restore-db.sh round-trip every row.
+  # Everything that needs a real database, against a throwaway Postgres 17
+  # (Supabase runs 17): migrations apply cleanly and match schema.prisma, RLS
+  # covers every table, backup-db.sh / restore-db.sh round-trip every row, and
+  # the ai-service's repository SQL (RAG and reports) passes its Postgres tests.
   backup-roundtrip:
-    name: migrations · RLS · backup round trip
+    name: migrations · RLS · backup round trip · repository SQL
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -92,3 +93,25 @@ jobs:
         working-directory: api
       - uses: ./.github/actions/setup-pg-client
       - run: .github/scripts/ci/backup-roundtrip.sh
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ai-service/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+        working-directory: ai-service
+      # Each test applies its migrations into a fresh schema and drops it.
+      # 127.0.0.1, not localhost, so the client never tries IPv6 first.
+      - name: Repository SQL (Postgres-gated tests)
+        working-directory: ai-service
+        env:
+          AI_SERVICE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres?connect_timeout=10
+        # Fail rather than pass if the tests were skipped (no database URL).
+        run: |
+          set -o pipefail
+          tests=(tests/test_rag_repository_pg.py tests/test_report_repository_pg.py)
+          pytest -p no:cacheprovider -rs "${tests[@]}" | tee pytest.log
+          if grep -q "SKIPPED" pytest.log; then
+            echo "::error::Postgres-gated tests were skipped."
+            exit 1
+          fi

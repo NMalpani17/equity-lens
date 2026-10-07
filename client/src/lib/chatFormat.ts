@@ -14,6 +14,19 @@ export function linkCitations(content: string, citations: Citation[]): string {
   );
 }
 
+export const DATA_PREFIX = "#data-";
+
+/**
+ * Turn [D1]-style markers that match a known market-data source into in-page
+ * links (rendered as buttons, like citations). Unknown ids stay plain text.
+ */
+export function linkDataRefs(content: string, sourceIds: string[]): string {
+  const known = new Set(sourceIds);
+  return content.replace(/\[(D\d{1,2})\](?!\()/g, (match, id: string) =>
+    known.has(id) ? `[\\[${id}\\]](${DATA_PREFIX}${id})` : match,
+  );
+}
+
 /**
  * Sort grouped markers ([4][3][1] -> [1][3][4]) and drop the space between a
  * marker and the punctuation after it ("production [1] ." -> "production [1].").

@@ -90,3 +90,8 @@ export interface HealthResponse {
     aiService: ServiceHealth;
   };
 }
+
+/** Where relayed server-sent events go (the SSE response, in production). */
+export interface EventSink {
+  send(event: string, data: unknown): void;
+}

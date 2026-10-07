@@ -196,3 +196,71 @@ def test_tool_outputs_show_whole_shares_without_decimals() -> None:
     assert trade["shares_before"] == 42 and isinstance(trade["shares_before"], int)
     assert trade["shares_traded"] == 8 and trade["shares_after"] == 50
     assert isinstance(trade["shares_after"], int)
+
+
+def test_quote_and_price_history_round_prices_for_the_model() -> None:
+    from datetime import UTC, date, datetime
+    from unittest.mock import MagicMock
+
+    from app.models.price_history import PriceHistory, PricePoint
+    from app.models.quote import Quote
+    from app.services.chat.tools import ToolDeps, get_price_history, get_quote
+
+    market = MagicMock()
+    market.get_quote.return_value = Quote(
+        ticker="NVDA",
+        price=237.4012,
+        previous_close=239.2389,
+        change=-1.8377,
+        change_percent=-0.76815,
+        provider="finnhub",
+        as_of=datetime(2026, 10, 7, 19, 54, tzinfo=UTC),
+    )
+    history = MagicMock()
+    points = [
+        PricePoint(date=date(2025, 10, 7), close=184.5977),
+        PricePoint(date=date(2026, 10, 7), close=237.28),
+    ]
+    history.get_history.return_value = PriceHistory(
+        ticker="NVDA",
+        period="1y",
+        interval="1wk",
+        start_date=date(2025, 10, 7),
+        end_date=date(2026, 10, 7),
+        first_close=184.5977,
+        last_close=237.28,
+        change=52.6823,
+        change_percent=28.5390,
+        high=239.2401,
+        high_date=date(2026, 10, 6),
+        low=164.7933,
+        low_date=date(2026, 3, 30),
+        points=points,
+        provider="yfinance",
+        as_of=datetime(2026, 10, 7, 20, 0, tzinfo=UTC),
+    )
+    deps = ToolDeps(
+        search=MagicMock,
+        resolver=MagicMock,
+        market=lambda: market,
+        history=lambda: history,
+    )
+
+    quote = get_quote(deps, ticker="nvda").data
+    prices = get_price_history(deps, ticker="NVDA", period="1y").data
+
+    assert (quote["price"], quote["previous_close"], quote["change"]) == (
+        237.4,
+        239.24,
+        -1.84,
+    )
+    assert quote["change_percent"] == -0.77
+    assert {k: prices[k] for k in ("first_close", "change", "high", "low")} == {
+        "first_close": 184.6,
+        "change": 52.68,
+        "high": 239.24,
+        "low": 164.79,
+    }
+    assert prices["change_percent"] == 28.54
+    # The close series behind the chart keeps the provider's precision.
+    assert prices["points"][0] == {"date": "2025-10-07", "close": 184.5977}

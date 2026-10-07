@@ -1,0 +1,179 @@
+/** State for the Reports page: ticker list, one ticker's report, generation. */
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { ApiError } from "@/lib/api";
+import {
+  getReport,
+  listReports,
+  streamReport,
+  type AgentState,
+  type ReportAgent,
+  type ReportStreamEvent,
+  type ReportSummary,
+  type ReportUsage,
+  type ReportView,
+} from "@/lib/reportsApi";
+
+export const AGENTS: { agent: ReportAgent; label: string }[] = [
+  { agent: "transcripts", label: "Researching transcripts…" },
+  { agent: "market", label: "Analyzing price data…" },
+  { agent: "writer", label: "Writing report…" },
+];
+
+export interface AgentProgress {
+  agent: ReportAgent;
+  state: "pending" | AgentState;
+  label: string;
+  summary?: string;
+}
+
+/** While another user's generation runs, check back this often. */
+export const GENERATING_POLL_MS = 15_000;
+
+function pendingAgents(): AgentProgress[] {
+  return AGENTS.map(({ agent, label }) => ({ agent, label, state: "pending" }));
+}
+
+function message(error: unknown, fallback: string): string {
+  return error instanceof ApiError || error instanceof Error ? error.message : fallback;
+}
+
+export function useReports(ticker: string | undefined) {
+  const [tickers, setTickers] = useState<ReportSummary[] | null>(null);
+  const [usage, setUsage] = useState<ReportUsage | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [view, setView] = useState<ReportView | null>(null);
+  const [loadingView, setLoadingView] = useState(false);
+  const [viewError, setViewError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState<AgentProgress[]>(pendingAgents);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const tickerRef = useRef(ticker);
+  tickerRef.current = ticker;
+
+  const loadList = useCallback(async () => {
+    try {
+      const result = await listReports();
+      setTickers(result.tickers);
+      setUsage(result.usage);
+      setListError(null);
+    } catch (error) {
+      setListError(message(error, "Couldn't load the companies."));
+    }
+  }, []);
+
+  const loadView = useCallback(async (symbol: string, { quiet = false } = {}) => {
+    if (!quiet) setLoadingView(true);
+    try {
+      const next = await getReport(symbol);
+      if (tickerRef.current === symbol) {
+        setView(next);
+        setUsage(next.usage);
+        setViewError(null);
+      }
+    } catch (error) {
+      if (tickerRef.current === symbol) {
+        setView(null);
+        setViewError(message(error, "Couldn't load this report."));
+      }
+    } finally {
+      if (!quiet && tickerRef.current === symbol) setLoadingView(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadList();
+  }, [loadList]);
+
+  useEffect(() => {
+    setView(null);
+    setGenerateError(null);
+    setProgress(pendingAgents());
+    if (ticker) void loadView(ticker);
+  }, [ticker, loadView]);
+
+  // Someone else's generation is running: check back until it finishes.
+  const othersGenerating = Boolean(view?.generating) && !generating;
+  useEffect(() => {
+    if (!othersGenerating || !ticker) return;
+    const timer = window.setTimeout(
+      () => void loadView(ticker, { quiet: true }),
+      GENERATING_POLL_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [othersGenerating, ticker, view, loadView]);
+
+  // Leaving the page cancels a running generation.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  const onEvent = useCallback((event: ReportStreamEvent) => {
+    switch (event.type) {
+      case "agent":
+        setProgress((items) =>
+          items.map((item) =>
+            item.agent === event.agent
+              ? {
+                  ...item,
+                  state: event.state,
+                  label: event.label,
+                  summary: event.summary,
+                }
+              : item,
+          ),
+        );
+        break;
+      case "done":
+        setView((current) =>
+          current ? { ...current, report: event.report, outdated: false } : current,
+        );
+        break;
+      case "error":
+        setGenerateError(event.message);
+        setProgress((items) =>
+          items.map((item) =>
+            item.state === "running" ? { ...item, state: "failed" } : item,
+          ),
+        );
+        break;
+    }
+  }, []);
+
+  const generate = useCallback(async () => {
+    if (!ticker || generating) return;
+    const abort = new AbortController();
+    abortRef.current = abort;
+    setGenerating(true);
+    setGenerateError(null);
+    setProgress(pendingAgents());
+    try {
+      await streamReport(ticker, onEvent, abort.signal);
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        setGenerateError(message(error, "The report couldn't be generated."));
+      }
+    } finally {
+      if (abortRef.current === abort) abortRef.current = null;
+      setGenerating(false);
+      if (!abort.signal.aborted) {
+        // Fresh permissions and allowance (and the list's "ready" state).
+        void loadView(ticker, { quiet: true });
+        void loadList();
+      }
+    }
+  }, [ticker, generating, onEvent, loadView, loadList]);
+
+  return {
+    tickers,
+    usage,
+    listError,
+    view,
+    loadingView,
+    viewError,
+    generating,
+    progress,
+    generateError,
+    dismissGenerateError: () => setGenerateError(null),
+    generate,
+  };
+}

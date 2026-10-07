@@ -22,6 +22,7 @@ import { useAuth } from "@/context/auth-context";
 const NAV_ITEMS = [
   { to: "/", label: "Portfolio", end: true },
   { to: "/chat", label: "AI analyst", end: false },
+  { to: "/reports", label: "Reports", end: false },
 ];
 
 /** App header: brand, main navigation, system status dot, and user menu. */
@@ -53,7 +54,10 @@ export function Header() {
           Equity Lens
         </Link>
 
-        <nav aria-label="Main" className="mr-auto flex items-center gap-1">
+        <nav
+          aria-label="Main"
+          className="mr-auto flex min-w-0 items-center gap-0.5 overflow-x-auto sm:gap-1"
+        >
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}

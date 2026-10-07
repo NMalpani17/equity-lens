@@ -8,24 +8,22 @@
 import { z } from "zod";
 
 import { config } from "../config.js";
-import { HttpError, ServiceUnavailableError, UpstreamError } from "../errors.js";
+import { HttpError } from "../errors.js";
 import { logger } from "../logger.js";
-import { aiServiceFetch, aiServiceUrl } from "./aiServiceClient.js";
+import {
+  chartSchema,
+  citationSchema,
+  toChart,
+  toCitation,
+  type ChartDto,
+  type CitationDto,
+} from "./aiSchemas.js";
+import { openAiServiceSse, parseSse } from "./aiServiceSse.js";
+
+export { chartSchema, citationSchema, toChart, toCitation };
+export type { ChartDto, CitationDto };
 import type { PortfolioSummary } from "../types.js";
 import type { HistoryMessage } from "./chat.service.js";
-
-const citationSchema = z.object({
-  id: z.number().int(),
-  ticker: z.string(),
-  company_name: z.string(),
-  fiscal_year: z.number().int(),
-  fiscal_quarter: z.number().int(),
-  call_date: z.string().nullable(),
-  speaker: z.string(),
-  role: z.string().nullable(),
-  section: z.string(),
-  text: z.string(),
-});
 
 const toolCallSchema = z.object({
   id: z.string(),
@@ -35,45 +33,6 @@ const toolCallSchema = z.object({
   ok: z.boolean().nullable().optional(),
   summary: z.string().nullable().optional(),
 });
-
-const pricePointSchema = z.object({ date: z.string(), close: z.number() });
-
-const chartSchema = z.discriminatedUnion("kind", [
-  z.object({
-    id: z.string(),
-    kind: z.literal("price_history"),
-    ticker: z.string(),
-    period: z.string(),
-    currency: z.string(),
-    points: z.array(pricePointSchema).min(2).max(400),
-    first_close: z.number(),
-    last_close: z.number(),
-    change: z.number(),
-    change_percent: z.number(),
-    high: z.number(),
-    low: z.number(),
-    as_of: z.string().nullable().optional(),
-  }),
-  z.object({
-    id: z.string(),
-    kind: z.literal("portfolio_allocation"),
-    currency: z.string(),
-    slices: z
-      .array(
-        z.object({
-          ticker: z.string(),
-          name: z.string().nullable().optional(),
-          market_value: z.number(),
-          weight_percent: z.number(),
-        }),
-      )
-      .min(1)
-      .max(20),
-    total_market_value: z.number(),
-    partial: z.boolean(),
-    as_of: z.string().nullable().optional(),
-  }),
-]);
 
 const eventSchemas = {
   token: z.object({ text: z.string() }),
@@ -102,50 +61,6 @@ const eventSchemas = {
   }),
   error: z.object({ code: z.string(), message: z.string(), retryable: z.boolean() }),
 } as const;
-
-export interface CitationDto {
-  id: number;
-  ticker: string;
-  companyName: string;
-  fiscalYear: number;
-  fiscalQuarter: number;
-  callDate: string | null;
-  speaker: string;
-  role: string | null;
-  section: string;
-  text: string;
-}
-
-export type ChartDto =
-  | {
-      id: string;
-      kind: "price_history";
-      ticker: string;
-      period: string;
-      currency: string;
-      points: { date: string; close: number }[];
-      firstClose: number;
-      lastClose: number;
-      change: number;
-      changePercent: number;
-      high: number;
-      low: number;
-      asOf: string | null;
-    }
-  | {
-      id: string;
-      kind: "portfolio_allocation";
-      currency: string;
-      slices: {
-        ticker: string;
-        name: string | null;
-        marketValue: number;
-        weightPercent: number;
-      }[];
-      totalMarketValue: number;
-      partial: boolean;
-      asOf: string | null;
-    };
 
 export interface ToolCallDto {
   id: string;
@@ -192,56 +107,6 @@ export interface ChatStreamRequest {
   timeZone?: string;
 }
 
-function toCitation(c: z.infer<typeof citationSchema>): CitationDto {
-  return {
-    id: c.id,
-    ticker: c.ticker,
-    companyName: c.company_name,
-    fiscalYear: c.fiscal_year,
-    fiscalQuarter: c.fiscal_quarter,
-    callDate: c.call_date,
-    speaker: c.speaker,
-    role: c.role,
-    section: c.section,
-    text: c.text,
-  };
-}
-
-/** Chart from upstream (snake_case) to the API's camelCase shape. */
-export function toChart(c: z.infer<typeof chartSchema>): ChartDto {
-  if (c.kind === "price_history") {
-    return {
-      id: c.id,
-      kind: c.kind,
-      ticker: c.ticker,
-      period: c.period,
-      currency: c.currency,
-      points: c.points.map((p) => ({ date: p.date, close: p.close })),
-      firstClose: c.first_close,
-      lastClose: c.last_close,
-      change: c.change,
-      changePercent: c.change_percent,
-      high: c.high,
-      low: c.low,
-      asOf: c.as_of ?? null,
-    };
-  }
-  return {
-    id: c.id,
-    kind: c.kind,
-    currency: c.currency,
-    slices: c.slices.map((s) => ({
-      ticker: s.ticker,
-      name: s.name ?? null,
-      marketValue: s.market_value,
-      weightPercent: s.weight_percent,
-    })),
-    totalMarketValue: c.total_market_value,
-    partial: c.partial,
-    asOf: c.as_of ?? null,
-  };
-}
-
 /** Map a validated upstream event to the camelCase shape used by the API. */
 export function mapEvent(type: string, data: unknown): AiChatEvent | null {
   switch (type) {
@@ -278,28 +143,7 @@ export function mapEvent(type: string, data: unknown): AiChatEvent | null {
   }
 }
 
-/** Parse an SSE byte stream into (event, data) pairs. */
-export async function* parseSse(
-  body: AsyncIterable<Uint8Array>,
-): AsyncGenerator<{ event: string; data: string }> {
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for await (const chunk of body) {
-    buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/g, "\n");
-    let boundary: number;
-    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      let event = "message";
-      const data: string[] = [];
-      for (const line of frame.split("\n")) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
-      }
-      if (data.length > 0) yield { event, data: data.join("\n") };
-    }
-  }
-}
+export { parseSse };
 
 function toSnapshot(summary: PortfolioSummary | null) {
   if (!summary) return null;
@@ -345,96 +189,34 @@ export async function openChatStream(
     connectTimeoutMs = config.chat.connectTimeoutMs,
   }: { connectTimeoutMs?: number } = {},
 ): Promise<AsyncGenerator<AiChatEvent>> {
-  if (!config.aiServiceInternalToken) {
-    throw new ServiceUnavailableError(
-      "chat_not_configured",
-      "The AI analyst is not configured.",
-    );
-  }
-  const url = aiServiceUrl("/chat/stream");
-  // One signal for the whole request: aborted by the client going away, or by
-  // the connect timer until the response headers arrive.
-  const upstream = new AbortController();
-  const onClientAbort = () => upstream.abort(signal.reason);
-  if (signal.aborted) upstream.abort(signal.reason);
-  else signal.addEventListener("abort", onClientAbort, { once: true });
-  let timedOut = false;
-  const connectTimer = setTimeout(() => {
-    timedOut = true;
-    upstream.abort(new Error("ai-service connect timeout"));
-  }, connectTimeoutMs);
-  let response: Response;
-  try {
-    response = await aiServiceFetch(url, {
-      method: "POST",
-      signal: upstream.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-      },
-      body: JSON.stringify({
-        user_id: request.userId,
-        is_anonymous: request.isAnonymous,
-        conversation_id: request.conversationId,
-        message: request.message,
-        history: request.history,
-        portfolio: toSnapshot(request.portfolio),
-        time_zone: request.timeZone,
-      }),
-    });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    if (timedOut) {
-      logger.warn(
-        { url: url.toString(), connectTimeoutMs },
-        "ai-service chat did not answer in time",
-      );
-    } else {
-      logger.warn(
-        { url: url.toString(), err: error },
-        "failed to reach ai-service chat",
-      );
-    }
-    throw new ServiceUnavailableError("chat_unavailable", UNAVAILABLE_MESSAGE);
-  } finally {
-    clearTimeout(connectTimer);
-  }
-
-  if (!response.ok || !response.body) {
-    let body: { error?: string; message?: string } = {};
-    try {
-      body = (await response.json()) as typeof body;
-    } catch {
-      // non-JSON error body
-    }
-    logger.warn(
-      { status: response.status, body },
-      "ai-service chat refused the request",
-    );
-    if (response.status === 422 && body.error === "message_too_long") {
-      throw new HttpError(
-        422,
-        "message_too_long",
-        body.message ?? "Message is too long.",
-      );
-    }
-    if (response.status === 401 || response.status === 503) {
-      throw new ServiceUnavailableError("chat_unavailable", UNAVAILABLE_MESSAGE);
-    }
-    throw new UpstreamError("The AI analyst returned an unexpected error.");
-  }
-
-  const body = response.body;
+  const frames = await openAiServiceSse({
+    path: "/chat/stream",
+    signal,
+    connectTimeoutMs,
+    label: "chat",
+    notConfigured: {
+      code: "chat_not_configured",
+      message: "The AI analyst is not configured.",
+    },
+    unavailable: { code: "chat_unavailable", message: UNAVAILABLE_MESSAGE },
+    unexpectedMessage: "The AI analyst returned an unexpected error.",
+    refused: (status, body) =>
+      status === 422 && body.error === "message_too_long"
+        ? new HttpError(422, "message_too_long", body.message ?? "Message is too long.")
+        : undefined,
+    body: {
+      user_id: request.userId,
+      is_anonymous: request.isAnonymous,
+      conversation_id: request.conversationId,
+      message: request.message,
+      history: request.history,
+      portfolio: toSnapshot(request.portfolio),
+      time_zone: request.timeZone,
+    },
+  });
   return (async function* events() {
-    for await (const frame of parseSse(body as AsyncIterable<Uint8Array>)) {
-      let data: unknown;
-      try {
-        data = JSON.parse(frame.data);
-      } catch {
-        logger.warn({ event: frame.event }, "dropping non-JSON chat event");
-        continue;
-      }
-      const event = mapEvent(frame.event, data);
+    for await (const frame of frames) {
+      const event = mapEvent(frame.event, frame.data);
       if (event) {
         yield event;
       } else {

@@ -5,30 +5,33 @@ All application routes are served by the Express gateway at
 
 ## API gateway (`http://localhost:3001`)
 
-| Method   | Path                                               | Description                                                      |
-| -------- | -------------------------------------------------- | ---------------------------------------------------------------- |
-| `GET`    | `/api/health`                                      | API health; plus the AI service's for signed-in users.           |
-| `GET`    | `/api/live`                                        | Liveness only (no dependency checks); the platform health check. |
-| `POST`   | `/api/warmup`                                      | Wake the ai-service ahead of the first question (signed in).     |
-| `GET`    | `/api/holdings`                                    | List all holdings (lots).                                        |
-| `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`).  |
-| `GET`    | `/api/holdings/:id`                                | Get one holding.                                                 |
-| `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                                |
-| `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                  |
-| `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).                |
-| `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.    |
-| `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.      |
-| `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).              |
-| `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.                |
-| `POST`   | `/api/conversations`                               | Start a conversation (`title?`).                                 |
-| `PATCH`  | `/api/conversations/:id`                           | Rename a conversation (`title`).                                 |
-| `DELETE` | `/api/conversations/:id`                           | Delete a conversation and its messages.                          |
-| `GET`    | `/api/conversations/:id/messages`                  | Messages with citations and tool calls.                          |
-| `POST`   | `/api/conversations/:id/messages`                  | Send a message; the reply streams as SSE.                        |
-| `POST`   | `/api/conversations/:id/messages/:messageId/retry` | Regenerate the latest stopped/failed reply in place (SSE).       |
-| `GET`    | `/api/chat/usage`                                  | Today's message allowance (`used`, `limit`, `remaining`).        |
-| `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.       |
-| `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).          |
+| Method   | Path                                               | Description                                                       |
+| -------- | -------------------------------------------------- | ----------------------------------------------------------------- |
+| `GET`    | `/api/health`                                      | API health; plus the AI service's for signed-in users.            |
+| `GET`    | `/api/live`                                        | Liveness only (no dependency checks); the platform health check.  |
+| `POST`   | `/api/warmup`                                      | Wake the ai-service ahead of the first question (signed in).      |
+| `GET`    | `/api/holdings`                                    | List all holdings (lots).                                         |
+| `POST`   | `/api/holdings`                                    | Create a lot (`ticker`, `shares`, `buyPrice`, `purchaseDate?`).   |
+| `GET`    | `/api/holdings/:id`                                | Get one holding.                                                  |
+| `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                                 |
+| `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                   |
+| `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).                 |
+| `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.     |
+| `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.       |
+| `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).               |
+| `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.                 |
+| `POST`   | `/api/conversations`                               | Start a conversation (`title?`).                                  |
+| `PATCH`  | `/api/conversations/:id`                           | Rename a conversation (`title`).                                  |
+| `DELETE` | `/api/conversations/:id`                           | Delete a conversation and its messages.                           |
+| `GET`    | `/api/conversations/:id/messages`                  | Messages with citations and tool calls.                           |
+| `POST`   | `/api/conversations/:id/messages`                  | Send a message; the reply streams as SSE.                         |
+| `POST`   | `/api/conversations/:id/messages/:messageId/retry` | Regenerate the latest stopped/failed reply in place (SSE).        |
+| `GET`    | `/api/chat/usage`                                  | Today's message allowance (`used`, `limit`, `remaining`).         |
+| `GET`    | `/api/rag/tickers`                                 | Every ticker indexed (or attempted) for transcript search.        |
+| `GET`    | `/api/rag/tickers/:ticker`                         | Indexing status for one ticker (poll while `indexing`).           |
+| `GET`    | `/api/reports`                                     | Indexed tickers with their newest report, plus today's allowance. |
+| `GET`    | `/api/reports/:ticker`                             | A ticker's report and what the caller may do with it.             |
+| `POST`   | `/api/reports/:ticker`                             | Generate (or regenerate) the report; progress streams as SSE.     |
 
 ### Errors
 
@@ -39,7 +42,7 @@ Errors are JSON with a machine-readable `error` code and a plain-language
 ### Authentication
 
 Every route except `/api/health` and `/api/live` (holdings, portfolio, account,
-RAG, chat and warm-up) requires a **Supabase access token** sent as a bearer
+RAG, chat, reports and warm-up) requires a **Supabase access token** sent as a bearer
 header:
 
 ```
@@ -205,8 +208,8 @@ Errors before streaming starts are normal JSON errors:
 | `429`  | `chat_limit_reached` | Daily cap reached; body has `scope` (`user`/`global`), `limit`, `resetsAt`.   |
 
 Daily caps (turns per UTC day — sent messages plus retries, configurable):
-**20** for signed-in users, **5** for demo (anonymous) users, and **60** across
-all users. The window is the UTC day; limit messages don't name a time, and the
+**20** for signed-in users, **5** for demo (anonymous) users, and **60** units
+across all users, where a chat turn is 1 unit and a research report 3. The window is the UTC day; limit messages don't name a time, and the
 client shows `resetsAt` (from `429` bodies and `GET /api/chat/usage`) in the
 user's local time zone, e.g. "It resets at 8:00 PM EDT".
 
@@ -335,6 +338,168 @@ A saved assistant message:
   four per reply. Completed and truncated replies keep their charts; blocked
   and empty ones don't; a stopped reply keeps the charts that had streamed.
 
+## Research reports
+
+All report routes require auth. Reports are shared: every user sees the same
+report for a ticker, and it holds nothing user-specific. Demo users can view
+them but not generate them.
+
+### `GET /api/reports`
+
+```json
+{
+  "tickers": [
+    {
+      "ticker": "NVDA",
+      "companyName": "Nvidia Corp",
+      "latestQuarter": {
+        "fiscalYear": 2027,
+        "fiscalQuarter": 2,
+        "label": "Q2 FY2027"
+      },
+      "report": {
+        "generatedAt": "2026-10-07T12:00:00.000Z",
+        "quarter": {
+          "fiscalYear": 2027,
+          "fiscalQuarter": 2,
+          "label": "Q2 FY2027"
+        },
+        "outdated": false
+      },
+      "generating": false
+    }
+  ],
+  "usage": {
+    "used": 0,
+    "limit": 2,
+    "remaining": 2,
+    "resetsAt": "2026-10-08T00:00:00.000Z",
+    "isDemo": false
+  }
+}
+```
+
+Every indexed ticker, with its newest report (`null` if none; `outdated` when
+it covers an older quarter than `latestQuarter`) and whether one is being
+generated. No report content is loaded. Demo users get `limit: 0`.
+
+### `GET /api/reports/:ticker`
+
+The current report (for the newest indexed quarter), or else the newest older
+one with `outdated: true`, plus permissions:
+
+```json
+{
+  "ticker": "NVDA",
+  "companyName": "Nvidia Corp",
+  "latestQuarter": {
+    "fiscalYear": 2027,
+    "fiscalQuarter": 2,
+    "label": "Q2 FY2027"
+  },
+  "report": {
+    "ticker": "NVDA",
+    "companyName": "Nvidia Corp",
+    "quarter": {
+      "fiscalYear": 2027,
+      "fiscalQuarter": 2,
+      "label": "Q2 FY2027",
+      "callDate": "2026-08-26"
+    },
+    "priorQuarter": {
+      "fiscalYear": 2027,
+      "fiscalQuarter": 1,
+      "label": "Q1 FY2027",
+      "callDate": "2026-05-28"
+    },
+    "sections": [
+      { "key": "summary", "title": "Summary", "markdown": "… [1] … [D2]" },
+      "…"
+    ],
+    "citations": [
+      {
+        "id": 1,
+        "ticker": "NVDA",
+        "companyName": "Nvidia Corp",
+        "fiscalYear": 2027,
+        "fiscalQuarter": 2,
+        "…": "…"
+      }
+    ],
+    "dataSources": [
+      {
+        "id": "D2",
+        "kind": "price_history",
+        "ticker": "NVDA",
+        "label": "NVDA price history, 6mo (…)",
+        "asOf": "2026-10-06",
+        "data": { "change_percent": 19.96, "…": "…" }
+      }
+    ],
+    "chart": { "kind": "price_history", "…": "…" },
+    "marketDataAvailable": true,
+    "comparisonAvailable": true,
+    "asOf": {
+      "latestCall": "2026-08-26",
+      "quote": "Oct 6, 2026, 4:00 PM EDT",
+      "prices": "2026-10-06"
+    },
+    "disclaimer": "This report is generated by AI … It is general information, not financial advice.",
+    "generatedAt": "2026-10-07T12:00:00.000Z"
+  },
+  "outdated": false,
+  "generating": false,
+  "canGenerate": false,
+  "blockedReason": "fresh",
+  "regenerateAvailableAt": "2026-10-14T12:00:00.000Z",
+  "usage": {
+    "used": 0,
+    "limit": 2,
+    "remaining": 2,
+    "resetsAt": "2026-10-08T00:00:00.000Z",
+    "isDemo": false
+  }
+}
+```
+
+- `sections`: `summary`, `drivers`, `guidance`, `changes`, `stock`, `risks`, in
+  that order, as Markdown. `[n]` cites `citations` (transcript passages) and
+  `[Dn]` cites `dataSources` (quote and price-history tool results). Every
+  figure comes from one of them.
+- `report` is `null` when the ticker has no report yet; a stored report that
+  doesn't match the expected shape is treated the same way (and logged).
+- `blockedReason`, when `canGenerate` is false: `demo`, `in_progress`, `fresh`
+  (see `regenerateAvailableAt`), `daily_limit` or `global_limit`.
+- `404` when the ticker isn't indexed; `422` for an invalid ticker.
+
+### `POST /api/reports/:ticker`
+
+Generates the report for the ticker's newest indexed quarter (or regenerates
+it). No body. Rule violations are JSON errors before streaming starts:
+
+| Status | `error`                | When                                                                                      |
+| ------ | ---------------------- | ----------------------------------------------------------------------------------------- |
+| `403`  | `demo_read_only`       | A demo (anonymous) user.                                                                  |
+| `404`  | `not_found`            | The ticker isn't indexed.                                                                 |
+| `409`  | `report_in_progress`   | A generation for this report is running.                                                  |
+| `409`  | `report_fresh`         | The current report is under 7 days old; body has `regenerateAvailableAt`.                 |
+| `429`  | `report_limit_reached` | 2 reports per user per UTC day, or the global cap; body has `scope`, `limit`, `resetsAt`. |
+
+Then the response is `text/event-stream` (with keepalive comments):
+
+| Event   | Data                                                                                                                           |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `start` | `{ ticker, quarter }`                                                                                                          |
+| `agent` | `{ agent, state, label, summary? }`: `agent` is `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. |
+| `done`  | `{ report }`, the saved report (same shape as above).                                                                          |
+| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.         |
+
+A generation counts toward the daily caps from the moment it starts, including
+one that fails or that the user cancels by closing the connection (which
+cancels it upstream). It doesn't count if nothing was generated: the
+ai-service couldn't be reached, or refused because another generation won the
+race (`report_in_progress`) or the report had just become fresh (`report_fresh`).
+
 ## AI service (`http://localhost:8000`)
 
 Internal only: every route except `/health` requires the gateway's
@@ -360,10 +525,11 @@ Transcript search (same semantics as the gateway routes above, snake_case JSON):
 
 Chat and MCP:
 
-| Method | Path           | Description                                                                                                                          |
-| ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `POST` | `/chat/stream` | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, conversation_id, message, history, portfolio, time_zone}`. |
-| any    | `/mcp/`        | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                                             |
+| Method | Path              | Description                                                                                                                                                                                                                                                   |
+| ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/chat/stream`    | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, conversation_id, message, history, portfolio, time_zone}`.                                                                                                                          |
+| `POST` | `/reports/stream` | One research report generation as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, ticker, regenerate_after_days}`. Events: `agent`, `done` `{report, fiscal_year, fiscal_quarter, generated_at, usage}`, `error`. The report is saved before `done`. |
+| any    | `/mcp/`           | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                                                                                                                                                                      |
 
 The MCP server exposes the agent's read-only tools: `search_transcripts`,
 `compare_quarters`, `get_quote`, `get_price_history`, `get_portfolio`,

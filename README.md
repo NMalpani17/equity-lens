@@ -36,6 +36,16 @@ Click **Try demo**; no sign-up needed.
   guidance, demand, margins, capital allocation, risks and new initiatives,
   plus an optional focus. Each claim is cited to the quarter it describes,
   and each comparison costs at most two rerank calls.
+- **Multi-agent research reports.** A Reports page with one report per
+  company: summary, demand and business drivers, guidance and outlook, what
+  changed vs last quarter, stock performance (with a price chart) and risks.
+  A fixed LangGraph graph runs a transcript researcher and a market-data
+  analyst (Gemini Flash-Lite) in parallel, then a writer (Flash) with no
+  tools. Every claim cites a transcript passage or a market-data result, and
+  the report shows when it was generated and what its data is current to.
+  Reports are shared and cached per ticker and quarter, so viewing one costs
+  nothing; signed-in users can generate 2 a day, and demo users can view
+  them. [How it works](docs/architecture.md#research-reports).
 - **Charts in answers.** Price and allocation charts built only from tool data,
   never from numbers the model wrote. They stream in with the answer and are
   saved with the conversation.
@@ -101,6 +111,11 @@ api's service account can invoke.
   (5.00 vs 4.67) and was preferred 6 to 1 (11 ties); Flash-Lite cost about half
   per turn ($0.0028 vs $0.0059). Flash stays the default. Method and the
   judge-bias note are in [docs/evaluation.md](docs/evaluation.md#chat-evaluation).
+  Research reports have their own eval: nine deterministic checks per report
+  (sections, citations, every figure traced to its source, both quarters cited
+  in "what changed") plus the Pro judge. NVDA, AAPL and MSFT passed 9/9 and
+  scored 5/5/5, at $0.018–0.025 per report
+  ([results](docs/evaluation.md#research-report-evaluation)).
 - **Privacy-aware tracing.** Every chat turn is traced in Langfuse, including
   agent steps, tool calls with latency, and model calls with tokens and cost.
   User ids are hashed, and portfolio values, contact details and secrets are

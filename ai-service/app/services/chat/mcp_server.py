@@ -130,6 +130,11 @@ def default_tool_deps() -> ToolDeps:
 _deps_provider: Callable[[], ToolDeps] = default_tool_deps
 
 
+def tool_deps() -> ToolDeps:
+    """The dependencies the tools use now (the report's comparison step too)."""
+    return _deps_provider()
+
+
 def set_tool_deps(provider: Callable[[], ToolDeps]) -> None:
     """Swap tool dependencies (tests)."""
     global _deps_provider

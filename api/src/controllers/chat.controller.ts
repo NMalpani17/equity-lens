@@ -1,15 +1,14 @@
 /** AI analyst chat controller (HTTP layer). */
 import type { Request, Response } from "express";
 
-import { config } from "../config.js";
 import * as chatService from "../services/chat.service.js";
 import { openChatStream } from "../services/chatStream.service.js";
 import {
   loadPortfolioSnapshot,
   relayEvents,
   type ChatErrorPayload,
-  type EventSink,
 } from "../services/chatTurn.service.js";
+import { startKeepalive, startSse, watchClient, type EventSink } from "./sse.js";
 import { getUserId, isAnonymousRequest } from "../middleware/auth.js";
 import { HttpError } from "../errors.js";
 import { logger } from "../logger.js";
@@ -56,36 +55,11 @@ export async function getUsage(req: Request, res: Response): Promise<void> {
     .json(await chatService.getUsage(getUserId(req), isAnonymousRequest(req)));
 }
 
-const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-cache, no-transform",
-  Connection: "keep-alive",
-  "X-Accel-Buffering": "no",
-};
-
 /** The text users see when the ai-service can't be reached (or is too slow). */
 const UNAVAILABLE_TEXT =
   "The AI analyst is unavailable right now. Please try again shortly.";
 
-/** Start the event stream; from here on, errors are sent as `error` events. */
-function startSse(res: Response): EventSink {
-  res.status(200).set(SSE_HEADERS);
-  res.flushHeaders();
-  return sseSink(res);
-}
-
-/**
- * Write an SSE comment every `keepaliveMs` until stopped. Browsers ignore
- * comments; they keep proxies from closing a connection that is waiting on a
- * cold ai-service or a slow tool.
- */
-export function startKeepalive(res: Response, keepaliveMs = config.chat.keepaliveMs) {
-  const timer = setInterval(() => {
-    if (!res.writableEnded) res.write(": keepalive\n\n");
-  }, keepaliveMs);
-  timer.unref();
-  return () => clearInterval(timer);
-}
+export { startKeepalive };
 
 /** The `error` event for a failure to open the upstream stream. */
 export function streamOpenError(error: unknown): ChatErrorPayload {
@@ -102,16 +76,6 @@ export function streamOpenError(error: unknown): ChatErrorPayload {
   };
 }
 
-function sseSink(res: Response): EventSink {
-  return {
-    send(event, data) {
-      if (!res.writableEnded) {
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-      }
-    },
-  };
-}
-
 /** Timing marks for one turn, logged with its outcome. */
 function turnTimer() {
   const started = performance.now();
@@ -122,19 +86,6 @@ function turnTimer() {
       timings[stage] = Math.round(performance.now() - started);
     },
   };
-}
-
-/**
- * Abort signal for "the client went away". Attach it before any await: a
- * Stop clicked while the turn is still being set up must not be missed, or
- * the model would run to completion with the reply stuck as "streaming".
- */
-function watchClient(res: Response): AbortController {
-  const abort = new AbortController();
-  res.on("close", () => {
-    if (!res.writableEnded) abort.abort();
-  });
-  return abort;
 }
 
 interface TurnContext {

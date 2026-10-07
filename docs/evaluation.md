@@ -93,7 +93,9 @@ answer is scored two ways (`ai-service/app/services/evals/`):
   right company and enough (or exactly the expected) quarters, the
   comparison structure (every heading is one of New, Raised / improved,
   Lowered / worse, No longer mentioned, Unchanged, in that order, with at
-  least one change heading), refusal or redirect when
+  least one change heading) and its closing line (category first, naming
+  exactly the empty categories: "No longer mentioned: nothing found in the
+  retrieved passages.", and left out when none is empty), refusal or redirect when
   expected, a clarifying question (without searching) for ambiguous names, the
   not-financial-advice note, expected numbers (position math, portfolio
   totals) and expected charts.
@@ -198,3 +200,74 @@ against its own evidence. Residual risk: with a Gemini judge grading Gemini
 answers, small score gaps (a few tenths of a point) aren't meaningful — read
 the judge columns as a sanity check next to the check pass rates, and
 spot-check the saved rationales.
+
+## Research report evaluation
+
+`ai-service/scripts/eval_report.py` generates the multi-agent report for NVDA,
+AAPL and MSFT (four indexed quarters each, three different fiscal calendars)
+through the app's own pipeline, in-process, and grades each one:
+
+```bash
+cd ai-service
+python -m scripts.eval_report                    # cost estimate only, contacts nothing
+python -m scripts.eval_report --yes              # run (spends Gemini credit)
+python -m scripts.eval_report --yes --tickers NVDA --no-judge
+python -m scripts.eval_report --rescore scripts/eval/results/report-<run>.json   # re-check saved reports, no API calls
+```
+
+Nothing is saved: the claim store is in memory, so `research_reports` is never
+touched, and new-ticker ingestion and freshness refresh are off (no Equibles
+quota; the index is never rewritten). Each report is one Langfuse trace tagged
+`eval`, with `report_checks_passed` and `faithfulness` / `relevance` /
+`completeness` scores attached.
+
+**Deterministic checks** (`ai-service/app/services/evals/report_checks.py`):
+
+| Check                        | Passes when                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sections_present`           | The six sections, in order, none empty.                                                                                                                                                                                                                                                                                                                                                        |
+| `citations_valid`            | Every `[n]` is a returned citation and every `[Dn]` a market-data source.                                                                                                                                                                                                                                                                                                                      |
+| `sections_cited`             | Every written section cites something (the fixed "unavailable" texts excepted).                                                                                                                                                                                                                                                                                                                |
+| `numbers_from_sources`       | Every figure appears in a source it may come from: Stock performance only from market data; other sections from the passages that section cites or market data. Years, dates, clock times, quarter labels and bare counts up to 12 aren't figures; spoken numbers in transcripts ("16 and a half percent") count. A figure matches at the report's precision (19.9632 shows as 20% or 19.96%). |
+| `changes_cite_both_quarters` | "What changed" cites a passage from each compared quarter.                                                                                                                                                                                                                                                                                                                                     |
+| `comparison_sections`        | Its headings are the comparison headings, in order.                                                                                                                                                                                                                                                                                                                                            |
+| `comparison_closing`         | Its closing line names exactly the empty categories, category first.                                                                                                                                                                                                                                                                                                                           |
+| `no_fundamentals`            | Stock performance has no valuation figures (P/E, market cap, price targets): there is no fundamentals tool.                                                                                                                                                                                                                                                                                    |
+| `disclaimer_and_dates`       | The not-financial-advice note, the latest call date and (with market data) the quote and price dates.                                                                                                                                                                                                                                                                                          |
+
+**Judge:** `gemini-3.1-pro-preview` with the chat eval's rubric (faithfulness,
+relevance, completeness, 1–5), seeing the report with every passage it cites,
+in full, and the market data.
+
+### Report results
+
+Run of 2026-10-07 (`20261007T195445Z`; judge `gemini-3.1-pro-preview`):
+
+| Ticker | Quarter   | Checks | Faithfulness | Relevance | Completeness | Citations | Tokens in / out | Report cost | Judge cost | Latency |
+| ------ | --------- | ------ | ------------ | --------- | ------------ | --------- | --------------- | ----------- | ---------- | ------- |
+| NVDA   | Q2 FY2027 | 9/9    | 5            | 5         | 5            | 13        | 35,033 / 3,461  | $0.0251     | $0.0280    | 28.0s   |
+| AAPL   | Q3 FY2026 | 9/9    | 5            | 5         | 5            | 9         | 21,169 / 2,847  | $0.0183     | $0.0177    | 18.6s   |
+| MSFT   | Q4 FY2026 | 9/9    | 5            | 5         | 5            | 10        | 21,613 / 3,007  | $0.0187     | $0.0177    | 19.9s   |
+
+- **Cost:** $0.126 for the run ($0.062 reports, $0.063 judge), against a
+  $0.29 typical / $0.64 worst-case estimate. Per report the writer was the
+  largest single cost and took 12–14 s; the market analyst finished in 3–6 s,
+  in parallel with the transcript researcher (6–13 s).
+- **The check failed first, and the checks were wrong.** As first run,
+  `numbers_from_sources` failed on all three reports. Every flagged figure was
+  supported: the minute in a quote's "as of 3:54 PM EDT", and Apple's 16.5% tax
+  rate, which the transcript states as "16 and a half percent". The check now
+  skips clock times and reads spoken fractions; `--rescore` re-ran the fixed
+  checks on the same saved reports (nothing regenerated), and all three pass.
+  Regression tests use those exact sentences.
+- **Observations:** the transcript researcher made one extra search for NVDA
+  and none for AAPL or MSFT, relying on the comparison's passages. NVDA's
+  Stock performance repeated the price-history tool's unrounded figures
+  ("$52.6823", "$184.5977"): faithful, but untidy. The quote and price-history
+  tools now round prices to cents and percent changes to two decimals, for
+  chat and reports alike (the chart's close series keeps full precision). The
+  number check matches a figure within half a unit of its last shown digit,
+  so it accepts both these saved reports and rounded ones (`--rescore`: still
+  9/9).
+- **Caveats:** three reports, one run, and a Gemini judge grading Gemini
+  output (see the bias note above); the judge's scores sit at the ceiling.
