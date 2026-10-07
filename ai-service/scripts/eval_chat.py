@@ -88,9 +88,17 @@ def print_estimates(cases: list[EvalCase], models: list[str], budget: float) -> 
 
 
 def eval_settings(base: Settings) -> Settings:
-    """No new-ticker ingestion, no rerank cache (fair latency across models)."""
+    """No ingestion of any kind, no rerank cache (fair latency across models).
+
+    Both caps are zero: a new-ticker ingestion or a freshness refresh would
+    spend Equibles quota and rewrite (and prune) the production index mid-run.
+    """
     return base.model_copy(
-        update={"rag_daily_ingestion_cap": 0, "rag_query_cache_ttl_seconds": 0}
+        update={
+            "rag_daily_ingestion_cap": 0,
+            "rag_daily_refresh_cap": 0,
+            "rag_query_cache_ttl_seconds": 0,
+        }
     )
 
 
