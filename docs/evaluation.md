@@ -92,10 +92,12 @@ answer is scored two ways (`ai-service/app/services/evals/`):
   every `[n]` marker resolves to a returned passage, citations come from the
   right company and enough (or exactly the expected) quarters, the
   comparison structure (every heading is one of New, Raised / improved,
-  Lowered / worse, No longer mentioned, Unchanged, in that order, with at
-  least one change heading) and its closing line (category first, naming
-  exactly the empty categories: "No longer mentioned: nothing found in the
-  retrieved passages.", and left out when none is empty), refusal or redirect when
+  Lowered / worse, No longer mentioned, Unchanged, Results vs guidance, in
+  that order, with at least one change heading), its closing line (category
+  first, naming exactly the empty change categories: "No longer mentioned:
+  nothing found in the retrieved passages.", and left out when none is empty),
+  like-for-like changes (no Raised / Lowered item measures a result against
+  guidance; Results vs guidance items say met, beat or missed), refusal or redirect when
   expected, a clarifying question (without searching) for ambiguous names, the
   not-financial-advice note, expected numbers (position math, portfolio
   totals) and expected charts.
@@ -232,6 +234,7 @@ quota; the index is never rewritten). Each report is one Langfuse trace tagged
 | `changes_cite_both_quarters` | "What changed" cites a passage from each compared quarter.                                                                                                                                                                                                                                                                                                                                     |
 | `comparison_sections`        | Its headings are the comparison headings, in order.                                                                                                                                                                                                                                                                                                                                            |
 | `comparison_closing`         | Its closing line names exactly the empty categories, category first.                                                                                                                                                                                                                                                                                                                           |
+| `comparison_like_for_like`   | No Raised / Lowered item measures a result against guidance ("beat the guidance", or a guided value set against an actual one); every Results vs guidance item says met, beat or missed.                                                                                                                                                                                                       |
 | `no_fundamentals`            | Stock performance has no valuation figures (P/E, market cap, price targets): there is no fundamentals tool.                                                                                                                                                                                                                                                                                    |
 | `disclaimer_and_dates`       | The not-financial-advice note, the latest call date and (with market data) the quote and price dates.                                                                                                                                                                                                                                                                                          |
 

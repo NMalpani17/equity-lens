@@ -9,8 +9,10 @@
   passages or market data (years, dates, quarter labels and bare counts up to
   12 are not figures)
 - changes_cite_both_quarters: "What changed" cites both compared quarters
-- comparison_sections / comparison_closing: the comparison rules' headings
-  and closing line
+- comparison_sections / comparison_closing / comparison_like_for_like: the
+  comparison rules' headings and closing line, and guidance compared only with
+  guidance (a result vs its guidance is met / beat / missed, under Results vs
+  guidance)
 - no_fundamentals: no valuation figures in Stock performance (there is no
   fundamentals tool)
 - disclaimer_and_dates: the not-advice note and the "as of" dates
@@ -23,7 +25,11 @@ from typing import Any
 from app.models.report import SECTIONS, ResearchReportContent
 from app.services.report.assemble import UNAVAILABLE_SECTIONS
 
-from .checks import comparison_closing_line, comparison_structure
+from .checks import (
+    comparison_closing_line,
+    comparison_like_for_like,
+    comparison_structure,
+)
 from .models import CheckResult
 
 _PASSAGE_REF_RE = re.compile(r"\[(\d{1,3})\]")
@@ -193,6 +199,7 @@ def run_report_checks(report: ResearchReportContent) -> list[CheckResult]:
         )
         results.append(comparison_structure(changes))
         results.append(comparison_closing_line(changes))
+        results.append(comparison_like_for_like(changes))
 
     fundamentals = _FUNDAMENTALS_RE.findall(sections.get("stock", ""))
     results.append(

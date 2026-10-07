@@ -289,6 +289,77 @@ def test_closing_line_is_left_out_when_every_category_has_content() -> None:
     )
 
 
+LIKE_FOR_LIKE_ANSWER = """\
+### Lowered / worse
+- Next-quarter revenue growth guidance fell from 14-17% [2] to 9-11% [1].
+
+### Results vs guidance
+- Q3 revenue grew 16%, within the 14-17% guidance given in Q2 [1][2]: met.
+
+New, Raised / improved, No longer mentioned, Unchanged: nothing found in the \
+retrieved passages.
+"""
+
+
+def like_for_like(content: str):
+    record = turn(content, citations=[citation(1), citation(2, quarter=1)])
+    results = run_checks(case(comparison_sections=True), record)
+    return {r.name: r for r in results}
+
+
+def test_results_vs_guidance_goes_under_its_own_heading() -> None:
+    results = like_for_like(LIKE_FOR_LIKE_ANSWER)
+
+    assert [name for name, r in results.items() if not r.passed] == []
+    # Results vs guidance is never one of the closing line's categories.
+    assert results["comparison_closing"].passed is True
+
+
+@pytest.mark.parametrize(
+    ("item", "detail"),
+    [
+        # A result measured against guidance, under a change heading.
+        (
+            "- Revenue growth was lowered: Q3 actual 16% vs 9-11% guidance [1][2].",
+            "mixed guidance and results",
+        ),
+        ("- Q3 revenue beat the 14-17% guidance [1][2].", "mixed guidance"),
+        ("- Revenue came in above the high end of guidance [1].", "mixed guidance"),
+    ],
+)
+def test_a_result_against_guidance_is_not_a_change(item: str, detail: str) -> None:
+    content = LIKE_FOR_LIKE_ANSWER.replace(
+        "- Next-quarter revenue growth guidance fell from 14-17% [2] to 9-11% [1].",
+        item,
+    )
+
+    result = like_for_like(content)["comparison_like_for_like"]
+
+    assert result.passed is False
+    assert detail in result.detail
+
+
+def test_a_results_vs_guidance_item_says_met_beat_or_missed() -> None:
+    content = LIKE_FOR_LIKE_ANSWER.replace(
+        "within the 14-17% guidance given in Q2 [1][2]: met", "versus 14-17% [1][2]"
+    )
+
+    result = like_for_like(content)["comparison_like_for_like"]
+
+    assert result.passed is False
+    assert "not worded met/beat/missed" in result.detail
+
+
+def test_a_milestone_that_exceeded_a_figure_is_not_guidance() -> None:
+    content = LIKE_FOR_LIKE_ANSWER.replace(
+        "- Next-quarter revenue growth guidance fell from 14-17% [2] to 9-11% [1].",
+        "- Services revenue exceeded $100 billion for the year [1], up from $85 "
+        "billion [2].",
+    )
+
+    assert like_for_like(content)["comparison_like_for_like"].passed is True
+
+
 def test_citation_periods_and_max_quarters_catch_a_wrong_quarter() -> None:
     record = turn(
         "x [1] y [2] z [3]",

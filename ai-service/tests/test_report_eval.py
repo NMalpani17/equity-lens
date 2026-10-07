@@ -106,6 +106,7 @@ def test_a_good_report_passes_every_check() -> None:
         "changes_cite_both_quarters",
         "comparison_sections",
         "comparison_closing",
+        "comparison_like_for_like",
         "no_fundamentals",
         "disclaimer_and_dates",
     ]
@@ -135,6 +136,18 @@ def test_figures_skip_years_dates_labels_markers_and_small_counts() -> None:
             {"changes": "### Raised / improved\n- Guidance rose [1]."},
             "changes_cite_both_quarters",
             "need [(2027, 1), (2027, 2)]",
+        ),
+        (
+            # A result measured against guidance is not a raise.
+            {
+                "changes": "### Raised / improved\n"
+                "- Q2 revenue of $96 billion beat the $91 billion guidance "
+                "[2] [1].\n\n"
+                "New, Lowered / worse, No longer mentioned, Unchanged: nothing "
+                "found in the retrieved passages."
+            },
+            "comparison_like_for_like",
+            "mixed guidance and results",
         ),
         (
             {"stock": "- Trades at a P/E of 40 [D2]."},
@@ -262,7 +275,7 @@ def test_evaluate_checks_and_judges_each_report() -> None:
     assert request.user_id == "system:eval" and request.regenerate_after_days == 0
     assert tags == ("eval",)
     table = eval_report.results_table(results)
-    assert "| NVDA | Q2 FY2027 | 9/9 | — | 5 | 4 | 4 |" in table
+    assert "| NVDA | Q2 FY2027 | 10/10 | — | 5 | 4 | 4 |" in table
     assert "research_failed: m" in table
 
 

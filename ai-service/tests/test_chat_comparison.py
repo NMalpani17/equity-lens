@@ -324,17 +324,25 @@ def test_system_prompt_sets_the_comparison_rules() -> None:
         '"### Lowered / worse"',
         '"### No longer mentioned"',
         '"### Unchanged"',
+        '"### Results vs guidance"',
     ]
     positions = [prompt.index(h) for h in headings]
     assert positions == sorted(positions)
     assert "using only the ones that have content" in prompt
+    # Like for like: guidance vs guidance, results vs results; a result
+    # against its guidance is met / beat / missed, never raised or lowered.
+    assert "Compare like with like." in prompt
+    assert "never put it under Raised / improved or Lowered / worse" in prompt
+    assert "worded as met, beat or missed" in prompt
+    assert "9-11% in the newer call is Lowered / worse" in prompt
     # Raised / Lowered only for a changed value; a repeated one is Unchanged.
     assert "only when the value or position itself changed" in prompt
     assert 'it goes under "Unchanged"' in prompt
     # Category-first closing line, left out when nothing is empty.
     assert '"No longer mentioned: nothing found in the retrieved passages."' in prompt
     assert "nothing to report in the retrieved passages" not in prompt.lower()
-    assert "If every category has content, leave the line out." in prompt
+    assert "If every one of them has content, leave the line out." in prompt
+    assert "It covers only New, Raised / improved" in prompt
     assert "not discussed in the retrieved" in prompt
     # "New" never rests on absence from the earlier quarter's passages.
     assert 'Under "New", describe an item only as newly discussed' in prompt

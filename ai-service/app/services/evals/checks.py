@@ -2,8 +2,7 @@
 
 import re
 
-from app.services.chat.comparison_rules import COMPARISON_HEADINGS as RULE_HEADINGS
-from app.services.chat.comparison_rules import NOTHING_FOUND
+from app.services.chat.comparison_rules import CHANGE_HEADINGS, NOTHING_FOUND
 from app.services.chat.guardrails import INJECTION_REPLY, OFF_TOPIC_REPLY
 
 from .models import CheckResult, EvalCase, TurnRecord
@@ -16,13 +15,29 @@ _NUMBER_RE = re.compile(r"-?\$?\d[\d,]*(?:\.\d+)?")
 _HEADING_RE = re.compile(
     r"^\s*(?:#{1,6}\s+(?P<hash>.+?)|\*\*(?P<bold>[^*]+)\*\*:?)\s*$"
 )
-# The quarter-comparison headings, in their required order.
+# The quarter-comparison headings, in their required order (title prefixes).
 COMPARISON_HEADINGS = (
     "new",
     "raised",
     "lowered",
     "no longer mentioned",
     "unchanged",
+    "results vs guidance",
+)
+_CHANGE_COUNT = len(CHANGE_HEADINGS)
+# Like-for-like: a Raised / Lowered item mustn't measure a result against
+# guidance. These say "results vs guidance" ...
+_VS_GUIDANCE_RE = re.compile(
+    r"\b(?:met|beat|beats|missed|exceeded|topped|fell short of|within|above|"
+    r"below|ahead of|in line with)\b(?:\W+\S+){0,5}?\W+"
+    r"(?:guidance|outlook|forecast|range)\b",
+    re.IGNORECASE,
+)
+# ... and these mark one side as guidance and the other as an actual result.
+_GUIDANCE_RE = re.compile(r"\bguid(?:ance|ed|ing)\b|\boutlook\b", re.IGNORECASE)
+_ACTUAL_RE = re.compile(
+    r"\bactual(?:s|ly)?\b|\breported\b|\bcame in\b|\bdelivered\b|\bposted\b",
+    re.IGNORECASE,
 )
 # "Lowered / worse, No longer mentioned: nothing found in the retrieved passages."
 _CLOSING_RE = re.compile(
@@ -158,13 +173,14 @@ def _check_comparison_sections(turn: TurnRecord) -> list[CheckResult]:
     return [
         comparison_structure(turn.content),
         comparison_closing_line(turn.content),
+        comparison_like_for_like(turn.content),
     ]
 
 
 def comparison_structure(content: str) -> CheckResult:
-    """Every heading is one of the five comparison headings, in order, and
-    at least one change heading (New / Raised / Lowered / No longer
-    mentioned) is present."""
+    """Every heading is a comparison heading (the five change categories,
+    then Results vs guidance), in order, and at least one change heading
+    (New / Raised / Lowered / No longer mentioned) is present."""
     headings = comparison_headings(content)
     order = [
         next((i for i, h in enumerate(COMPARISON_HEADINGS) if title.startswith(h)), -1)
@@ -182,15 +198,16 @@ def comparison_structure(content: str) -> CheckResult:
 def comparison_closing_line(content: str) -> CheckResult:
     """The closing line names exactly the empty categories, category first:
     "Lowered / worse, No longer mentioned: nothing found in the retrieved
-    passages." It is left out when every category has content."""
+    passages." It is left out when every category has content. Results vs
+    guidance is not a change category and is never named in it."""
     name = "comparison_closing"
     present = {
         i
         for title in comparison_headings(content)
-        for i, h in enumerate(COMPARISON_HEADINGS)
+        for i, h in enumerate(COMPARISON_HEADINGS[:_CHANGE_COUNT])
         if title.startswith(h)
     }
-    empty = [h for i, h in enumerate(RULE_HEADINGS) if i not in present]
+    empty = [h for i, h in enumerate(CHANGE_HEADINGS) if i not in present]
     lines = [
         line.strip().strip("*_ ").strip()
         for line in content.splitlines()
@@ -206,6 +223,48 @@ def comparison_closing_line(content: str) -> CheckResult:
     listed = [c.strip() for c in match.group("categories").split(",")]
     same = [c.lower() for c in listed] == [c.lower() for c in empty]
     return _result(name, same, f"listed {listed}, empty {empty}")
+
+
+def comparison_items(content: str) -> dict[str, list[str]]:
+    """Each comparison heading's bullet lines (heading -> items), lower-cased keys."""
+    items: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in content.splitlines():
+        match = _HEADING_RE.match(line)
+        if match:
+            title = (match.group("hash") or match.group("bold")).strip(" *:").lower()
+            current = next(
+                (h for h in COMPARISON_HEADINGS if title.startswith(h)), None
+            )
+            continue
+        if current and line.lstrip().startswith(("-", "*", "•")):
+            items.setdefault(current, []).append(line.strip())
+    return items
+
+
+def comparison_like_for_like(content: str) -> CheckResult:
+    """Raised / Lowered compare like with like: no item measures a result
+    against guidance (met / beat / missed, or a guided value set against an
+    actual one); those belong under Results vs guidance, worded that way."""
+    items = comparison_items(content)
+    offenders = [
+        f"{heading}: {item[:80]}"
+        for heading in ("raised", "lowered")
+        for item in items.get(heading, [])
+        if _VS_GUIDANCE_RE.search(item)
+        or (_GUIDANCE_RE.search(item) and _ACTUAL_RE.search(item))
+    ]
+    unworded = [
+        item[:80]
+        for item in items.get("results vs guidance", [])
+        if not _VS_GUIDANCE_RE.search(item)
+    ]
+    detail = (
+        f"mixed guidance and results: {offenders[:3]}"
+        if offenders
+        else (f"results vs guidance not worded met/beat/missed: {unworded[:3]}")
+    )
+    return _result("comparison_like_for_like", not offenders and not unworded, detail)
 
 
 def is_refusal(turn: TurnRecord) -> bool:

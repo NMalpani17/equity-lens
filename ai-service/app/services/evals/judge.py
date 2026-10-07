@@ -41,6 +41,10 @@ Rules:
 - A short clarifying question is appropriate when the question is genuinely \
 ambiguous; a disclaimer that the answer is not financial advice is required \
 for buy/sell questions and is not a flaw.
+- In quarter-over-quarter comparisons, "raised" / "lowered" must compare like \
+with like: guidance with the earlier guidance for the same metric, results \
+with earlier results. Calling a result measured against guidance "raised" or \
+"lowered" (instead of met / beat / missed) is a faithfulness error.
 - Then name the better answer overall in "preferred", or "tie".
 """
 

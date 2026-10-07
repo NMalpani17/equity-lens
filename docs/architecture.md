@@ -190,13 +190,18 @@ wait-for-indexing, turn citation ids and the model-facing text.
   welcome ranked below the kept passages).
 - **Answer rules.** The system prompt routes "what changed" questions to the
   tool and asks for the headings New, Raised / improved, Lowered / worse, No
-  longer mentioned and Unchanged, in that order, using only those with
-  content. Raised / improved and Lowered / worse are only for a value that
-  itself changed between the quarters; a value that is the same in both (a
-  reaffirmed tax rate) goes under Unchanged. A closing line names the empty
+  longer mentioned and Unchanged, then Results vs guidance, in that order,
+  using only those with content. Changes compare like with like: guidance
+  with the earlier guidance for the same metric and period (next-quarter
+  growth guided 14–17%, then 9–11%, is Lowered / worse), results with earlier
+  results. A result measured against its guidance is never Raised or Lowered;
+  it goes under Results vs guidance, worded met, beat or missed. Raised /
+  improved and Lowered / worse are only for a value that itself changed
+  between the quarters; a value that is the same in both (a reaffirmed tax
+  rate) goes under Unchanged. A closing line names the empty change
   categories first, then the status ("Lowered / worse, No longer mentioned:
   nothing found in the retrieved passages."), and is left out when every
-  category has content. The rules live in one module
+  change category has content. The rules live in one module
   (`ai-service/app/services/chat/comparison_rules.py`) shared with the
   research report's writer. Every claim cites a
   passage from the quarter it describes (a change cites both). A theme with no
