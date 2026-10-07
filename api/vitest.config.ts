@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // Real-database tests run separately: npm run test:integration.
+    exclude: ["tests/integration/**", "node_modules/**"],
     // Placeholder connection strings so config validation passes in tests.
     // Tests mock the Prisma client, so no real database is contacted.
     env: {

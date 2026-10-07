@@ -67,10 +67,11 @@ jobs:
 
   # Everything that needs a real database, against a throwaway Postgres 17
   # (Supabase runs 17): migrations apply cleanly and match schema.prisma, RLS
-  # covers every table, backup-db.sh / restore-db.sh round-trip every row, and
-  # the ai-service's repository SQL (RAG and reports) passes its Postgres tests.
+  # covers every table, backup-db.sh / restore-db.sh round-trip every row, the
+  # api's queries run for real, and the ai-service's repository SQL (RAG and
+  # reports) passes its Postgres tests.
   backup-roundtrip:
-    name: migrations · RLS · backup round trip · repository SQL
+    name: migrations · RLS · backup round trip · api + repository SQL
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -93,6 +94,10 @@ jobs:
         working-directory: api
       - uses: ./.github/actions/setup-pg-client
       - run: .github/scripts/ci/backup-roundtrip.sh
+      # The api's real-database tests (raw SQL, advisory locks, transactions),
+      # which the unit tests can't catch because they mock Prisma.
+      - name: api integration tests (real Prisma queries)
+        run: .github/scripts/ci/api-integration.sh
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"

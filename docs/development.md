@@ -297,6 +297,17 @@ details, see [api.md](./api.md).
   docker rm -f el-pgtest
   ```
 
+- api integration tests (`api/tests/integration/`, `npm run test:integration`)
+  run the api's Prisma queries for real (raw SQL, the report usage advisory
+  lock, transactions, the weighted global cap, stored report reads). The unit
+  tests mock Prisma, which is how a `$queryRaw` that Prisma couldn't
+  deserialize reached production. They need `API_TEST_DATABASE_URL` on
+  localhost (the config refuses any other host) with the migrations applied,
+  and are skipped without it; `npm test` never runs them. CI runs them in the
+  `backup-roundtrip` job via `.github/scripts/ci/api-integration.sh`, which
+  creates a throwaway database, applies the migrations and fails if the tests
+  would skip. Use `$executeRaw` for raw statements whose result you don't read
+  (such as `pg_advisory_xact_lock`, which returns `void`).
 - Safety checks: `api/tests/repoPolicy.test.ts` (Claude Code rules, RLS on
   every new table) and `ai-service/tests/test_ci_workflows.py` (backup daily
   and before migrations; no deploy without its migration). CI's

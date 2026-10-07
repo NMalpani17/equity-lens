@@ -322,7 +322,9 @@ export async function startGeneration(
 
   const { start, resetsAt } = utcDayWindow(now);
   const event = await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${USAGE_LOCK_KEY})`;
+    // $executeRaw, not $queryRaw: pg_advisory_xact_lock returns void, which
+    // $queryRaw can't deserialize (P2010); $executeRaw reads no columns.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USAGE_LOCK_KEY})`;
     const [used, globalUsed] = await Promise.all([
       countUserEvents(userId, [REPORT_USAGE_KIND], start, tx),
       globalUnitsUsed(start, tx),
