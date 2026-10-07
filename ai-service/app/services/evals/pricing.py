@@ -6,6 +6,10 @@ Output prices include thinking tokens.
 """
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.config import Settings
 
 # model id -> (input $/1M, output $/1M)
 PRICES: dict[str, tuple[float, float]] = {
@@ -63,3 +67,75 @@ def estimate(
     judge_in = int(judge_tokens[0] * max(1, len(models)) / 2)
     judge = judged_questions * cost_usd(judge_model, judge_in, judge_tokens[1])
     return Estimate(agent, judge, judge_model, judged_questions)
+
+
+# --- Research reports ------------------------------------------------------------
+# Per report, by agent: (input, output) tokens. "Typical" assumes the
+# transcript researcher's context grows over ~5 model calls from ~11K tokens
+# (the comparison passages) as search results are added, a short market
+# analyst run, and a writer shown ~24 passages. "Most" assumes every agent
+# uses its full step limit and output cap.
+EST_REPORT_TOKENS: dict[str, tuple[int, int]] = {
+    "transcripts": (75_000, 2_500),
+    "market": (6_000, 600),
+    "writer": (13_000, 3_000),
+}
+# Largest context per model call, for the upper bound.
+MAX_REPORT_CONTEXT = {"transcripts": 22_000, "market": 8_000, "writer": 16_000}
+# Rerank calls per report: two for the comparison plus one per search.
+REPORT_RERANKS_MAX = 2 + 4
+
+
+@dataclass(frozen=True)
+class ReportEstimate:
+    reports: int
+    typical_usd: dict[str, float]
+    most_usd: dict[str, float]
+    models: dict[str, str]
+    reranks_max: int
+
+    @property
+    def typical_total(self) -> float:
+        return self.reports * sum(self.typical_usd.values())
+
+    @property
+    def most_total(self) -> float:
+        return self.reports * sum(self.most_usd.values())
+
+
+def estimate_reports(settings: "Settings", reports: int) -> ReportEstimate:
+    """Expected and worst-case spend for ``reports`` research reports."""
+    models = {
+        "transcripts": settings.report_research_model,
+        "market": settings.report_research_model,
+        "writer": settings.report_writer_model,
+    }
+    calls = {
+        "transcripts": settings.report_transcript_max_model_calls,
+        "market": settings.report_market_max_model_calls,
+        "writer": 1,
+    }
+    max_output = {
+        "transcripts": settings.report_research_max_output_tokens,
+        "market": settings.report_research_max_output_tokens,
+        "writer": settings.report_writer_max_output_tokens,
+    }
+    typical = {
+        agent: cost_usd(models[agent], *tokens)
+        for agent, tokens in EST_REPORT_TOKENS.items()
+    }
+    most = {
+        agent: cost_usd(
+            models[agent],
+            calls[agent] * MAX_REPORT_CONTEXT[agent],
+            calls[agent] * max_output[agent],
+        )
+        for agent in models
+    }
+    return ReportEstimate(
+        reports=reports,
+        typical_usd=typical,
+        most_usd=most,
+        models={agent: model_id(spec) for agent, spec in models.items()},
+        reranks_max=reports * REPORT_RERANKS_MAX,
+    )
