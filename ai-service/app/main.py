@@ -14,7 +14,7 @@ from starlette.middleware import Middleware
 from app.config import get_settings
 from app.errors import AppError
 from app.logging_config import configure_logging
-from app.routers import chat, health, market, rag
+from app.routers import chat, health, market, rag, report
 from app.security import InternalTokenMiddleware, require_internal_token
 from app.services.chat.mcp_server import mcp
 from app.services.observability.tracing import shutdown_tracer
@@ -64,7 +64,7 @@ def create_app() -> FastAPI:
     # and requires the internal token (checked before the body is parsed).
     app.include_router(health.router)
     internal_only = [Depends(require_internal_token)]
-    for router in (market.router, rag.router, chat.router):
+    for router in (market.router, rag.router, chat.router, report.router):
         app.include_router(router, dependencies=internal_only)
     app.mount("/mcp", mcp_app)
     _register_error_handlers(app)

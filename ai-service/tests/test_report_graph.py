@@ -153,8 +153,8 @@ def writer(draft: ReportDraft | None = DRAFT, seen: list | None = None):
     return RunnableLambda(respond)
 
 
-@pytest.fixture
-def deps():
+def install_tool_deps() -> ToolDeps:
+    """Fake data services behind the real MCP tools (search, market, compare)."""
     search = MagicMock()
     search.search.return_value = RagSearchResponse(
         query="q",
@@ -186,7 +186,12 @@ def deps():
         comparison=lambda: compare_service,
     )
     mcp_server.set_tool_deps(lambda: tool_deps)
-    yield tool_deps
+    return tool_deps
+
+
+@pytest.fixture
+def deps():
+    yield install_tool_deps()
     mcp_server.set_tool_deps(mcp_server.default_tool_deps)
 
 
