@@ -1,4 +1,5 @@
 /** Typed client for the Equity Lens API gateway. */
+import { parseSse } from "./sse";
 import { supabase } from "./supabase";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
@@ -66,6 +67,50 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+/**
+ * POST and read a server-sent-events response, calling `onFrame` for each
+ * frame whose event name is in `events` (data parsed as JSON; malformed
+ * frames are skipped). Rejects with an ApiError for errors before streaming
+ * starts (the API's JSON errors). Aborting `signal` stops reading.
+ */
+export async function postEventStream(
+  path: string,
+  body: Record<string, unknown>,
+  events: ReadonlySet<string>,
+  onFrame: (event: string, data: Record<string, unknown>) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new ApiError(0, "Could not reach the API. Is it running?");
+  }
+  if (!response.ok || !response.body) {
+    throw await apiErrorFrom(response);
+  }
+  for await (const frame of parseSse(response.body)) {
+    if (!events.has(frame.event)) continue;
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(frame.data) as Record<string, unknown>;
+    } catch {
+      continue; // a malformed frame doesn't abandon the stream
+    }
+    onFrame(frame.event, data);
+  }
 }
 
 // --- Health ---------------------------------------------------------------

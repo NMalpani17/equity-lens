@@ -1,6 +1,5 @@
 /** Typed client for the AI analyst chat endpoints. */
-import { API_URL, apiErrorFrom, ApiError, authHeaders, request } from "./api";
-import { parseSse } from "./sse";
+import { postEventStream, request } from "./api";
 
 export interface Conversation {
   id: string;
@@ -213,38 +212,18 @@ export function streamRetry(
   );
 }
 
-async function postStream(
+function postStream(
   path: string,
   body: Record<string, unknown>,
   onEvent: (event: ChatStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}${path}`, {
-      method: "POST",
-      signal,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-        ...(await authHeaders()),
-      },
-      // The server shows dates and times in the user's own time zone.
-      body: JSON.stringify(body),
-    });
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    throw new ApiError(0, "Could not reach the API. Is it running?");
-  }
-  if (!response.ok || !response.body) {
-    throw await apiErrorFrom(response);
-  }
-  for await (const frame of parseSse(response.body)) {
-    if (!STREAM_EVENTS.has(frame.event)) continue;
-    try {
-      onEvent({ type: frame.event, ...JSON.parse(frame.data) } as ChatStreamEvent);
-    } catch {
-      // Ignore a malformed frame rather than abandoning the stream.
-    }
-  }
+  // The server shows dates and times in the user's own time zone.
+  return postEventStream(
+    path,
+    body,
+    STREAM_EVENTS,
+    (type, data) => onEvent({ type, ...data } as ChatStreamEvent),
+    signal,
+  );
 }
