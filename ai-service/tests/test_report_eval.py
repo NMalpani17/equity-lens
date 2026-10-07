@@ -273,3 +273,27 @@ def test_eval_settings_turn_off_ingestion_and_refresh() -> None:
 
     assert settings.rag_daily_ingestion_cap == 0
     assert settings.rag_daily_refresh_cap == 0
+
+
+# Regressions from the first real run (2026-10-07): both were check bugs.
+
+
+def test_a_quote_time_is_not_a_figure() -> None:
+    stock = (
+        "- As of Oct 7, 2026, 3:54 PM EDT, NVDA was trading at $181.50, "
+        "up 19.96% [D2]."
+    )
+
+    assert failed(run_report_checks(report(stock=stock))) == {}
+
+
+def test_spoken_numbers_in_transcripts_count_as_sources() -> None:
+    content = report(guidance="- The tax rate is expected around 16.5% [3].")
+    spoken = citation(
+        3,
+        2,
+        "our tax rate to be around 16 and a half percent finally today our board",
+    )
+    content = content.model_copy(update={"citations": [*content.citations, spoken]})
+
+    assert failed(run_report_checks(content)) == {}

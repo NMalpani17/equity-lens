@@ -249,6 +249,35 @@ def record_scores(tracer: Any, results: list[ReportResult]) -> None:
     tracer.flush()
 
 
+def rescore(path: Path) -> int:
+    """Re-run the checks on a saved run's reports; judge scores are kept."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    results = []
+    for saved in payload["results"]:
+        result = ReportResult(
+            ticker=saved["ticker"],
+            status=saved["status"],
+            error=saved.get("error"),
+            quarter=saved.get("quarter"),
+            judge=JudgeScore(**saved["judge"]) if saved.get("judge") else None,
+            report_cost_usd=saved.get("report_cost_usd", 0.0),
+            judge_cost_usd=saved.get("judge_cost_usd", 0.0),
+            latency_s=saved.get("latency_s", 0.0),
+            report=saved.get("report"),
+        )
+        if result.report is not None:
+            content = ResearchReportContent.model_validate(result.report)
+            result.checks = run_report_checks(content)
+        saved["checks"] = [c.model_dump() for c in result.checks]
+        saved["passed"] = result.passed
+        results.append(result)
+    payload["rescored_at"] = datetime.now(UTC).isoformat()
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    print(results_table(results))  # CLI output
+    print(f"Rescored {path}")
+    return 0 if all(r.passed for r in results) else 1
+
+
 def eval_report_settings(base: Settings) -> Settings:
     """No ingestion or freshness refresh during the eval."""
     return base.model_copy(
@@ -291,8 +320,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-judge", action="store_true", help="checks only")
     parser.add_argument("--yes", action="store_true", help="spend the API credit")
     parser.add_argument("--json", type=Path, help="results path")
+    parser.add_argument(
+        "--rescore",
+        type=Path,
+        metavar="RESULTS_JSON",
+        help="re-run the deterministic checks on saved reports (no API calls)",
+    )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+    if args.rescore:
+        return rescore(args.rescore)
 
     base = get_settings()
     print_estimate(base, tickers, judge=not args.no_judge)
