@@ -45,7 +45,7 @@ from .graph import (
     run_report_graph,
 )
 from .llm import build_research_model, build_writer
-from .repository import ClaimOutcome, ReportRepository
+from .repository import Claim, ClaimOutcome, ReportRepository
 
 with warnings.catch_warnings():
     # langchain.mcp is marked beta; the version is pinned in requirements.txt.
@@ -114,13 +114,7 @@ class ReportService:
             yield _error("not_indexed", f"{ticker} has no indexed earnings calls yet.")
             return
         repo = self._repo()
-        claim = await asyncio.to_thread(
-            repo.claim,
-            ticker,
-            *latest,
-            regenerate_after=timedelta(days=request.regenerate_after_days),
-            stale_after=timedelta(minutes=self._settings.report_lock_stale_minutes),
-        )
+        claim = await self._claim(repo, ticker, latest, request.regenerate_after_days)
         if claim.outcome is ClaimOutcome.IN_PROGRESS:
             yield _error(
                 "report_in_progress",
@@ -136,20 +130,72 @@ class ReportService:
             )
             return
         assert claim.generation_id is not None
-        async for event in self._generate(
-            request, record, Period(*latest), claim.generation_id, repo, trace_tags
-        ):
-            yield event
+        run = _Run(claim.generation_id)
+        try:
+            async with contextlib.aclosing(
+                self._generate(request, record, Period(*latest), run, repo, trace_tags)
+            ) as events:
+                async for event in events:
+                    yield event
+        finally:
+            # Failed, timed out or cancelled (the client went away): free the
+            # report now, not after the stale window, so a retry can generate.
+            if not run.saved and not run.released:
+                self._release(repo, run.generation_id)
+
+    async def _claim(
+        self, repo: ReportRepository, ticker: str, latest: tuple[int, int], days: int
+    ) -> Claim:
+        """Claim the report; if cancelled meanwhile, release once it lands.
+
+        The claim runs in a worker thread and commits even if this coroutine
+        is cancelled (the client disconnected), so a claim that lands after
+        cancellation is released right away instead of blocking the report
+        for the stale window.
+        """
+        task = asyncio.ensure_future(
+            asyncio.to_thread(
+                repo.claim,
+                ticker,
+                *latest,
+                regenerate_after=timedelta(days=days),
+                stale_after=timedelta(minutes=self._settings.report_lock_stale_minutes),
+            )
+        )
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            task.add_done_callback(lambda done: self._release_landed(repo, done))
+            raise
+
+    def _release_landed(self, repo: ReportRepository, task: asyncio.Future) -> None:
+        if task.cancelled() or task.exception() is not None:
+            return
+        claim: Claim = task.result()
+        if claim.outcome is ClaimOutcome.CLAIMED and claim.generation_id:
+            self._release(repo, claim.generation_id)
+
+    @staticmethod
+    def _release(repo: ReportRepository, generation_id: str) -> None:
+        try:
+            repo.release(generation_id)
+        except Exception:
+            logger.warning(
+                "could not release report claim %s; it expires after the stale window",
+                generation_id,
+                exc_info=True,
+            )
 
     async def _generate(
         self,
         request: ReportRequest,
         record: TickerRecord,
         latest: Period,
-        generation_id: str,
+        run: "_Run",
         repo: ReportRepository,
         trace_tags: tuple[str, ...],
     ) -> AsyncIterator[ReportEvent]:
+        generation_id = run.generation_id
         settings = self._settings
         ticker = request.ticker
         company = record.company_name or ticker
@@ -177,7 +223,7 @@ class ReportService:
         )
         # Stays "interrupted" if the client goes away mid-run.
         status = "interrupted"
-        saved = False
+        error: ReportEvent | None = None
         content: ResearchReportContent | None = None
         try:
             async with asyncio.timeout(settings.report_timeout_seconds):
@@ -220,7 +266,7 @@ class ReportService:
                     "Another generation replaced this one. Please reload.",
                     retryable=True,
                 )
-            saved = True
+            run.saved = True
             status = "complete"
             yield ReportEvent(
                 "done",
@@ -237,26 +283,29 @@ class ReportService:
         except ReportError as exc:
             status = exc.code
             logger.warning("report %s failed (%s): %s", ticker, exc.code, exc.message)
-            yield _error(exc.code, exc.message, retryable=exc.retryable)
+            error = _error(exc.code, exc.message, retryable=exc.retryable)
         except TimeoutError:
             status = "timeout"
             logger.warning("report %s timed out", ticker)
-            yield _error(
+            error = _error(
                 "report_timeout",
                 "The report took too long. Please try again.",
                 retryable=True,
             )
         except Exception as exc:  # model/provider failures end the run cleanly
-            error = classify_model_error(exc)
-            status = error.code
-            log = logger.warning if error.expected else logger.exception
-            log("report %s failed (%s): %s", ticker, error.code, exc)
-            yield _error(error.code, error.message, retryable=error.retryable)
+            model_error = classify_model_error(exc)
+            status = model_error.code
+            log = logger.warning if model_error.expected else logger.exception
+            log("report %s failed (%s): %s", ticker, model_error.code, exc)
+            error = _error(
+                model_error.code, model_error.message, retryable=model_error.retryable
+            )
         finally:
-            if not saved:
-                # Failed or cancelled: free the report for the next request.
-                with contextlib.suppress(Exception):
-                    repo.release(generation_id)
+            # Release before the error goes out, so a client that retries as
+            # soon as it sees the error isn't told the report is in progress.
+            if not run.saved:
+                self._release(repo, generation_id)
+                run.released = True
             self._registry.discard(turn.turn_id)
             self._tracer.score(
                 trace_id=trace.trace_id,
@@ -278,6 +327,17 @@ class ReportService:
                     }
                 },
             )
+        if error is not None:
+            yield error
+
+
+@dataclass
+class _Run:
+    """One generation's claim: saved (content stored) or released (freed)."""
+
+    generation_id: str
+    saved: bool = False
+    released: bool = False
 
 
 def _usage(content: ResearchReportContent) -> dict[str, Any]:

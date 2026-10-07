@@ -1,7 +1,9 @@
 """The report service and route: claims, saving, failures, cancellation, tracing."""
 
 import asyncio
+import contextlib
 import json
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -46,25 +48,35 @@ def deps():
 
 
 class FakeRepo:
+    """Like the real one: a live claim blocks others until saved or released."""
+
     def __init__(self, outcome: ClaimOutcome = ClaimOutcome.CLAIMED) -> None:
         self.outcome = outcome
         self.claims: list[tuple] = []
         self.saved: list[dict[str, Any]] = []
         self.released: list[str] = []
         self.save_result: datetime | None = GENERATED
+        self.active: str | None = None
 
     def claim(self, ticker, fiscal_year, fiscal_quarter, **kwargs) -> Claim:
         self.claims.append((ticker, fiscal_year, fiscal_quarter, kwargs))
         if self.outcome is not ClaimOutcome.CLAIMED:
             return Claim(self.outcome)
-        return Claim(ClaimOutcome.CLAIMED, f"gen-{len(self.claims)}")
+        if self.active is not None:
+            return Claim(ClaimOutcome.IN_PROGRESS)
+        self.active = f"gen-{len(self.claims)}"
+        return Claim(ClaimOutcome.CLAIMED, self.active)
 
     def save(self, generation_id: str, **kwargs) -> datetime | None:
         self.saved.append({"generation_id": generation_id, **kwargs})
+        if self.save_result is not None and self.active == generation_id:
+            self.active = None
         return self.save_result
 
     def release(self, generation_id: str) -> None:
         self.released.append(generation_id)
+        if self.active == generation_id:
+            self.active = None
 
 
 class RecordingTracer:
@@ -328,3 +340,99 @@ def test_the_route_needs_the_internal_token_and_streams_sse(deps) -> None:
     assert res.headers["content-type"].startswith("text/event-stream")
     assert res.text.startswith("event: error\ndata: ")
     assert json.loads(res.text.split("data: ", 1)[1])["code"] == "report_in_progress"
+
+
+# --- claims are released right away ------------------------------------------
+
+
+def failing_agents(deps):
+    scripts = research_script(**{TRANSCRIPT_KEY: [ai("## Drivers\n- No ids.")]})
+    return make_agents(deps, ByPromptModel(scripts=scripts), writer())
+
+
+def slow_agents(deps):
+    async def slow(messages):
+        await asyncio.sleep(5)
+        return {"raw": ai("x"), "parsed": DRAFT}
+
+    return make_agents(
+        deps,
+        ByPromptModel(scripts=research_script()),
+        RunnableLambda(slow),
+        report_timeout_seconds=0.5,
+    )
+
+
+def cancel_after_first_event(svc: ReportService) -> None:
+    async def go() -> None:
+        stream = svc.stream(request())
+        await stream.__anext__()
+        await stream.aclose()  # the client went away
+
+    asyncio.run(go())
+
+
+@pytest.mark.parametrize("failure", ["failed", "timed_out", "cancelled"])
+def test_the_next_request_generates_at_once_after_a_run_ends_early(
+    deps, failure
+) -> None:
+    repo = FakeRepo()
+    if failure == "failed":
+        collect(service(failing_agents(deps), repo), request())
+    elif failure == "timed_out":
+        collect(service(slow_agents(deps), repo), request())
+    else:
+        cancel_after_first_event(service(happy_agents(deps), repo))
+
+    assert repo.released == ["gen-1"] and repo.active is None
+    retry = collect(service(happy_agents(deps), repo), request())
+
+    assert retry[-1].type == "done"  # not report_in_progress
+    assert repo.saved[-1]["generation_id"] == "gen-2"
+
+
+def test_the_claim_is_released_before_the_error_reaches_the_client(deps) -> None:
+    repo = FakeRepo()
+    svc = service(failing_agents(deps), repo)
+
+    async def released_when_the_error_arrives() -> list[str]:
+        async for event in svc.stream(request()):
+            if event.type == "error":
+                return list(repo.released)
+        raise AssertionError("no error event")
+
+    assert asyncio.run(released_when_the_error_arrives()) == ["gen-1"]
+
+
+def test_a_claim_that_lands_after_the_client_left_is_released(deps) -> None:
+    entered, proceed = threading.Event(), threading.Event()
+
+    class SlowClaimRepo(FakeRepo):
+        def claim(self, *args, **kwargs) -> Claim:
+            entered.set()
+            proceed.wait(5)
+            return super().claim(*args, **kwargs)
+
+    repo = SlowClaimRepo()
+    svc = service(happy_agents(deps), repo)
+
+    async def disconnect_during_the_claim() -> None:
+        async def consume() -> None:
+            async for _ in svc.stream(request()):
+                pass
+
+        task = asyncio.create_task(consume())
+        await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        proceed.set()  # the claim commits after the client is gone
+        for _ in range(100):
+            if repo.released:
+                return
+            await asyncio.sleep(0.02)
+
+    asyncio.run(disconnect_during_the_claim())
+
+    assert repo.released == ["gen-1"] and repo.active is None
+    assert repo.saved == []
