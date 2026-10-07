@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.services.rag.company_names import company_display_name
 from app.services.rag.errors import (
     EquiblesQuotaError,
     IngestionCapReachedError,
@@ -53,7 +54,8 @@ def test_first_run_fetches_and_caches_then_reruns_use_cache_only() -> None:
     result = pipeline.ingest("AAPL")
 
     assert result.quarters == ["FY2025Q4", "FY2025Q3", "FY2025Q2", "FY2025Q1"]
-    assert result.company_name == "AAPL Holdings Inc"
+    # A curated ticker is stored under its proper name, not the event title's.
+    assert result.company_name == "Apple Inc."
     assert result.chunk_count == 12
     store.ensure_index.assert_called()  # works even before the seed script ran
     assert len(repo.transcripts) == 4
@@ -198,7 +200,7 @@ def test_plain_only_indexes_just_the_eval_namespace() -> None:
 
 
 def test_company_name_is_consistent_across_quarters() -> None:
-    equibles = FakeEquibles(PERIODS)
+    equibles = FakeEquibles({"ZZZZ": PERIODS["AAPL"]})
     original = equibles.get_transcript
 
     def odd_latest_title(ticker, fy, fq):
@@ -210,11 +212,12 @@ def test_company_name_is_consistent_across_quarters() -> None:
     equibles.get_transcript = odd_latest_title
     pipeline, _, _, store = build(equibles)
 
-    result = pipeline.ingest("AAPL")
+    result = pipeline.ingest("ZZZZ")
 
-    assert result.company_name == "AAPL Holdings Inc"
+    # Not curated: the title's name, with the trailing "Inc" given its period.
+    assert result.company_name == "ZZZZ Holdings Inc."
     chunks = store.upsert_chunks.call_args.args[0]
-    assert {c.company_name for c in chunks} == {"AAPL Holdings Inc"}
+    assert {c.company_name for c in chunks} == {"ZZZZ Holdings Inc."}
 
 
 def test_embedding_daily_quota_stops_like_equibles_quota() -> None:
@@ -231,3 +234,21 @@ def test_embedding_daily_quota_stops_like_equibles_quota() -> None:
 
     assert outcome.quota_exhausted
     assert repo.tickers["AAPL"].status == "failed"
+
+
+@pytest.mark.parametrize(
+    ("ticker", "raw", "expected"),
+    [
+        ("AMZN", "Amazon Com Inc", "Amazon.com, Inc."),
+        ("JPM", "Jpmorgan Chase & Co", "JPMorgan Chase & Co."),
+        ("NVDA", "Nvidia Corp", "NVIDIA Corporation"),
+        ("nvda", None, "NVIDIA Corporation"),
+        # Not curated: only a trailing abbreviation gets its period.
+        ("ZZZZ", "Acme Widgets Corp", "Acme Widgets Corp."),
+        ("ZZZZ", "Acme Widgets Corp.", "Acme Widgets Corp."),
+        ("ZZZZ", "Coinco Holdings", "Coinco Holdings"),
+        ("ZZZZ", "  ", "ZZZZ"),
+    ],
+)
+def test_company_display_names(ticker: str, raw: str | None, expected: str) -> None:
+    assert company_display_name(ticker, raw) == expected

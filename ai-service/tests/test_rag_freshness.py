@@ -270,7 +270,7 @@ def test_newer_call_is_indexed_and_the_oldest_quarter_removed(
     assert after.quarters == ["FY2026Q1", "FY2025Q4", "FY2025Q3", "FY2025Q2"]
     assert after.chunk_count == before.chunk_count  # +3 new, -3 removed
     assert after.latest_call_date == date(2026, 1, 15)
-    assert after.company_name == "AAPL Holdings Inc"
+    assert after.company_name == "Apple Inc."
     job = env.repo.jobs[after.last_job_id]
     assert (job.trigger, job.status) == ("refresh", "succeeded")
     # The refresh used its own counter, not the new-ticker one.

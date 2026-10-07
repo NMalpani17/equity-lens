@@ -22,6 +22,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
+from .company_names import company_display_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,6 +92,14 @@ class TickerRecord:
     indexed_at: datetime | None = None
     latest_call_date: date | None = None
     freshness_checked_at: datetime | None = None
+
+
+def _ticker_record(row: dict[str, Any]) -> TickerRecord:
+    """A ``rag_tickers`` row, with the company's proper name."""
+    name = row["company_name"]
+    if name:
+        name = company_display_name(row["ticker"], name)
+    return TickerRecord(**{**row, "company_name": name})
 
 
 # Query parameters Prisma understands but libpq rejects ("invalid URI query
@@ -211,14 +221,14 @@ class RagRepository:
                 f"SELECT {_TICKER_COLUMNS} FROM rag_tickers WHERE ticker = %s",
                 (ticker,),
             ).fetchone()
-        return TickerRecord(**row) if row else None
+        return _ticker_record(row) if row else None
 
     def list_tickers(self) -> list[TickerRecord]:
         with self._pool.connection() as conn:
             rows = conn.execute(
                 f"SELECT {_TICKER_COLUMNS} FROM rag_tickers ORDER BY ticker"
             ).fetchall()
-        return [TickerRecord(**row) for row in rows]
+        return [_ticker_record(row) for row in rows]
 
     def get_job(self, job_id: str) -> JobRecord | None:
         with self._pool.connection() as conn:
