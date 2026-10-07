@@ -83,3 +83,18 @@ def test_no_deploy_without_its_migration(job: str) -> None:
         "needs.changes.outputs.migrations != 'true')" in condition
     )
     assert "needs.migrate.result)" not in condition  # the old success-or-skipped rule
+
+
+def test_ci_runs_the_postgres_gated_repository_tests() -> None:
+    job = workflow("ci.yml")["jobs"]["backup-roundtrip"]
+    step = next(s for s in job["steps"] if "repository_pg" in s.get("run", ""))
+
+    assert "postgres" in job["services"]
+    url = step["env"]["AI_SERVICE_TEST_DATABASE_URL"]
+    assert url.startswith("postgresql://postgres:postgres@127.0.0.1:5432/")
+    for test in (
+        "tests/test_rag_repository_pg.py",
+        "tests/test_report_repository_pg.py",
+    ):
+        assert test in step["run"]
+    assert 'grep -q "SKIPPED"' in step["run"]  # skipped tests fail the job

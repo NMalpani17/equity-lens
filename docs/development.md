@@ -280,11 +280,23 @@ details, see [api.md](./api.md).
 
 - Chat tests need no network: a scripted fake chat model drives the real agent
   and MCP tools (`ai-service/tests/test_chat_agent.py`).
-- RAG repository integration tests (advisory-lock dedupe, daily caps,
-  once-per-day freshness checks, the freshness backfill) run only when
-  `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a direct,
-  non-pooled URL); they apply the RAG migrations into a throwaway schema and
-  drop it.
+- Repository integration tests run only when `AI_SERVICE_TEST_DATABASE_URL`
+  points at a Postgres database: RAG (advisory-lock dedupe, daily caps,
+  once-per-day freshness checks, the freshness backfill) and research reports
+  (claims, a concurrent-claim race, stale takeover, the regenerate window,
+  RLS). They apply their migrations into a throwaway schema and drop it. CI
+  runs them in the `backup-roundtrip` job against its Postgres service, and
+  fails if they were skipped. Locally, use a throwaway container, never the
+  production database, and `127.0.0.1` rather than `localhost` (on Windows
+  `localhost` can try IPv6 first and hang):
+
+  ```bash
+  docker run -d --name el-pgtest -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55432:5432 postgres:17
+  AI_SERVICE_TEST_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55432/postgres?connect_timeout=5" \
+    pytest tests/test_rag_repository_pg.py tests/test_report_repository_pg.py
+  docker rm -f el-pgtest
+  ```
+
 - Safety checks: `api/tests/repoPolicy.test.ts` (Claude Code rules, RLS on
   every new table) and `ai-service/tests/test_ci_workflows.py` (backup daily
   and before migrations; no deploy without its migration). CI's
