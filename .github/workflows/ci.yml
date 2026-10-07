@@ -64,3 +64,31 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
+
+  # Migrations and backups against a throwaway Postgres 17 (Supabase runs 17):
+  # migrations apply cleanly and match schema.prisma, RLS covers every table,
+  # and backup-db.sh / restore-db.sh round-trip every row.
+  backup-roundtrip:
+    name: migrations · RLS · backup round trip
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PG_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+        working-directory: api
+      - uses: ./.github/actions/setup-pg-client
+      - run: .github/scripts/ci/backup-roundtrip.sh
