@@ -10,7 +10,11 @@ import * as reportsService from "../services/reports.service.js";
 import type { EventSink } from "../types.js";
 import { startKeepalive, startSse, watchClient } from "./sse.js";
 
-/** Refusals that mean nothing was generated, so the usage event is refunded. */
+/**
+ * The ai-service's refusals that mean nothing was generated, so the usage
+ * event is refunded (as when the stream never opens). Failures after the
+ * stream has started, and cancellations, still count.
+ */
 const REFUNDED_CODES = new Set(["report_in_progress", "report_fresh"]);
 
 const INCOMPLETE = {
@@ -55,7 +59,8 @@ function streamOpenError(error: unknown) {
  * errors before streaming starts. Then: `start` {ticker, quarter}, `agent`
  * {agent, state, label, summary?} as each agent runs, and finally `done`
  * {report} or `error` {code, message, retryable}. Closing the connection
- * cancels the generation (it still counts toward the daily cap).
+ * cancels the generation (it still counts toward the daily cap); if the
+ * ai-service can't be reached, nothing is generated and it doesn't count.
  */
 export async function generateReport(req: Request, res: Response): Promise<void> {
   const abort = watchClient(res);
@@ -106,7 +111,12 @@ async function relayReport(
       signal,
     );
   } catch (error) {
+    // The client left while connecting: the ai-service may already have
+    // started, so this counts like any cancelled generation.
     if (signal.aborted) return "interrupted";
+    // The stream never opened (unreachable, refused, not configured): nothing
+    // was generated, so the usage event is given back.
+    await reportsService.refundGeneration(ctx.start.usageEventId);
     sink.send("error", streamOpenError(error));
     return "upstream_failed";
   }

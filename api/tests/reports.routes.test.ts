@@ -223,24 +223,36 @@ describe("POST /api/reports/:ticker", () => {
     },
   );
 
-  it("reports an unreachable ai-service as an error event (still counted)", async () => {
-    openStream.mockRejectedValue(
+  it.each([
+    [
       new ServiceUnavailableError(
         "report_unavailable",
         "Report generation is unavailable.",
       ),
+    ],
+    [new ServiceUnavailableError("report_not_configured", "Not configured.")],
+    [new Error("unexpected")],
+  ])("refunds the usage event when the stream never opens (%#)", async (error) => {
+    openStream.mockRejectedValue(error);
+
+    const events = parseSse((await post()).text);
+
+    expect(events.map((e) => e.event)).toEqual(["start", "error"]);
+    expect(events.at(-1)!.data.retryable).toBe(true);
+    expect(service.refundGeneration).toHaveBeenCalledWith("ev-1");
+  });
+
+  it("keeps a failure counted once the stream has started", async () => {
+    openStream.mockResolvedValue(
+      (async function* () {
+        yield agent("transcripts", "running");
+        throw new Error("connection reset");
+      })(),
     );
 
     const events = parseSse((await post()).text);
 
-    expect(events.at(-1)).toEqual({
-      event: "error",
-      data: {
-        code: "report_unavailable",
-        message: "Report generation is unavailable.",
-        retryable: true,
-      },
-    });
+    expect(events.at(-1)!.data.code).toBe("incomplete_response");
     expect(service.refundGeneration).not.toHaveBeenCalled();
   });
 
@@ -288,5 +300,40 @@ describe("POST /api/reports/:ticker", () => {
       server.close();
     }
     expect(service.refundGeneration).not.toHaveBeenCalled(); // cancelled still counts
+  });
+});
+
+describe("POST /api/reports/:ticker while connecting", () => {
+  it("still counts a generation the client cancels before the stream opens", async () => {
+    verifyToken.mockResolvedValue({ userId: USER, isAnonymous: false });
+    service.startGeneration.mockResolvedValue(START);
+    openStream.mockImplementation(
+      (_req, signal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(new Error("aborted"))),
+        ),
+    );
+    const server = app.listen(0);
+    const { port } = server.address() as AddressInfo;
+    const controller = new AbortController();
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/reports/NVDA`, {
+        method: "POST",
+        headers: { Authorization: AUTH },
+        signal: controller.signal,
+      });
+      const reader = res.body!.getReader();
+      let received = "";
+      while (!received.includes("start")) {
+        const { value } = await reader.read();
+        received += new TextDecoder().decode(value);
+      }
+      controller.abort(); // left while the ai-service was still connecting
+      await vi.waitFor(() => expect(openStream).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } finally {
+      server.close();
+    }
+    expect(service.refundGeneration).not.toHaveBeenCalled();
   });
 });
