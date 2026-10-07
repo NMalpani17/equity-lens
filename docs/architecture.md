@@ -304,5 +304,12 @@ than sending it unmasked.
   is logged with its full (redacted) traceback while the model and Langfuse only
   see "Error calling tool '<name>'". The api's Pino logger censors
   `authorization`, `cookie`, `x-internal-token` and `set-cookie`.
+- **Row level security.** Supabase's Data API serves the `public` schema to
+  anyone with the publishable key (it ships in the browser bundle). Every table
+  there has RLS enabled with no policies, so the `anon` and `authenticated`
+  roles can never read or write a row. The api and ai-service connect as the
+  tables' owner, which bypasses RLS, and the browser never queries tables
+  directly. Each new table's migration must enable RLS
+  (`api/tests/repoPolicy.test.ts`).
 - **Secrets** live in Secret Manager in production and in git-ignored `.env`
   files locally; images never contain them.

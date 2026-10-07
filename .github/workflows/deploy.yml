@@ -65,10 +65,20 @@ jobs:
         env:
           MODE: ${{ inputs.services || 'changed' }}
 
-  migrate:
-    name: Migrate database
+  # A full off-site backup right before any migration runs; if it fails, the
+  # migration (and every deploy that needs it) doesn't happen.
+  backup:
+    name: Back up before migrating
     needs: changes
     if: needs.changes.outputs.migrations == 'true'
+    uses: ./.github/workflows/backup.yml
+    with:
+      reason: pre-migrate
+
+  migrate:
+    name: Migrate database
+    needs: [changes, backup]
+    if: needs.changes.outputs.migrations == 'true' && needs.backup.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -92,9 +102,11 @@ jobs:
   deploy-ai-service:
     name: Deploy ai-service
     needs: [changes, migrate]
+    # Only after a successful migration when there is one: a migration that
+    # was skipped because its backup failed must not let new code ship.
     if: >-
       !cancelled() && needs.changes.outputs.ai_service == 'true' &&
-      contains(fromJSON('["success", "skipped"]'), needs.migrate.result)
+      (needs.migrate.result == 'success' || needs.changes.outputs.migrations != 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
@@ -115,7 +127,7 @@ jobs:
     needs: [changes, migrate, deploy-ai-service]
     if: >-
       !cancelled() && needs.changes.outputs.api == 'true' &&
-      contains(fromJSON('["success", "skipped"]'), needs.migrate.result) &&
+      (needs.migrate.result == 'success' || needs.changes.outputs.migrations != 'true') &&
       contains(fromJSON('["success", "skipped"]'), needs.deploy-ai-service.result)
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -1,0 +1,124 @@
+name: Backup
+
+# Off-site backup to Cloud Storage: the database (public + auth schemas) and
+# every Pinecone vector with its metadata. Runs daily, by hand, and from the
+# Deploy workflow right before migrations. See docs/deployment.md#backups-and-restore.
+#
+# Signs in through its own Workload Identity provider, which only accepts
+# this file on main, as a service account that can read two secrets and
+# create (never delete or overwrite) objects in the backup bucket.
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC daily
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      reason:
+        description: Folder prefix, e.g. "pre-migrate"
+        type: string
+        default: pre-migrate
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+env:
+  CLOUDSDK_CORE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+  BUCKET: ${{ vars.BACKUP_BUCKET }}
+  REASON: ${{ inputs.reason || (github.event_name == 'schedule' && 'daily') || 'manual' }}
+
+jobs:
+  backup:
+    name: Back up database and vectors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation
+    steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Backups run from main only (Workload Identity Federation rejects other refs)."
+          exit 1
+      - uses: actions/checkout@v7
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_BACKUP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_BACKUP_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - uses: ./.github/actions/setup-pg-client
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ai-service/requirements.txt
+      - run: pip install -q -r ai-service/requirements.txt
+
+      - name: Choose the destination
+        run: |
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          case "$REASON" in
+            daily) prefix="daily/$(date -u +%Y/%m/%d)/${stamp}" ;;
+            *) prefix="${REASON}/${stamp}-${GITHUB_SHA::7}" ;;
+          esac
+          echo "PREFIX=${prefix}" >>"$GITHUB_ENV"
+          echo "OUT=${RUNNER_TEMP}/backup" >>"$GITHUB_ENV"
+
+      - name: Dump the database (public + auth)
+        run: |
+          url=$(gcloud secrets versions access latest --secret=direct-url)
+          echo "::add-mask::${url}"
+          password=$(python3 -c 'import sys, urllib.parse as u; print(u.unquote(u.urlsplit(sys.argv[1]).password or ""))' "$url")
+          [[ -n $password ]] && echo "::add-mask::${password}"
+          DATABASE_URL="$url" .github/scripts/backup-db.sh "${OUT}/db"
+
+      - name: Export Pinecone vectors
+        working-directory: ai-service
+        run: |
+          key=$(gcloud secrets versions access latest --secret=pinecone-api-key)
+          echo "::add-mask::${key}"
+          AI_SERVICE_PINECONE_API_KEY="$key" python -m scripts.pinecone_backup export --out "${OUT}/pinecone"
+
+      - name: Write the manifest
+        run: |
+          cd "$OUT"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          from datetime import datetime, timezone
+          root = pathlib.Path(".")
+          files = {
+              str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in sorted(root.rglob("*")) if p.is_file()
+          }
+          counts = dict(
+              line.split("\t") for line in (root / "db/db-counts.tsv").read_text().splitlines()
+          )
+          vectors = json.loads((root / "pinecone/manifest.json").read_text())
+          manifest = {
+              "created_at": datetime.now(timezone.utc).isoformat(),
+              "reason": os.environ["REASON"],
+              "commit": os.environ["GITHUB_SHA"],
+              "run": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "db_rows": {k: int(v) for k, v in counts.items()},
+              "vectors": {k: v["count"] for k, v in vectors["namespaces"].items()},
+              "sha256": files,
+          }
+          pathlib.Path("manifest.json").write_text(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Upload to Cloud Storage
+        run: |
+          gcloud storage cp --recursive "${OUT}/*" "gs://${BUCKET}/${PREFIX}/"
+          local_files=$(find "$OUT" -type f | wc -l)
+          remote_files=$(gcloud storage ls "gs://${BUCKET}/${PREFIX}/**" | wc -l)
+          if [[ "$local_files" != "$remote_files" ]]; then
+            echo "::error::Uploaded ${remote_files} of ${local_files} files."
+            exit 1
+          fi
+          {
+            echo "### Backup \`${PREFIX}\`"
+            echo "- Database: $(wc -l <"${OUT}/db/db-counts.tsv") tables, $(du -h "${OUT}/db/db.dump" | cut -f1)"
+            echo "- Pinecone: $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["total_vectors"])' "${OUT}/pinecone/manifest.json") vectors"
+            echo "- \`gs://${BUCKET}/${PREFIX}/\` (${remote_files} files)"
+          } >>"$GITHUB_STEP_SUMMARY"

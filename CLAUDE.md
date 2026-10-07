@@ -71,8 +71,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 
 # api/
-npm install
-npm run prisma:migrate   # first run: creates/updates the Supabase tables
+npm install              # also runs prisma generate; never migrate locally
 npm run dev
 
 # client/
@@ -101,6 +100,13 @@ npm run dev
    "done."
 6. **Claude Code commits only.** It never pushes, never runs `gh`, and never
    merges; the user pushes branches, opens PRs, and merges them.
+7. **There is one environment.** Local `.env` files point at **production**.
+   Never run a command that writes to the database, Pinecone, Cloud Storage or
+   Cloud Run without asking first, and never run any Prisma command that uses a
+   shadow database (`migrate dev`, `migrate reset`, `db push`,
+   `--shadow-database-url`): Prisma resets the shadow database, and the only
+   database is production. Write migration SQL by hand.
+   `.claude/settings.json` enforces the basics (see `docs/development.md`).
 
 ## Git workflow
 

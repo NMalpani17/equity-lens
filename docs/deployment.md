@@ -398,8 +398,12 @@ service account key exists anywhere.
   was cancelled or whose deploy failed are picked up by the next run. A run
   for a commit older than the one deployed does nothing, so production never
   goes backwards. Docs-only changes deploy nothing.
-- **Order**: migrations → ai-service → api → verify. A failed step stops
-  everything after it.
+- **Order**: backup → migrations → ai-service → api → verify. A failed step
+  stops everything after it.
+- **Backup first**: if `api/prisma/migrations/` changed, the
+  [Backup](#backups-and-restore) workflow runs first and uploads a full dump
+  (database and vectors) to `pre-migrate/`. If it fails, nothing is migrated
+  or deployed; deploys need a successful migration whenever migrations changed.
 - **Migrations**: if `api/prisma/migrations/` changed, the workflow builds the
   `migrate` target (`api-migrate:<sha>`), points the `equity-lens-migrate`
   Cloud Run job at it and runs it with `--wait` (`prisma migrate deploy`). If
@@ -505,6 +509,152 @@ Variables; they're identifiers, not secrets):
 | `GCP_WIF_PROVIDER` | `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/equity-lens` |
 | `GCP_DEPLOYER_SA`  | `equity-lens-deployer@PROJECT.iam.gserviceaccount.com`                                        |
 
+## Backups and restore
+
+There is one environment, Supabase's Free plan has no backups, and Pinecone
+Starter has none either, so `.github/workflows/backup.yml` keeps off-site
+copies in Cloud Storage. On 2026-10-06 a Prisma shadow-database command wiped
+the production `public` schema with no backup to restore; this exists so that
+can't happen again.
+
+### What is backed up, and when
+
+| What                        | How                                                                                                  | Size today |
+| --------------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
+| Database: `public` + `auth` | `.github/scripts/backup-db.sh`: `pg_dump` 17, custom format, plus exact row counts (`db-counts.tsv`) | ~130 KB    |
+| Pinecone: every namespace   | `python -m scripts.pinecone_backup export`: dense + sparse values and metadata, gzipped JSONL        | ~31 MB     |
+| `manifest.json`             | commit, reason, run URL, row and vector counts, SHA-256 of every file                                | –          |
+
+- **Daily** at 07:00 UTC → `gs://equity-lens-backups-0755818341/daily/YYYY/MM/DD/<timestamp>/`
+- **Before every migration**: Deploy calls the same workflow first →
+  `pre-migrate/<timestamp>-<sha>/`. If the backup fails, the migration and
+  every deploy that needs it are skipped.
+- **By hand**: GitHub → Actions → **Backup** → Run workflow (branch `main`) →
+  `manual/<timestamp>-<sha>/`.
+
+The workflow fails (and GitHub emails you) if a dump isn't readable, the dump
+is missing a table, a vector can't be fetched, the exported vector count
+doesn't match the index stats, or an upload is incomplete.
+
+### Bucket and identity
+
+| Setting                 | Value                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| Bucket                  | `gs://equity-lens-backups-0755818341`, `us-east4`, uniform access, public access prevention   |
+| Retention policy        | 30 days, **unlocked** (nothing, not even an owner, can delete an object younger than 30 days) |
+| Versioning, soft delete | On; soft delete 7 days                                                                        |
+| Lifecycle               | Delete live objects at 90 days, noncurrent versions 7 days after they become noncurrent       |
+| Writer                  | `equity-lens-backup@PROJECT.iam.gserviceaccount.com`                                          |
+
+The backup service account can only read the `direct-url` and
+`pinecone-api-key` secrets and create and list objects in this bucket
+(`roles/storage.objectCreator` + `objectViewer`): it can't delete or
+overwrite anything. It signs in through its own Workload Identity provider,
+`equity-lens-backup`, which accepts only `backup.yml` on `main`
+(`job_workflow_ref`, so it also works when Deploy calls it). That provider maps
+only `google.subject` and `attribute.job_workflow_ref`, not `repository_id`,
+which the deployer trusts, so a backup job can never act as the deployer.
+
+Locking the retention policy (`gcloud storage buckets update BUCKET
+--lock-retention-period`) is irreversible; leave it unlocked unless you need
+compliance-grade immutability.
+
+Recreate the setup (owner access; `PROJECT_NUMBER` from `gcloud projects
+describe PROJECT`; `REPO_ID`/`OWNER_ID` as in [One-time setup](#one-time-setup)):
+
+```bash
+B=gs://equity-lens-backups-PROJECTSUFFIX
+SA=equity-lens-backup@PROJECT.iam.gserviceaccount.com
+gcloud storage buckets create $B --location=us-east4 --default-storage-class=STANDARD \
+  --uniform-bucket-level-access --public-access-prevention --retention-period=30d
+cat >lifecycle.json <<'EOF'
+{"rule": [{"action": {"type": "Delete"}, "condition": {"age": 90, "isLive": true}},
+          {"action": {"type": "Delete"}, "condition": {"daysSinceNoncurrentTime": 7}}]}
+EOF
+gcloud storage buckets update $B --versioning --lifecycle-file=lifecycle.json
+gcloud iam service-accounts create equity-lens-backup --display-name="Equity Lens backups (GitHub Actions)"
+gcloud storage buckets add-iam-policy-binding $B --member=serviceAccount:$SA --role=roles/storage.objectCreator
+gcloud storage buckets add-iam-policy-binding $B --member=serviceAccount:$SA --role=roles/storage.objectViewer
+for s in direct-url pinecone-api-key; do
+  gcloud secrets add-iam-policy-binding $s --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
+done
+gcloud iam workload-identity-pools providers create-oidc equity-lens-backup --location=global \
+  --workload-identity-pool=github --display-name="GitHub Actions: backup.yml" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.job_workflow_ref=assertion.job_workflow_ref" \
+  --attribute-condition="assertion.repository_id == 'REPO_ID' && assertion.repository_owner_id == 'OWNER_ID' && assertion.ref == 'refs/heads/main' && assertion.job_workflow_ref == 'NMalpani17/equity-lens/.github/workflows/backup.yml@refs/heads/main'"
+gcloud iam service-accounts add-iam-policy-binding $SA --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.job_workflow_ref/NMalpani17/equity-lens/.github/workflows/backup.yml@refs/heads/main"
+```
+
+Repository **variables** (Settings → Secrets and variables → Actions →
+Variables), next to the deploy ones:
+
+| Variable                  | Value                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GCP_BACKUP_WIF_PROVIDER` | `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/equity-lens-backup` |
+| `GCP_BACKUP_SA`           | `equity-lens-backup@PROJECT.iam.gserviceaccount.com`                                                 |
+| `BACKUP_BUCKET`           | `equity-lens-backups-PROJECTSUFFIX` (no `gs://`)                                                     |
+
+### Restore the database
+
+Restores go into an **empty** database. `restore-db.sh` refuses any host but
+localhost unless you pass `--allow-remote`, refuses a target that already has
+tables in `public`/`auth`, restores without owners or grants, and fails unless
+every table's row count matches `db-counts.tsv`. Never point it at the
+production database.
+
+```bash
+# 1. Download a backup (check manifest.json for its time, commit and counts).
+gcloud storage ls gs://equity-lens-backups-0755818341/daily/2026/10/
+gcloud storage cp --recursive gs://equity-lens-backups-0755818341/daily/2026/10/08/<stamp> ./restore
+
+# 2. A local Postgres 17 to restore into (Docker; pg_dump/psql 17 inside it).
+docker run -d --name el-restore -e POSTGRES_PASSWORD=postgres postgres:17
+docker run --rm --network container:el-restore \
+  -v "$PWD/restore:/backup:ro" -v "$PWD/.github/scripts:/s:ro" postgres:17 \
+  bash /s/restore-db.sh /backup/db postgresql://postgres:postgres@localhost:5432/postgres
+# -> "Restored 37 tables; every row count matches the backup."
+```
+
+Tested on 2026-10-07 against a production dump (37 tables including the real
+`auth` schema, 36 users, 13 tickers): every count matched. CI runs the same
+scripts on every push against a throwaway Postgres
+(`.github/scripts/ci/backup-roundtrip.sh`).
+
+**Disaster recovery into Supabase** (if the production project is lost). Not
+rehearsed yet; rehearse it before relying on it. `restore-db.sh` doesn't do
+this: a new project already has its own `auth` schema.
+
+```bash
+NEW='postgresql://postgres.<ref>:<password>@<host>:5432/postgres'  # new, empty project (session URL)
+pg_restore --list restore/db/db.dump | grep -vE ' SCHEMA - public ' >public.toc
+pg_restore --dbname="$NEW" --no-owner --no-privileges --schema=public   --use-list=public.toc --exit-on-error restore/db/db.dump        # tables, RLS, data
+pg_restore --dbname="$NEW" --data-only --schema=auth restore/db/db.dump  # users
+```
+
+Restore `auth` data only into the same Supabase Auth version (compare
+`auth.schema_migrations`); otherwise users sign up again. Then point the
+`database-url` and `direct-url` secrets at the new project, update
+`SUPABASE_URL` and the client's Supabase env vars, and redeploy.
+
+### Restore Pinecone
+
+```bash
+cd ai-service
+gcloud storage cp --recursive gs://equity-lens-backups-0755818341/daily/.../pinecone ./pinecone-backup
+python -m scripts.pinecone_backup restore --from ./pinecone-backup --index NAME          # dry run: prints the plan
+python -m scripts.pinecone_backup restore --from ./pinecone-backup --index NAME --yes    # writes
+```
+
+`--index` is required (local settings point at production). It verifies every
+file's SHA-256, refuses a namespace that already has vectors unless
+`--allow-nonempty` (upserts overwrite same-ID vectors), and creates a missing
+index with the exported dimension, metric and region only with
+`--create-index`. `--namespaces` and `--namespace-map SOURCE=TARGET` restore a
+subset or into other names (e.g. to compare before replacing). After a restore,
+rebuild `rag_tickers` from the vectors if the database was lost too.
+
 ## Vercel (client)
 
 | Setting          | Value                                                                                                                  |
@@ -538,6 +688,18 @@ Also keep: Email provider enabled, **Anonymous sign-ins** enabled ("Try
 demo"), and asymmetric JWT signing keys (the api verifies tokens against the
 project's JWKS).
 
+Every table in `public` has row level security enabled with no policies
+(migration `20261007000000_enable_row_level_security`), so the publishable key
+can't read or write them through the Data API, even if table grants are
+restored. Keep it that way: a new table's migration must include
+`ALTER TABLE "name" ENABLE ROW LEVEL SECURITY;` (a test enforces it). Check
+with:
+
+```sql
+SELECT relname, relrowsecurity FROM pg_class
+WHERE relnamespace = 'public'::regnamespace AND relkind = 'r';
+```
+
 ## Prisma migrations
 
 The api's Prisma schema owns every table (chat, holdings, RAG state). Apply
@@ -558,8 +720,10 @@ gcloud run jobs execute equity-lens-migrate --region us-east4 --wait
 ```
 
 `migrate deploy` only applies committed migrations from
-`api/prisma/migrations` and never creates new ones (that's `prisma:migrate`,
-for development). It's safe to run when nothing is pending. `DIRECT_URL`
+`api/prisma/migrations` and never creates new ones. It's safe to run when
+nothing is pending. Never use `prisma migrate dev`, `migrate reset`, `db push`
+or a `--shadow-database-url` here: there is one database, and Prisma resets a
+shadow database before using it. `DIRECT_URL`
 must be a session/direct connection: migrations can't run through the
 transaction pooler.
 

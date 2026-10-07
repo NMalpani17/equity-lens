@@ -1,0 +1,23 @@
+name: Set up the Postgres client
+description: >-
+  Installs psql, pg_dump and pg_restore from the PostgreSQL apt repository.
+  The major version must be at least the server's (Supabase runs 17).
+
+inputs:
+  version:
+    description: Client major version
+    default: "17"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PG_VERSION: ${{ inputs.version }}
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq postgresql-common >/dev/null
+        sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+        sudo apt-get install -y -qq "postgresql-client-${PG_VERSION}" >/dev/null
+        echo "/usr/lib/postgresql/${PG_VERSION}/bin" >>"$GITHUB_PATH"
+        "/usr/lib/postgresql/${PG_VERSION}/bin/pg_dump" --version

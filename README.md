@@ -122,6 +122,14 @@ api's service account can invoke.
   Workload Identity Federation as a deployer limited to these two services, so
   there are no service account keys.
   [How it works and how to roll back](docs/deployment.md#continuous-deployment).
+- **Backups and guardrails.** One environment, so production is protected
+  directly: a daily keyless GitHub Action (and one before every migration)
+  dumps the database (`public` + `auth`) and every Pinecone vector to a
+  versioned Cloud Storage bucket with a 30-day retention policy, written by an
+  identity that can't delete. Restores are tested in CI against a throwaway
+  Postgres, every table has row level security, and committed Claude Code
+  rules block destructive commands.
+  [Backups and restore](docs/deployment.md#backups-and-restore).
 - **Cold-start handling.** The ai-service scales to zero. A rate-limited
   warm-up fires after sign-in, chat streams start immediately with SSE
   keepalives and a connect timeout, and both services shut down within Cloud
@@ -139,7 +147,7 @@ cp ai-service/.env.example ai-service/.env
 
 npm install                             # root: Husky + concurrently
 cd ai-service && python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt && cd ..
-npm --prefix api install && npm --prefix api run prisma:migrate
+npm --prefix api install            # tables already exist; never migrate locally
 npm --prefix client install
 
 npm run dev                             # client :5173, api :3001, ai-service :8000

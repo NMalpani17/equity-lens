@@ -110,7 +110,9 @@ The estimate is deliberately conservative: the 2026-10-02 run cost $0.46
 against a $1.13 estimate (turns averaged ~6.4K input / ~0.3K output tokens). The
 judge is `gemini-3.1-pro-preview` when the whole run is estimated under
 `--budget` ($1.50), otherwise `gemini-3.8-flash`. During the run on-demand
-indexing is disabled (no Equibles quota) and the rerank cache is off so models
+indexing and freshness refresh are both disabled (`rag_daily_ingestion_cap` and
+`rag_daily_refresh_cap` are 0: no Equibles quota, and the production index is
+never rewritten or pruned mid-run) and the rerank cache is off so models
 pay the same retrieval latency; expect ~45–65 Pinecone rerank requests
 (each comparison case uses two). Results
 print as Markdown tables and are saved to `scripts/eval/results/` (git-ignored).
