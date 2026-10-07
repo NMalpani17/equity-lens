@@ -52,22 +52,23 @@ Gemini key, Equibles quota and Langfuse project in your local `.env` files are
 **production**. Local dev, scripts, evals and tests that need a database all
 reach real data.
 
-- **Never** run a Prisma command that uses a shadow database (`prisma migrate
-  dev`, `migrate reset`, `db push`, or `migrate diff --shadow-database-url`):
-  Prisma resets the shadow database first, and on 2026-10-06 that wiped the
-  production `public` schema. Write migration SQL by hand in a new
-  `api/prisma/migrations/<timestamp>_<name>/migration.sql`.
+- **Never** run a Prisma command that uses a shadow database:
+  `prisma migrate dev`, `prisma migrate reset`, `prisma db push`, or
+  `prisma migrate diff --shadow-database-url`. Prisma resets the shadow
+  database first, and on 2026-10-06 that wiped the production `public` schema.
+  Write migration SQL by hand in a new
+  `api/prisma/migrations/<timestamp>_<name>/migration.sql`; CI checks it.
 - Ask before any command that writes to the database, Pinecone, Cloud Storage
   or Cloud Run (`CLAUDE.md` rule 7).
 - `.claude/settings.json` (committed) holds the shared Claude Code rules, for
   both the Bash and PowerShell tools:
-  - **deny**: `git push`, `gh`, `docker push`, Prisma `migrate dev` / `migrate
-    reset` / `db push` / `--shadow-database-url`, `npm run prisma*`, `gcloud`
-    deletes, deploys, service updates, job executions and secret reads, and
-    reading or editing `.env` files.
+  - **deny**: `git push`, `gh`, `docker push`, the shadow-database Prisma
+    commands above, `npm run prisma*`, `gcloud` deletes, deploys, service
+    updates, job executions and secret reads, and reading or editing `.env`
+    files.
   - **ask**: `npx prisma`, `gcloud`, `gsutil`, `docker`, `psql`, `pg_dump`,
-    `pg_restore`, inline or stdin Python (`python -c`, `python -`), `python
-    -m scripts.*`, git commands that discard work, `rm`, and installs.
+    `pg_restore`, inline or stdin Python (`python -c`, `python -`),
+    `python -m scripts.*`, git commands that discard work, `rm`, and installs.
   - **allow**: lint, format, typecheck, tests, and read-only git plus `add` /
     `commit`.
 
@@ -284,13 +285,22 @@ details, see [api.md](./api.md).
   `AI_SERVICE_TEST_DATABASE_URL` points at a Postgres database (use a direct,
   non-pooled URL); they apply the RAG migrations into a throwaway schema and
   drop it.
+- Safety checks: `api/tests/repoPolicy.test.ts` (Claude Code rules, RLS on
+  every new table) and `ai-service/tests/test_ci_workflows.py` (backup daily
+  and before migrations; no deploy without its migration). CI's
+  `backup-roundtrip` job applies every migration to a throwaway Postgres 17,
+  checks it matches `schema.prisma` and has RLS everywhere, and round-trips
+  `backup-db.sh` / `restore-db.sh`
+  ([deployment.md](deployment.md#backups-and-restore)).
 - Tracing tests cover the disabled path, a handler that raises on every
   callback, an unreachable host, and the masked spans the real SDK would export
   (`ai-service/tests/test_tracing.py`, `test_trace_masking.py`).
 
 ai-service operational scripts (run from `ai-service/`):
-`python -m scripts.seed_transcripts` (above), and `python -m scripts.eval_rag`
-and `python -m scripts.eval_chat` ([evaluation.md](evaluation.md)).
+`python -m scripts.seed_transcripts` (above), `python -m scripts.eval_rag`
+and `python -m scripts.eval_chat` ([evaluation.md](evaluation.md)), and
+`python -m scripts.pinecone_backup export|restore`
+([deployment.md](deployment.md#backups-and-restore)).
 
 ### Pre-commit hooks & CI
 
