@@ -10,7 +10,9 @@ prompt, its own tools and its own step limits:
 - transcript_researcher (research model): calls the existing
   QuarterComparisonService (through the compare_quarters tool logic, without
   an LLM step), then runs a tool-calling agent with search_transcripts only,
-  and returns cited notes.
+  and returns cited notes. If the latest call has no comparable earlier call,
+  it researches the latest call alone and the report states that no
+  comparison is available.
 - market_analyst (research model): a tool-calling agent with get_quote and
   get_price_history; its tool results become [Dn] data sources and the chart.
   If it fails, the report still ships with price data marked unavailable.
@@ -88,13 +90,6 @@ class ReportError(Exception):
 
 
 @dataclass(frozen=True)
-class ReportInputs:
-    ticker: str
-    company_name: str
-    today: date
-
-
-@dataclass(frozen=True)
 class Period:
     fiscal_year: int
     fiscal_quarter: int
@@ -108,12 +103,22 @@ class Period:
         return cls(int(data["fiscal_year"]), int(data["fiscal_quarter"]))
 
 
+@dataclass(frozen=True)
+class ReportInputs:
+    ticker: str
+    company_name: str
+    today: date
+    # The newest indexed call; the report's quarter when no comparison exists.
+    latest_quarter: Period | None = None
+
+
 @dataclass
 class TranscriptResearch:
     notes: str
     passage_ids: list[int]
     current: Period
-    prior: Period
+    # None when the latest call has no comparable earlier call.
+    prior: Period | None
 
 
 @dataclass
@@ -242,14 +247,21 @@ def build_report_graph(
                 lambda ticker: agents.compare(turn, ticker), name="compare_quarters"
             ).ainvoke(inputs.ticker, config)
             data = comparison.data
-            if data.get("status") != "ok":
-                raise ReportError(
-                    "not_comparable",
-                    str(
-                        data.get("message") or "The latest two calls can't be compared."
-                    ),
+            prior: Period | None = None
+            if data.get("status") == "ok":
+                current, prior = Period.of(data["current"]), Period.of(data["prior"])
+                task = prompts.transcript_task(comparison.text)
+            elif inputs.latest_quarter is not None:
+                # Degrade like a failed market analyst: the report ships and
+                # "What changed" says no comparable prior quarter exists.
+                current = inputs.latest_quarter
+                task = prompts.transcript_task_without_comparison(
+                    str(data.get("message") or "")
                 )
-            current, prior = Period.of(data["current"]), Period.of(data["prior"])
+            else:
+                raise ReportError(
+                    "not_indexed", f"{inputs.ticker} has no indexed earnings call."
+                )
             agent = create_agent(
                 agents.research_model(),
                 transcript_tools,
@@ -258,7 +270,7 @@ def build_report_graph(
                     ticker=inputs.ticker,
                     today=inputs.today,
                     current=current.label,
-                    prior=prior.label,
+                    prior=prior.label if prior else None,
                     searches=settings.report_transcript_max_tool_calls,
                 ),
                 middleware=_limits(
@@ -267,10 +279,7 @@ def build_report_graph(
                 ),
                 name="transcript_researcher_agent",
             )
-            result = await agent.ainvoke(
-                {"messages": [HumanMessage(prompts.transcript_task(comparison.text))]},
-                config,
-            )
+            result = await agent.ainvoke({"messages": [HumanMessage(task)]}, config)
             record_usage(progress.run, result["messages"])
             notes = final_text(result["messages"])
             ids = [i for i in cited_ids(notes) if turn.sources.get(i) is not None]
@@ -285,6 +294,9 @@ def build_report_graph(
             raise
         run = progress.done(
             f"{len(ids)} passages from {current.label} and {prior.label}"
+            if prior
+            else f"{len(ids)} passages from {current.label} "
+            "(no comparable prior quarter)"
         )
         return {
             "transcripts": TranscriptResearch(notes, ids, current, prior),
@@ -369,7 +381,7 @@ def build_report_graph(
                             ),
                             None,
                         ),
-                        prior=research.prior.label,
+                        prior=research.prior.label if research.prior else None,
                         market_available=market.ok,
                     )
                 ),

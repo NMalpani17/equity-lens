@@ -118,6 +118,8 @@ class ResearchReportContent(BaseModel):
     data_sources: list[DataSource] = Field(default_factory=list)
     chart: PriceChart | None = None
     market_data_available: bool = True
+    # False when the latest call had no comparable earlier call.
+    comparison_available: bool = True
     as_of: ReportAsOf = Field(default_factory=ReportAsOf)
     disclaimer: str = DISCLAIMER
     agents: list[AgentRun] = Field(default_factory=list)

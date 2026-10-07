@@ -31,9 +31,7 @@ research report team. You gather what management said on {{company}}'s \
 {{today}}.
 
 INPUT
-- You are given a quarter-over-quarter comparison of the latest indexed call \
-({{current}}) with the one before ({{prior}}): passages already retrieved for \
-each quarter, grouped by theme.
+{{input}}
 - Use search_transcripts (ticker={{ticker}}) for at most {{searches}} focused \
 searches to fill gaps on the latest call: demand and business drivers, \
 guidance and outlook, and risks. Search no other company.
@@ -49,10 +47,21 @@ guidance. Mention the fiscal quarter of each point.
 - {NO_FUNDAMENTALS} No stock prices either; another agent covers them.
 
 OUTPUT
-Short bullet notes under exactly these headings: "## Drivers", "## Guidance", \
-"## Changes", "## Risks". Under "## Changes", compare {{current}} with {{prior}} \
-following these rules:
+{{output}}"""
+
+TRANSCRIPT_INPUT = """- You are given a quarter-over-quarter comparison of the \
+latest indexed call ({current}) with the one before ({prior}): passages already \
+retrieved for each quarter, grouped by theme."""
+TRANSCRIPT_INPUT_NO_COMPARISON = """- The latest indexed call is {current}. No \
+comparable earlier call is indexed, so there is no comparison: research \
+{current} only, starting with search_transcripts."""
+TRANSCRIPT_OUTPUT = f"""Short bullet notes under exactly these headings: \
+"## Drivers", "## Guidance", "## Changes", "## Risks". Under "## Changes", \
+compare {{current}} with {{prior}} following these rules:
 {COMPARISON_RULES}"""
+TRANSCRIPT_OUTPUT_NO_COMPARISON = """Short bullet notes under exactly these \
+headings: "## Drivers", "## Guidance", "## Risks". There is no "## Changes" \
+section: no earlier call can be compared."""
 
 MARKET_ANALYST = f"""You are the market-data analyst on Equity Lens's research \
 report team. Today is {{today}}; tool timestamps are in US Eastern time.
@@ -72,7 +81,7 @@ RULES
 
 WRITER = f"""You are the writer on Equity Lens's research report team. Turn the \
 researchers' notes into a research report on {{company}} ({{ticker}}) based on \
-its {{current}} earnings call{{current_date}}, compared with {{prior}}. You have no \
+its {{current}} earnings call{{current_date}}{{compared_with}}. You have no \
 tools. Today is {{today}}.
 
 EVIDENCE AND CITATIONS
@@ -91,8 +100,7 @@ SECTIONS (Markdown; no headings except in "changes"; no raw HTML)
 - drivers: 3-6 bullets on demand, growth drivers, products and customers in \
 the latest quarter.
 - guidance: 2-5 bullets on guidance and outlook.
-- changes: what changed from {{prior}} to {{current}}:
-{COMPARISON_RULES}
+- changes: {{changes_rule}}
 - stock: 2-4 bullets on price performance from MARKET DATA only, with the \
 quote's "as of" time and each period's date range, citing [Dn]. {{stock_rule}}
 - risks: 2-5 bullets on risks and headwinds management discussed.
@@ -106,18 +114,36 @@ STOCK_UNAVAILABLE = (
     'Market data is unavailable: write exactly "Price data was unavailable when '
     'this report was generated." and nothing else.'
 )
+# Shown in "What changed vs last quarter" when no earlier call can be compared.
+NO_COMPARISON = (
+    "No comparable prior quarter is available, so this report has no "
+    "quarter-over-quarter comparison."
+)
+CHANGES_UNAVAILABLE = f'write exactly "{NO_COMPARISON}" and nothing else.'
 
 
 def transcript_system(
-    *, company: str, ticker: str, today: date, current: str, prior: str, searches: int
+    *,
+    company: str,
+    ticker: str,
+    today: date,
+    current: str,
+    prior: str | None,
+    searches: int,
 ) -> str:
+    if prior:
+        context = TRANSCRIPT_INPUT.format(current=current, prior=prior)
+        output = TRANSCRIPT_OUTPUT.format(current=current, prior=prior)
+    else:
+        context = TRANSCRIPT_INPUT_NO_COMPARISON.format(current=current)
+        output = TRANSCRIPT_OUTPUT_NO_COMPARISON
     return TRANSCRIPT_RESEARCHER.format(
         company=company,
         ticker=ticker,
         today=today.isoformat(),
-        current=current,
-        prior=prior,
         searches=searches,
+        input=context,
+        output=output,
     )
 
 
@@ -125,6 +151,14 @@ def transcript_task(comparison_text: str) -> str:
     return (
         "Here is the quarter-over-quarter comparison. Read it, run your focused "
         "searches, then write your notes.\n\n" + comparison_text
+    )
+
+
+def transcript_task_without_comparison(reason: str) -> str:
+    note = f" ({reason.strip()})" if reason.strip() else ""
+    return (
+        f"No comparable earlier call is indexed{note}. Run your focused searches "
+        "on the latest call, then write your notes."
     )
 
 
@@ -143,16 +177,22 @@ def writer_system(
     today: date,
     current: str,
     current_date: str | None,
-    prior: str,
+    prior: str | None,
     market_available: bool,
 ) -> str:
+    changes_rule = (
+        f"what changed from {prior} to {current}:\n{COMPARISON_RULES}"
+        if prior
+        else CHANGES_UNAVAILABLE
+    )
     return WRITER.format(
         company=company,
         ticker=ticker,
         today=today.isoformat(),
         current=current,
         current_date=f" ({current_date})" if current_date else "",
-        prior=prior,
+        compared_with=f", compared with {prior}" if prior else "",
+        changes_rule=changes_rule,
         stock_rule=STOCK_AVAILABLE if market_available else STOCK_UNAVAILABLE,
     )
 

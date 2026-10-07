@@ -28,11 +28,15 @@ from .graph import (
     TranscriptResearch,
     writer_passage_ids,
 )
+from .prompts import NO_COMPARISON
 from .sources import validate_data_refs
 
 logger = logging.getLogger(__name__)
 
 PRICE_UNAVAILABLE = "Price data was unavailable when this report was generated."
+# Fixed texts for sections whose data couldn't be gathered: the report ships
+# with the gap stated rather than failing.
+UNAVAILABLE_SECTIONS = {"stock": PRICE_UNAVAILABLE, "changes": NO_COMPARISON}
 
 
 def _call_date(
@@ -67,10 +71,12 @@ def assemble_report(
     known_refs = {s.id for s in market.sources}
     sections: list[ReportSection] = []
     dropped_refs: list[str] = []
+    missing = {
+        "stock": not market.ok,
+        "changes": research.prior is None,
+    }
     for key, title in SECTIONS:
-        text = getattr(draft, key)
-        if key == "stock" and not market.ok:
-            text = PRICE_UNAVAILABLE
+        text = UNAVAILABLE_SECTIONS[key] if missing.get(key) else getattr(draft, key)
         refs = validate_data_refs(text, known_refs)
         dropped_refs.extend(refs.dropped)
         markdown = tidy_answer(numbering.apply(refs.text))
@@ -103,7 +109,10 @@ def assemble_report(
             fiscal_year=research.prior.fiscal_year,
             fiscal_quarter=research.prior.fiscal_quarter,
             call_date=_call_date(registry, research.passage_ids, research.prior),
-        ),
+        )
+        if research.prior
+        else None,
+        comparison_available=research.prior is not None,
         sections=sections,
         citations=numbering.citations,
         data_sources=market.sources,

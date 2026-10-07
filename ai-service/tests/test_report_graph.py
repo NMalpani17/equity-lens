@@ -28,12 +28,14 @@ from app.services.chat.tools import ToolDeps
 from app.services.market_data.base import ProviderUnavailableError
 from app.services.report.assemble import PRICE_UNAVAILABLE, assemble_report
 from app.services.report.graph import (
+    Period,
     ReportAgents,
     ReportError,
     ReportInputs,
     build_report_graph,
     run_report_graph,
 )
+from app.services.report.prompts import NO_COMPARISON
 from app.services.report.sources import DataSourceRegistry, validate_data_refs
 from tests.chat_fakes import ai, search_result
 from tests.test_chat_charts import history, history_result
@@ -213,7 +215,12 @@ def report_turn() -> TurnContext:
     )
 
 
-def run(agents: ReportAgents) -> tuple[list[dict], dict, TurnContext]:
+LATEST = Period(2027, 2)
+
+
+def run(
+    agents: ReportAgents, latest: Period | None = LATEST
+) -> tuple[list[dict], dict, TurnContext]:
     turn = report_turn()
 
     async def go() -> tuple[list[dict], dict]:
@@ -224,7 +231,7 @@ def run(agents: ReportAgents) -> tuple[list[dict], dict, TurnContext]:
             ) as a:
                 graph = build_report_graph(
                     agents,
-                    ReportInputs("NVDA", "Nvidia Corp", TODAY),
+                    ReportInputs("NVDA", "Nvidia Corp", TODAY, latest_quarter=latest),
                     turn,
                     await a.list_tools(),
                 )
@@ -240,6 +247,28 @@ def run(agents: ReportAgents) -> tuple[list[dict], dict, TurnContext]:
 
     events, final = asyncio.run(go())
     return events, final, turn
+
+
+USER_KEYS = {"user_id", "holdings", "portfolio", "email"}
+
+
+def all_keys(value: Any) -> set[str]:
+    """Every dict key at any depth."""
+    if isinstance(value, dict):
+        return set(value).union(*(all_keys(v) for v in value.values()))
+    if isinstance(value, list):
+        return set().union(*(all_keys(v) for v in value))
+    return set()
+
+
+def test_all_keys_finds_nested_keys() -> None:
+    assert all_keys({"a": [{"user_id": 1}], "b": {"c": {"email": 2}}}) == {
+        "a",
+        "b",
+        "c",
+        "user_id",
+        "email",
+    }
 
 
 def assemble(final: dict, turn: TurnContext, **cfg: Any):
@@ -315,8 +344,8 @@ def test_report_cites_only_passages_the_writer_saw_and_known_data(deps) -> None:
     assert report.as_of.latest_call == "2026-08-26"
     assert report.market_data_available is True
     assert "not financial advice" in report.disclaimer
-    # Shared content: nothing about the requesting user is stored.
-    assert "user" not in report.model_dump_json().lower()
+    # Shared content: no user-specific field anywhere in what is stored.
+    assert USER_KEYS.isdisjoint(all_keys(report.model_dump(mode="json")))
 
 
 def test_report_ships_without_price_data_when_the_market_analyst_fails(deps) -> None:
@@ -346,21 +375,59 @@ def test_notes_without_citable_passages_fail_the_report(deps) -> None:
     assert error.value.code == "research_failed"
 
 
-def test_an_uncomparable_ticker_fails_with_a_clear_message(deps) -> None:
-    deps.comparison().compare.return_value = comparison(
+def uncomparable() -> Any:
+    return comparison(
         status="not_enough_quarters",
         current=None,
         prior=None,
         themes=[],
         message="Only one call is indexed.",
     )
+
+
+def test_an_uncomparable_ticker_ships_without_the_comparison(deps) -> None:
+    deps.comparison().compare.return_value = uncomparable()
+    notes = (
+        "## Drivers\n- Demand [1].\n## Guidance\n- Guided up [2].\n"
+        "## Risks\n- Supply [1]."
+    )
+    scripts = research_script(
+        **{TRANSCRIPT_KEY: [research_script()[TRANSCRIPT_KEY][0], ai(notes)]}
+    )
+    model = ByPromptModel(scripts=scripts)
+    seen: list = []
+    events, final, turn = run(make_agents(deps, model, writer(seen=seen)))
+
+    report = assemble(final, turn)
+
+    assert report.section("changes").markdown == NO_COMPARISON
+    assert report.comparison_available is False
+    assert report.prior_quarter is None
+    assert (report.quarter.fiscal_year, report.quarter.fiscal_quarter) == (2027, 2)
+    # The rest of the report is still written and cited.
+    assert report.section("drivers").markdown.startswith("- Data center demand [1]")
+    assert report.market_data_available is True
+    done = next(
+        e for e in events if e["agent"] == "transcripts" and e["state"] == "done"
+    )
+    assert done["summary"] == "2 passages from Q2 FY2027 (no comparable prior quarter)"
+    researcher_prompt = model.seen[TRANSCRIPT_KEY][0][0].text
+    assert '"## Drivers", "## Guidance", "## Risks"' in researcher_prompt
+    assert "Raised / improved" not in researcher_prompt  # no comparison rules
+    assert (
+        "No comparable earlier call is indexed" in model.seen[TRANSCRIPT_KEY][0][1].text
+    )
+    assert NO_COMPARISON in seen[0][0].text  # the writer was told
+
+
+def test_an_uncomparable_ticker_without_a_known_latest_quarter_fails(deps) -> None:
+    deps.comparison().compare.return_value = uncomparable()
     model = ByPromptModel(scripts=research_script())
 
     with pytest.raises(ReportError) as error:
-        run(make_agents(deps, model, writer()))
+        run(make_agents(deps, model, writer()), latest=None)
 
-    assert error.value.code == "not_comparable"
-    assert "Only one call" in error.value.message
+    assert error.value.code == "not_indexed"
 
 
 def test_the_transcript_researcher_stops_at_its_step_limit(deps) -> None:
