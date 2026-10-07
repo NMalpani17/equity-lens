@@ -538,6 +538,18 @@ Also keep: Email provider enabled, **Anonymous sign-ins** enabled ("Try
 demo"), and asymmetric JWT signing keys (the api verifies tokens against the
 project's JWKS).
 
+Every table in `public` has row level security enabled with no policies
+(migration `20261007000000_enable_row_level_security`), so the publishable key
+can't read or write them through the Data API, even if table grants are
+restored. Keep it that way: a new table's migration must include
+`ALTER TABLE "name" ENABLE ROW LEVEL SECURITY;` (a test enforces it). Check
+with:
+
+```sql
+SELECT relname, relrowsecurity FROM pg_class
+WHERE relnamespace = 'public'::regnamespace AND relkind = 'r';
+```
+
 ## Prisma migrations
 
 The api's Prisma schema owns every table (chat, holdings, RAG state). Apply
