@@ -2,6 +2,8 @@
 
 import re
 
+from app.services.chat.comparison_rules import COMPARISON_HEADINGS as RULE_HEADINGS
+from app.services.chat.comparison_rules import NOTHING_FOUND
 from app.services.chat.guardrails import INJECTION_REPLY, OFF_TOPIC_REPLY
 
 from .models import CheckResult, EvalCase, TurnRecord
@@ -22,6 +24,12 @@ COMPARISON_HEADINGS = (
     "no longer mentioned",
     "unchanged",
 )
+# "Lowered / worse, No longer mentioned: nothing found in the retrieved passages."
+_CLOSING_RE = re.compile(
+    rf"^(?P<categories>[A-Za-z /,]+?):\s*{NOTHING_FOUND}\.?$", re.IGNORECASE
+)
+# The pre-2026-10-06 status-first wording ("Nothing to report …: X").
+_OLD_CLOSING = "nothing to report in the retrieved passages"
 # A model-written redirect or refusal (the guardrail replies are matched exactly).
 _REDIRECT_RE = re.compile(
     r"\b(can(?:'|no)t|cannot|unable to|not able to|won't|don't have access|"
@@ -51,7 +59,7 @@ def run_checks(case: EvalCase, turn: TurnRecord) -> list[CheckResult]:
     if expect.citations:
         results.extend(_citation_expectations(case, turn))
     if expect.comparison_sections:
-        results.append(_check_comparison_sections(turn))
+        results.extend(_check_comparison_sections(turn))
     if expect.refusal:
         results.append(_result("refusal", is_refusal(turn), "answered instead"))
     if expect.clarify:
@@ -146,11 +154,18 @@ def comparison_headings(content: str) -> list[str]:
     return headings
 
 
-def _check_comparison_sections(turn: TurnRecord) -> CheckResult:
+def _check_comparison_sections(turn: TurnRecord) -> list[CheckResult]:
+    return [
+        comparison_structure(turn.content),
+        comparison_closing_line(turn.content),
+    ]
+
+
+def comparison_structure(content: str) -> CheckResult:
     """Every heading is one of the five comparison headings, in order, and
     at least one change heading (New / Raised / Lowered / No longer
     mentioned) is present."""
-    headings = comparison_headings(turn.content)
+    headings = comparison_headings(content)
     order = [
         next((i for i, h in enumerate(COMPARISON_HEADINGS) if title.startswith(h)), -1)
         for title in headings
@@ -162,6 +177,35 @@ def _check_comparison_sections(turn: TurnRecord) -> CheckResult:
         return _result("comparison_sections", False, f"out of order: {headings}")
     has_change = any(i < COMPARISON_HEADINGS.index("unchanged") for i in order)
     return _result("comparison_sections", has_change, "no change headings")
+
+
+def comparison_closing_line(content: str) -> CheckResult:
+    """The closing line names exactly the empty categories, category first:
+    "Lowered / worse, No longer mentioned: nothing found in the retrieved
+    passages." It is left out when every category has content."""
+    name = "comparison_closing"
+    present = {
+        i
+        for title in comparison_headings(content)
+        for i, h in enumerate(COMPARISON_HEADINGS)
+        if title.startswith(h)
+    }
+    empty = [h for i, h in enumerate(RULE_HEADINGS) if i not in present]
+    lines = [
+        line.strip().strip("*_ ").strip()
+        for line in content.splitlines()
+        if NOTHING_FOUND in line.lower() or _OLD_CLOSING in line.lower()
+    ]
+    if any(_OLD_CLOSING in line.lower() for line in lines):
+        return _result(name, False, "old status-first closing line")
+    if not lines:
+        return _result(name, not empty, f"no closing line for {empty}")
+    match = _CLOSING_RE.match(lines[-1])
+    if match is None:
+        return _result(name, False, f"malformed closing line {lines[-1]!r}")
+    listed = [c.strip() for c in match.group("categories").split(",")]
+    same = [c.lower() for c in listed] == [c.lower() for c in empty]
+    return _result(name, same, f"listed {listed}, empty {empty}")
 
 
 def is_refusal(turn: TurnRecord) -> bool:

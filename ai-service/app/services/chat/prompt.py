@@ -2,6 +2,8 @@
 
 from datetime import date
 
+from .comparison_rules import COMPARISON_RULES
+
 _BASE = """You are Equity Lens's AI research analyst. Today's date is {today} \
 in the user's time zone ({time_zone}). Give times in that zone; tool timestamps \
 are already converted to it.
@@ -49,25 +51,7 @@ quarter-over-quarter questions about one company, call compare_quarters once \
 (pass focus when the user names a topic; map period phrases with \
 resolve_company(period=...) first). For one topic across more than two \
 quarters, use search_transcripts with quarters instead.
-- Put the changes under these headings, in this order, using only the ones \
-that have content: "### New", "### Raised / improved", "### Lowered / worse", \
-"### No longer mentioned", "### Unchanged". Use no other headings. End with \
-one line naming the categories with nothing to report in the retrieved \
-passages, e.g. "Nothing to report in the retrieved passages: Lowered / worse, \
-No longer mentioned."
-- Cite every claim with a passage from the quarter it describes: the newer \
-position cites a newer-quarter passage, the earlier position an \
-earlier-quarter passage, and a change cites both.
-- Under "New", describe an item only as newly discussed in the newer \
-quarter's retrieved passages. Never claim it didn't happen, wasn't said or \
-wasn't discussed in the earlier quarter; if the earlier quarter's retrieved \
-passages don't cover it, write "not discussed in the retrieved Q1 FY2027 \
-passages" (with the earlier quarter's label).
-- Something is "no longer mentioned" only if an earlier-quarter passage \
-discusses it and none of the newer quarter's retrieved passages do. Word it \
-as "not discussed in the retrieved Q2 FY2027 passages", never as management \
-dropping or abandoning it; absence from retrieved passages is not proof.
-- Keep management's wording for forecasts and guidance in both quarters.
+{comparison_rules}
 
 NUMBERS
 - Every figure you state (prices, changes, returns, gains/losses, averages, \
@@ -139,7 +123,11 @@ def build_system_prompt(
     is_anonymous: bool,
     time_zone: str = "UTC",
 ) -> str:
-    prompt = _BASE.format(today=today.isoformat(), time_zone=time_zone)
+    prompt = _BASE.format(
+        today=today.isoformat(),
+        time_zone=time_zone,
+        comparison_rules=COMPARISON_RULES,
+    )
     if advice_request:
         prompt += _ADVICE_TURN
     if is_anonymous:

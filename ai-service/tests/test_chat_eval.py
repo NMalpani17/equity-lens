@@ -170,7 +170,7 @@ COMPARISON_ANSWER = """NVIDIA raised its outlook as Blackwell ramped.
 ### Unchanged
 - Gross margin stayed at 75% [1][2].
 
-Nothing to report in the retrieved passages: Lowered / worse, No longer mentioned.
+Lowered / worse, No longer mentioned: nothing found in the retrieved passages.
 """
 
 
@@ -223,9 +223,70 @@ def test_bold_line_headings_count_and_bold_text_inside_a_line_does_not() -> None
     )
     record = turn(content, citations=[citation(1)])
 
-    results = run_checks(case(comparison_sections=True), record)
+    result = {r.name: r for r in run_checks(case(comparison_sections=True), record)}
 
-    assert failed(results) == []
+    assert result["comparison_sections"].passed is True
+
+
+@pytest.mark.parametrize(
+    ("closing", "passed"),
+    [
+        # Category first, exactly the empty categories, in heading order.
+        (
+            "Lowered / worse, No longer mentioned: nothing found in the "
+            "retrieved passages.",
+            True,
+        ),
+        (
+            "_Lowered / worse, No longer mentioned: nothing found in the "
+            "retrieved passages._",
+            True,
+        ),
+        # The old status-first wording.
+        (
+            "Nothing to report in the retrieved passages: Lowered / worse, No "
+            "longer mentioned.",
+            False,
+        ),
+        # Names a category that has content, or misses an empty one.
+        ("New, Lowered / worse: nothing found in the retrieved passages.", False),
+        ("Lowered / worse: nothing found in the retrieved passages.", False),
+        # Empty categories need the line.
+        ("", False),
+    ],
+)
+def test_comparison_closing_line(closing: str, passed: bool) -> None:
+    body = COMPARISON_ANSWER.strip().rsplit("\n\n", 1)[0]
+    record = turn(
+        f"{body}\n\n{closing}", citations=[citation(1), citation(2, quarter=1)]
+    )
+
+    result = {r.name: r for r in run_checks(case(comparison_sections=True), record)}
+
+    assert result["comparison_closing"].passed is passed
+
+
+def test_closing_line_is_left_out_when_every_category_has_content() -> None:
+    content = "\n".join(
+        f"### {heading}\n- x [1]"
+        for heading in (
+            "New",
+            "Raised / improved",
+            "Lowered / worse",
+            "No longer mentioned",
+            "Unchanged",
+        )
+    )
+    record = turn(content, citations=[citation(1)])
+
+    assert failed(run_checks(case(comparison_sections=True), record)) == []
+    with_line = turn(
+        f"{content}\n\nNone: nothing found in the retrieved passages.",
+        citations=[citation(1)],
+    )
+    assert "comparison_closing" in failed(
+        run_checks(case(comparison_sections=True), with_line)
+    )
 
 
 def test_citation_periods_and_max_quarters_catch_a_wrong_quarter() -> None:
