@@ -277,6 +277,9 @@ failed, with a summary such as "13 passages from Q2 FY2027 and Q1 FY2027"),
 then `done` with the report or `error`. A generation always finishes: if
 the user leaves, the api keeps reading the ai-service's stream until the
 report is saved, and the page says the report will be ready when they return.
+When the tab becomes visible or regains focus the page refetches the list and
+the open report, and while any report is generating it checks again every
+10 s.
 
 **Tracing.** Each report is one Langfuse trace (`research-report`, tagged
 `report` and the ticker) with a span per agent (`transcript_researcher`,

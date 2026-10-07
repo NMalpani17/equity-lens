@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -21,6 +21,7 @@ import type {
   ReportSummary,
   ReportView,
 } from "@/lib/reportsApi";
+import { GENERATING_POLL_MS } from "@/hooks/useReports";
 import { ReportsPage } from "./ReportsPage";
 
 const api = vi.mocked(reportsApi);
@@ -444,5 +445,58 @@ describe("ReportsPage", () => {
       await screen.findByText("Based on the Q2 FY2027 earnings call (Aug 26, 2026)."),
     ).toBeVisible();
     expect(screen.queryByText(/Quote as of/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ReportsPage status refresh", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("polls while a report is generating until it's ready", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const generating = summaries.map((s) =>
+      s.ticker === "NVDA" ? { ...s, report: null, generating: true } : s,
+    );
+    api.listReports.mockResolvedValueOnce({ tickers: generating, usage: view().usage });
+    api.getReport.mockResolvedValueOnce(view({ report: null, generating: true }));
+    renderAt("/reports/NVDA");
+
+    expect(
+      await screen.findByText("Nvidia Corp's report is being generated."),
+    ).toBeVisible();
+    const picker = screen.getByLabelText("Company");
+    expect(within(picker).getByRole("option", { name: /NVDA/ })).toHaveTextContent(
+      "(generating)",
+    );
+
+    // The run finishes (perhaps one the user started before leaving).
+    await vi.advanceTimersByTimeAsync(GENERATING_POLL_MS);
+
+    expect(
+      await screen.findByRole("heading", { name: "Nvidia Corp (NVDA)" }),
+    ).toBeVisible();
+    expect(within(picker).getByRole("option", { name: /NVDA/ })).toHaveTextContent(
+      "(report ready)",
+    );
+    // Nothing is generating any more: no further polling.
+    const calls = api.listReports.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(GENERATING_POLL_MS * 3);
+    expect(api.listReports).toHaveBeenCalledTimes(calls);
+  });
+
+  it("refetches when the user comes back to the tab", async () => {
+    renderAt("/reports/NVDA");
+    await screen.findByRole("heading", { name: "Nvidia Corp (NVDA)" });
+    expect(api.listReports).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await waitFor(() => expect(api.listReports).toHaveBeenCalledTimes(2));
+    expect(api.getReport).toHaveBeenCalledTimes(2);
   });
 });

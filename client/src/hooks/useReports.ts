@@ -27,8 +27,8 @@ export interface AgentProgress {
   summary?: string;
 }
 
-/** While another user's generation runs, check back this often. */
-export const GENERATING_POLL_MS = 15_000;
+/** While a report is generating (not by this page's own request), check back this often. */
+export const GENERATING_POLL_MS = 10_000;
 
 function pendingAgents(): AgentProgress[] {
   return AGENTS.map(({ agent, label }) => ({ agent, label, state: "pending" }));
@@ -93,16 +93,35 @@ export function useReports(ticker: string | undefined) {
     if (ticker) void loadView(ticker);
   }, [ticker, loadView]);
 
-  // Someone else's generation is running: check back until it finishes.
-  const othersGenerating = Boolean(view?.generating) && !generating;
+  // Refresh the list and the open report together (no loading spinners).
+  const refresh = useCallback(() => {
+    void loadList();
+    if (tickerRef.current) void loadView(tickerRef.current, { quiet: true });
+  }, [loadList, loadView]);
+
+  // A report is generating somewhere (another tab, another user, or a run
+  // started before the user left): check back until none is.
+  const anyGenerating =
+    !generating &&
+    (Boolean(view?.generating) || Boolean(tickers?.some((t) => t.generating)));
   useEffect(() => {
-    if (!othersGenerating || !ticker) return;
-    const timer = window.setTimeout(
-      () => void loadView(ticker, { quiet: true }),
-      GENERATING_POLL_MS,
-    );
+    if (!anyGenerating) return;
+    const timer = window.setTimeout(refresh, GENERATING_POLL_MS);
     return () => window.clearTimeout(timer);
-  }, [othersGenerating, ticker, view, loadView]);
+  }, [anyGenerating, tickers, view, refresh]);
+
+  // Coming back to the tab (or the window) shows the current state at once.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !generating) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [generating, refresh]);
 
   // Leaving the page stops only this browser's request: the server finishes
   // and saves the report, and it's there when the user comes back.
