@@ -12,7 +12,7 @@ vi.mock("../src/db/prisma.js", () => {
       ragTicker: { findUnique: vi.fn(), findMany: vi.fn() },
       researchReport: { findMany: vi.fn(), findUnique: vi.fn() },
       chatUsageEvent: usage,
-      $queryRaw: vi.fn(),
+      $executeRaw: vi.fn(),
       $transaction: vi.fn(),
     },
   };
@@ -293,7 +293,7 @@ describe("startGeneration", () => {
       latestQuarter: { fiscalYear: 2027, fiscalQuarter: 2, label: "Q2 FY2027" },
       regenerateAfterDays: 7,
     });
-    expect(db.$queryRaw).toHaveBeenCalledTimes(1); // pg_advisory_xact_lock
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1); // pg_advisory_xact_lock
     expect(db.chatUsageEvent.create).toHaveBeenCalledWith({
       data: { userId: USER, kind: "report", weight: 3 },
     });

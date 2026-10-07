@@ -98,3 +98,15 @@ def test_ci_runs_the_postgres_gated_repository_tests() -> None:
     ):
         assert test in step["run"]
     assert 'grep -q "SKIPPED"' in step["run"]  # skipped tests fail the job
+
+
+def test_ci_runs_the_api_integration_tests_on_real_postgres() -> None:
+    job = workflow("ci.yml")["jobs"]["backup-roundtrip"]
+    script = (REPO / ".github/scripts/ci/api-integration.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert ".github/scripts/ci/api-integration.sh" in run_scripts(job)
+    assert 'prisma" migrate deploy' in script
+    assert "REQUIRE_INTEGRATION_DB=1" in script  # a skipped run fails
+    assert "npm run test:integration" in script
