@@ -129,34 +129,67 @@ class ValidatedAnswer:
     dropped: list[int]
 
 
+class CitationNumbering:
+    """Validates and renumbers citation markers across one or more texts.
+
+    Markers are renumbered [1], [2], ... in order of first appearance across
+    every text passed to :meth:`apply`, so a multi-section document shares one
+    numbering. With ``allowed``, only those passage ids may be cited (e.g. the
+    passages a writer was actually shown); others are dropped like unknown ids.
+    """
+
+    def __init__(
+        self, registry: CitationRegistry, allowed: set[int] | None = None
+    ) -> None:
+        self._registry = registry
+        self._allowed = allowed
+        self._mapping: dict[int, int] = {}
+        self.citations: list[Citation] = []
+        self.dropped: list[int] = []
+
+    def apply(self, text: str) -> str:
+        def replace(match: re.Match[str]) -> str:
+            kept: list[str] = []
+            for raw in match.group(1).split(","):
+                old = int(raw)
+                source = self._registry.get(old)
+                if source is None or (
+                    self._allowed is not None and old not in self._allowed
+                ):
+                    if old not in self.dropped:
+                        self.dropped.append(old)
+                    continue
+                if old not in self._mapping:
+                    self._mapping[old] = len(self._mapping) + 1
+                    self.citations.append(source.to_citation(self._mapping[old]))
+                new = f"[{self._mapping[old]}]"
+                if new not in kept:
+                    kept.append(new)
+            return "".join(kept)
+
+        cleaned = _MARKER_RE.sub(replace, text)
+        # Grouped citations read in order: [4][3][1] -> [1][3][4].
+        cleaned = _MARKER_RUN_RE.sub(_sort_run, cleaned)
+        # No space between text, a citation and the punctuation that follows:
+        # "production [1] ." -> "production [1]."
+        cleaned = re.sub(r"[ \t]+([.,;:!?])", r"\1", cleaned)
+        return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+
 def validate_citations(text: str, registry: CitationRegistry) -> ValidatedAnswer:
     """Keep only citations of retrieved passages and renumber them sequentially."""
-    mapping: dict[int, int] = {}
-    citations: list[Citation] = []
-    dropped: list[int] = []
+    numbering = CitationNumbering(registry)
+    cleaned = numbering.apply(text)
+    return ValidatedAnswer(
+        text=cleaned, citations=numbering.citations, dropped=numbering.dropped
+    )
 
-    def replace(match: re.Match[str]) -> str:
-        kept: list[str] = []
+
+def cited_ids(text: str) -> list[int]:
+    """Passage ids cited in ``text``, in order of first appearance."""
+    ids: list[int] = []
+    for match in _MARKER_RE.finditer(text):
         for raw in match.group(1).split(","):
-            old = int(raw)
-            source = registry.get(old)
-            if source is None:
-                if old not in dropped:
-                    dropped.append(old)
-                continue
-            if old not in mapping:
-                mapping[old] = len(mapping) + 1
-                citations.append(source.to_citation(mapping[old]))
-            new = f"[{mapping[old]}]"
-            if new not in kept:
-                kept.append(new)
-        return "".join(kept)
-
-    cleaned = _MARKER_RE.sub(replace, text)
-    # Grouped citations read in order: [4][3][1] -> [1][3][4].
-    cleaned = _MARKER_RUN_RE.sub(_sort_run, cleaned)
-    # No space between text, a citation and the punctuation that follows:
-    # "production [1] ." -> "production [1]."
-    cleaned = re.sub(r"[ \t]+([.,;:!?])", r"\1", cleaned)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
-    return ValidatedAnswer(text=cleaned, citations=citations, dropped=dropped)
+            if int(raw) not in ids:
+                ids.append(int(raw))
+    return ids
