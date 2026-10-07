@@ -312,7 +312,12 @@ ai-service operational scripts (run from `ai-service/`):
 `python -m scripts.seed_transcripts` (above), `python -m scripts.eval_rag`
 and `python -m scripts.eval_chat` ([evaluation.md](evaluation.md)), and
 `python -m scripts.pinecone_backup export|restore`
-([deployment.md](deployment.md#backups-and-restore)).
+([deployment.md](deployment.md#backups-and-restore)),
+`python -m scripts.pregenerate_reports` (demo tickers' research reports;
+[deployment.md](deployment.md#research-reports-first-deployment)) and
+`python -m scripts.eval_report` ([evaluation.md](evaluation.md#research-report-evaluation)).
+Every script that spends API credit prints a cost estimate first and needs
+`--yes`.
 
 ### Pre-commit hooks & CI
 

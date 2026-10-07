@@ -71,27 +71,32 @@ be stored that way.
 
 ### api (Cloud Run)
 
-| Name                           | Purpose                                                                                                  | Required                         | Secret  | Production value / source                                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------- | -------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                     | Runtime mode                                                                                             | Yes                              | No      | `production` (set in the image)                                                                                             |
-| `PORT`                         | Listen port                                                                                              | Set by Cloud Run                 | No      | Injected by Cloud Run (`8080`); do not set                                                                                  |
-| `LOG_LEVEL`                    | Pino log level                                                                                           | No (`info`)                      | No      | `info`                                                                                                                      |
-| `AI_SERVICE_URL`               | ai-service base URL                                                                                      | Yes                              | No      | The ai-service Cloud Run URL, `https://equity-lens-ai-service-….run.app`                                                    |
-| `AI_SERVICE_INTERNAL_TOKEN`    | Shared secret on every api → ai-service call (`X-Internal-Token`)                                        | Yes                              | **Yes** | `python -c "import secrets; print(secrets.token_urlsafe(48))"`; same value in both                                          |
-| `AI_SERVICE_ID_TOKEN_AUDIENCE` | Audience of the Google ID token sent as `Authorization: Bearer` on every ai-service call (Cloud Run IAM) | Yes in production; empty locally | No      | The ai-service's Cloud Run URL, exactly as `AI_SERVICE_URL` (`https://equity-lens-ai-service-….run.app`)                    |
-| `CLIENT_ORIGIN`                | CORS: comma-separated exact origins (no wildcards)                                                       | Yes                              | No      | `https://equitylens-research.vercel.app,http://localhost:5173` (production client, plus local dev against the deployed api) |
-| `DATABASE_URL`                 | Supabase **pooled** URL (port 6543, `?pgbouncer=true`)                                                   | Yes                              | **Yes** | Supabase → Project Settings → Database → Connection string (Transaction pooler)                                             |
-| `DIRECT_URL`                   | Supabase direct/session URL (port 5432), used by migrations                                              | Yes (validated at start)         | **Yes** | Supabase → Connection string (Session pooler or direct)                                                                     |
-| `SUPABASE_URL`                 | Verifies user JWTs (JWKS, issuer)                                                                        | Yes                              | No      | `https://<project-ref>.supabase.co`                                                                                         |
-| `SUPABASE_SERVICE_ROLE_KEY`    | Admin key (deletes auth users on account deletion)                                                       | Yes                              | **Yes** | Supabase → Project Settings → API Keys → `service_role`                                                                     |
-| `CHAT_DAILY_LIMIT`             | Turns per signed-in user per UTC day                                                                     | No (`20`)                        | No      | `20`                                                                                                                        |
-| `CHAT_DAILY_LIMIT_ANON`        | Turns per demo (anonymous) user per UTC day                                                              | No (`5`)                         | No      | `5`                                                                                                                         |
-| `CHAT_GLOBAL_DAILY_LIMIT`      | Turns across all users per UTC day (Gemini budget)                                                       | No (`60`)                        | No      | `60`                                                                                                                        |
-| `CHAT_MAX_MESSAGE_CHARS`       | Max characters per message                                                                               | No (`2000`)                      | No      | `2000`                                                                                                                      |
-| `CHAT_HISTORY_MESSAGES`        | Prior final answers sent as context                                                                      | No (`6`)                         | No      | `6`                                                                                                                         |
-| `CHAT_HISTORY_TOKENS`          | Token budget for that context                                                                            | No (`3000`)                      | No      | `3000`                                                                                                                      |
-| `CHAT_CONNECT_TIMEOUT_MS`      | Wait for the ai-service to start answering (covers a cold start)                                         | No (`30000`)                     | No      | `30000`                                                                                                                     |
-| `CHAT_KEEPALIVE_MS`            | SSE keepalive comment interval during a turn                                                             | No (`10000`)                     | No      | `10000`                                                                                                                     |
+| Name                              | Purpose                                                                                                  | Required                         | Secret  | Production value / source                                                                                                   |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                        | Runtime mode                                                                                             | Yes                              | No      | `production` (set in the image)                                                                                             |
+| `PORT`                            | Listen port                                                                                              | Set by Cloud Run                 | No      | Injected by Cloud Run (`8080`); do not set                                                                                  |
+| `LOG_LEVEL`                       | Pino log level                                                                                           | No (`info`)                      | No      | `info`                                                                                                                      |
+| `AI_SERVICE_URL`                  | ai-service base URL                                                                                      | Yes                              | No      | The ai-service Cloud Run URL, `https://equity-lens-ai-service-….run.app`                                                    |
+| `AI_SERVICE_INTERNAL_TOKEN`       | Shared secret on every api → ai-service call (`X-Internal-Token`)                                        | Yes                              | **Yes** | `python -c "import secrets; print(secrets.token_urlsafe(48))"`; same value in both                                          |
+| `AI_SERVICE_ID_TOKEN_AUDIENCE`    | Audience of the Google ID token sent as `Authorization: Bearer` on every ai-service call (Cloud Run IAM) | Yes in production; empty locally | No      | The ai-service's Cloud Run URL, exactly as `AI_SERVICE_URL` (`https://equity-lens-ai-service-….run.app`)                    |
+| `CLIENT_ORIGIN`                   | CORS: comma-separated exact origins (no wildcards)                                                       | Yes                              | No      | `https://equitylens-research.vercel.app,http://localhost:5173` (production client, plus local dev against the deployed api) |
+| `DATABASE_URL`                    | Supabase **pooled** URL (port 6543, `?pgbouncer=true`)                                                   | Yes                              | **Yes** | Supabase → Project Settings → Database → Connection string (Transaction pooler)                                             |
+| `DIRECT_URL`                      | Supabase direct/session URL (port 5432), used by migrations                                              | Yes (validated at start)         | **Yes** | Supabase → Connection string (Session pooler or direct)                                                                     |
+| `SUPABASE_URL`                    | Verifies user JWTs (JWKS, issuer)                                                                        | Yes                              | No      | `https://<project-ref>.supabase.co`                                                                                         |
+| `SUPABASE_SERVICE_ROLE_KEY`       | Admin key (deletes auth users on account deletion)                                                       | Yes                              | **Yes** | Supabase → Project Settings → API Keys → `service_role`                                                                     |
+| `CHAT_DAILY_LIMIT`                | Turns per signed-in user per UTC day                                                                     | No (`20`)                        | No      | `20`                                                                                                                        |
+| `CHAT_DAILY_LIMIT_ANON`           | Turns per demo (anonymous) user per UTC day                                                              | No (`5`)                         | No      | `5`                                                                                                                         |
+| `CHAT_GLOBAL_DAILY_LIMIT`         | Units across all users per UTC day (Gemini budget): a chat turn is 1, a report `REPORT_GLOBAL_WEIGHT`    | No (`60`)                        | No      | `60`                                                                                                                        |
+| `CHAT_MAX_MESSAGE_CHARS`          | Max characters per message                                                                               | No (`2000`)                      | No      | `2000`                                                                                                                      |
+| `CHAT_HISTORY_MESSAGES`           | Prior final answers sent as context                                                                      | No (`6`)                         | No      | `6`                                                                                                                         |
+| `CHAT_HISTORY_TOKENS`             | Token budget for that context                                                                            | No (`3000`)                      | No      | `3000`                                                                                                                      |
+| `CHAT_CONNECT_TIMEOUT_MS`         | Wait for the ai-service to start answering (covers a cold start)                                         | No (`30000`)                     | No      | `30000`                                                                                                                     |
+| `CHAT_KEEPALIVE_MS`               | SSE keepalive comment interval during a turn                                                             | No (`10000`)                     | No      | `10000`                                                                                                                     |
+| `REPORT_DAILY_LIMIT`              | Research reports a signed-in user may generate per UTC day (failed and cancelled ones count)             | No (`2`)                         | No      | `2`                                                                                                                         |
+| `REPORT_GLOBAL_WEIGHT`            | Units of `CHAT_GLOBAL_DAILY_LIMIT` one report uses                                                       | No (`3`)                         | No      | `3`                                                                                                                         |
+| `REPORT_REGENERATE_AFTER_DAYS`    | Age at which the current report may be regenerated                                                       | No (`7`)                         | No      | `7`                                                                                                                         |
+| `REPORT_STALE_GENERATION_MINUTES` | A generation older than this is treated as dead (keep equal to the ai-service's lock window)             | No (`10`)                        | No      | `10`                                                                                                                        |
+| `REPORT_CONNECT_TIMEOUT_MS`       | Wait for the ai-service to start a report (covers a cold start)                                          | No (`30000`)                     | No      | `30000`                                                                                                                     |
 
 ### ai-service (Cloud Run)
 
@@ -113,6 +118,17 @@ Required and production-relevant settings:
 | `AI_SERVICE_LANGFUSE_SECRET_KEY` | Tracing                                                          | No                                 | **Yes** | Same                                        |
 | `AI_SERVICE_LANGFUSE_BASE_URL`   | Langfuse host                                                    | No (`https://cloud.langfuse.com`)  | No      | Your Langfuse region URL                    |
 | `AI_SERVICE_TRACE_USER_SALT`     | HMAC key for hashed user ids in traces                           | No (recommended with tracing)      | **Yes** | Any random string; keep it stable           |
+
+Research report settings (all optional): `AI_SERVICE_REPORT_RESEARCH_MODEL`
+(`google_genai:gemini-3.5-flash-lite`) and `AI_SERVICE_REPORT_WRITER_MODEL`
+(`google_genai:gemini-3.8-flash`), `AI_SERVICE_REPORT_THINKING_LEVEL`, the
+per-agent step limits (`AI_SERVICE_REPORT_TRANSCRIPT_MAX_MODEL_CALLS` 5 /
+`..._TOOL_CALLS` 4, `AI_SERVICE_REPORT_MARKET_MAX_MODEL_CALLS` 3 / `..._TOOL_CALLS`
+3), output caps, `AI_SERVICE_REPORT_WRITER_MAX_PASSAGES` (24),
+`AI_SERVICE_REPORT_TIMEOUT_SECONDS` (240) and
+`AI_SERVICE_REPORT_LOCK_STALE_MINUTES` (10, keep equal to the api's
+`REPORT_STALE_GENERATION_MINUTES`). Reports use the same Gemini key; no new
+secret.
 
 Tuning settings are all optional. Every setting and its default is in
 `ai-service/app/config.py`; `ai-service/.env.example` documents the common
@@ -654,6 +670,24 @@ index with the exported dimension, metric and region only with
 `--create-index`. `--namespaces` and `--namespace-map SOURCE=TARGET` restore a
 subset or into other names (e.g. to compare before replacing). After a restore,
 rebuild `rag_tickers` from the vectors if the database was lost too.
+
+## Research reports: first deployment
+
+1. Merge. CD backs up the database, applies
+   `20261008000000_add_research_reports` (the `research_reports` table, with
+   RLS, and `chat_usage_events.weight`), then deploys the ai-service and api.
+2. Pre-generate the demo tickers' reports, so demo users have something to
+   view (they can't generate). From `ai-service/`, with local settings (which
+   point at production):
+
+   ```bash
+   python -m scripts.pregenerate_reports           # estimate only: AAPL, MSFT, NVDA, TSLA
+   python -m scripts.pregenerate_reports --yes     # generate and save (~$0.21 typical, $0.50 at most)
+   ```
+
+   Reports under 7 days old are skipped unless `--force`; `--max-cost`
+   (default $1.00) stops before the next report once actual spend reaches it.
+   The run is traced in Langfuse, tagged `pregenerate`.
 
 ## Vercel (client)
 

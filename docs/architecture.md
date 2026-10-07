@@ -18,7 +18,7 @@ Browser ──▶ client (React, Vercel) ──HTTPS + Supabase JWT──▶ api
 - The **client** only ever talks to the api. It never holds a service key or
   calls the ai-service.
 - The **api** is the gateway. It verifies Supabase sessions, scopes every query
-  to the user, enforces chat limits, stores holdings and conversations
+  to the user, enforces chat and report limits, stores holdings and conversations
   (Prisma owns every table, including the ai-service's RAG tables), and calls
   the ai-service only on behalf of a signed-in (real or demo) user.
 - The **ai-service** owns all LLM, RAG and market-data logic. It is private:
@@ -191,7 +191,14 @@ wait-for-indexing, turn citation ids and the model-facing text.
 - **Answer rules.** The system prompt routes "what changed" questions to the
   tool and asks for the headings New, Raised / improved, Lowered / worse, No
   longer mentioned and Unchanged, in that order, using only those with
-  content, then one line naming the empty categories. Every claim cites a
+  content. Raised / improved and Lowered / worse are only for a value that
+  itself changed between the quarters; a value that is the same in both (a
+  reaffirmed tax rate) goes under Unchanged. A closing line names the empty
+  categories first, then the status ("Lowered / worse, No longer mentioned:
+  nothing found in the retrieved passages."), and is left out when every
+  category has content. The rules live in one module
+  (`ai-service/app/services/chat/comparison_rules.py`) shared with the
+  research report's writer. Every claim cites a
   passage from the quarter it describes (a change cites both). A theme with no
   retrieved passage for a quarter is marked `NOT DISCUSSED IN THE RETRIEVED
 PASSAGES`, and the model must say "not discussed in the retrieved passages",
@@ -199,6 +206,82 @@ PASSAGES`, and the model must say "not discussed in the retrieved passages",
   described only as newly discussed in the retrieved passages, never as
   something that didn't happen or wasn't said in the earlier call. Forecasts
   keep management's wording.
+
+## Research reports
+
+A report is written by three specialized agents in a **fixed orchestration**,
+a custom LangGraph `StateGraph` (`ai-service/app/services/report/graph.py`),
+not a free-form supervisor: the edges never change and no model decides who
+runs next.
+
+```
+            ┌─▶ transcript_researcher (Flash-Lite) ─┐
+START ──────┤                                       ├──▶ writer (Flash, no tools) ──▶ END
+            └─▶ market_analyst (Flash-Lite) ────────┘
+```
+
+| Agent                 | Model                   | Tools                                                                                  | Step limits (model / tool calls) | Output                                                                   |
+| --------------------- | ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------ |
+| Transcript researcher | `gemini-3.5-flash-lite` | `QuarterComparisonService` (no LLM step), then an agent loop with `search_transcripts` | 5 / 4                            | Notes on drivers, guidance, changes and risks, citing passage ids        |
+| Market-data analyst   | `gemini-3.5-flash-lite` | `get_quote`, `get_price_history`                                                       | 3 / 3                            | Price notes; each tool result becomes a `[Dn]` data source and the chart |
+| Writer                | `gemini-3.8-flash`      | none (structured output: six sections)                                                 | 1 model call                     | Summary, drivers, guidance, what changed, stock performance, risks       |
+
+The two researchers start together; the writer waits for both. Each agent has
+its own prompt (`ai-service/app/services/report/prompts.py`), its own tools
+from the same MCP server as chat, and its own step limits. The writer sees
+the researchers' notes, only the passages the notes cite (at most 24), and
+the market data, and is told every number must appear in a source it cites.
+
+**Validation.** Citations go through the chat's citation logic across all six
+sections at once (one numbering for the whole report); a passage the writer
+was never shown can't be cited, and unknown `[Dn]` refs are dropped. If the
+market analyst fails, the report still ships with "Price data was unavailable
+when this report was generated." in Stock performance; if the latest call has
+no comparable earlier call, "What changed" says no comparable prior quarter is
+available. Transcript research with no citable passages fails the report.
+
+**One generation at a time.** `research_reports` has one row per ticker and
+fiscal quarter. The ai-service claims the row before generating
+(`generating_since`, `generation_id`), so two requests never run the same
+report, even on different instances; the claim also refuses a report newer
+than the 7-day regenerate window. It saves the content, or releases the claim
+as soon as a run fails, times out (240 s) or is cancelled, including a claim
+that lands after the client has left. A claim older than 10 minutes (a crashed
+instance) can be taken over, and the old run can no longer save over it.
+
+**Caching and freshness.** A report is keyed by the newest indexed quarter
+(`rag_tickers.quarters[0]`). Viewing a cached report reads one row; nothing
+is generated. When a freshness refresh indexes a newer call, the key changes:
+the api shows the previous report marked as covering an older quarter, and the
+next generate request writes the new one. Reports are shared by every user, so
+the content holds nothing user-specific: no portfolio, no user id, and times
+in US market time.
+
+**Who may generate** (the api, `api/src/services/reports.service.ts`): signed-in
+users only (demo users view), not while a generation runs, not within 7 days
+of the current report, 2 per user per UTC day (failed and cancelled
+generations count), and 3 units of the global daily cap (a chat turn is 1).
+The caps are checked and the usage event written under one advisory lock. The
+event is refunded only when nothing was generated: the ai-service couldn't be
+reached, or refused because another generation won the race or the report had
+just become fresh.
+
+**Streaming.** The browser POSTs to the api, which streams `start`, then
+`agent` events (`transcripts` / `market` / `writer`, each running then done or
+failed, with a summary such as "13 passages from Q2 FY2027 and Q1 FY2027"),
+then `done` with the report or `error`. Closing the page cancels the
+generation upstream.
+
+**Tracing.** Each report is one Langfuse trace (`research-report`, tagged
+`report` and the ticker) with a span per agent (`transcript_researcher`,
+`market_analyst`, `writer`) and one for `compare_quarters`, each holding its
+model calls with tokens, cost and latency. The requester is a hashed user id,
+the usual masking applies, and a `report_status` score records how it ended.
+
+**Cost.** Measured on 2026-10-07: $0.018–0.025 per report (21–35K input, ~3K
+output tokens across the three agents; 19–28 s). The pre-generate script and
+the eval print a more conservative estimate ($0.053 typical, $0.124 at most)
+before spending anything.
 
 ## Citations and answer validation
 
