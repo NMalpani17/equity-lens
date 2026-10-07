@@ -262,8 +262,12 @@ Run of 2026-10-07 (`20261007T195445Z`; judge `gemini-3.1-pro-preview`):
   Regression tests use those exact sentences.
 - **Observations:** the transcript researcher made one extra search for NVDA
   and none for AAPL or MSFT, relying on the comparison's passages. NVDA's
-  Stock performance repeats the price-history tool's unrounded figures
-  ("$52.6823", "$184.5977"): faithful, but untidy; rounding those tool results
-  would fix it for chat and reports alike.
+  Stock performance repeated the price-history tool's unrounded figures
+  ("$52.6823", "$184.5977"): faithful, but untidy. The quote and price-history
+  tools now round prices to cents and percent changes to two decimals, for
+  chat and reports alike (the chart's close series keeps full precision). The
+  number check matches a figure within half a unit of its last shown digit,
+  so it accepts both these saved reports and rounded ones (`--rescore`: still
+  9/9).
 - **Caveats:** three reports, one run, and a Gemini judge grading Gemini
   output (see the bias note above); the judge's scores sit at the ceiling.

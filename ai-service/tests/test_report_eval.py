@@ -297,3 +297,36 @@ def test_spoken_numbers_in_transcripts_count_as_sources() -> None:
     content = content.model_copy(update={"citations": [*content.citations, spoken]})
 
     assert failed(run_report_checks(content)) == {}
+
+
+@pytest.mark.parametrize(
+    ("shown", "source", "matches"),
+    [
+        ("$52.68", 52.68, True),  # rounded tool output, quoted as is
+        ("$52.68", 52.6823, True),  # an older, unrounded source
+        ("20%", 19.96, True),
+        ("2.68%", 2.675, True),  # half-up in prose; round(2.675, 2) is 2.67
+        ("$52.69", 52.68, False),
+        ("21%", 19.96, False),
+    ],
+)
+def test_figures_match_sources_within_half_a_shown_unit(shown, source, matches):
+    stock = f"- Moved {shown} [D2]."
+    content = report(stock=stock).model_copy(
+        update={
+            "data_sources": [
+                DataSource(
+                    id="D2",
+                    kind="price_history",
+                    ticker="NVDA",
+                    label="NVDA price history, 6mo",
+                    as_of="2026-10-06",
+                    data={"change": source},
+                )
+            ]
+        }
+    )
+
+    problems = failed(run_report_checks(content))
+
+    assert ("numbers_from_sources" not in problems) is matches

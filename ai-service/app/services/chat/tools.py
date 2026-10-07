@@ -28,6 +28,12 @@ __all__ = ["ToolDeps", "ToolOutput", "compare_quarters", "search_transcripts"]
 
 logger = logging.getLogger(__name__)
 
+# Prices the model (and so chat answers and reports) repeats: cents, not the
+# providers' 4+ decimals ("$52.6823"). Percent changes keep two decimals.
+PRICE_DECIMALS = 2
+PERCENT_DECIMALS = 2
+HISTORY_PRICE_FIELDS = ("first_close", "last_close", "change", "high", "low")
+
 
 @dataclass(frozen=True)
 class ToolOutput:
@@ -76,10 +82,10 @@ def get_quote(
             "status": "ok",
             "ticker": quote.ticker,
             "name": quote.name,
-            "price": round(quote.price, 4),
-            "previous_close": round(quote.previous_close, 4),
-            "change": round(quote.change, 4),
-            "change_percent": round(quote.change_percent, 2),
+            "price": round(quote.price, PRICE_DECIMALS),
+            "previous_close": round(quote.previous_close, PRICE_DECIMALS),
+            "change": round(quote.change, PRICE_DECIMALS),
+            "change_percent": round(quote.change_percent, PERCENT_DECIMALS),
             "currency": quote.currency,
             "as_of": format_local(quote.as_of, time_zone),
         }
@@ -108,7 +114,13 @@ def get_price_history(
                 "message": "Price history is temporarily unavailable.",
             }
         )
-    return ToolOutput.of({"status": "ok", **history.model_dump(mode="json")})
+    data = history.model_dump(mode="json")
+    # The model quotes these, so they're rounded to cents; the close series
+    # (``points``) feeds the chart and keeps the market-data precision.
+    for key in HISTORY_PRICE_FIELDS:
+        data[key] = round(data[key], PRICE_DECIMALS)
+    data["change_percent"] = round(data["change_percent"], PERCENT_DECIMALS)
+    return ToolOutput.of({"status": "ok", **data})
 
 
 def get_portfolio(turn: TurnContext | None) -> ToolOutput:

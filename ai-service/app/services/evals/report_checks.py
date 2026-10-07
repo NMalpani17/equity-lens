@@ -81,12 +81,15 @@ def _source_values(texts: list[str]) -> set[float]:
 
 
 def _in_sources(value: float, decimals: int, sources: set[float]) -> bool:
-    """True if a source number shows as ``value`` at the report's precision."""
-    return any(
-        round(s, decimals) == round(value, decimals)
-        or round(abs(s), decimals) == round(abs(value), decimals)
-        for s in sources
-    )
+    """True if a source number shows as ``value`` at the report's precision.
+
+    Within half a unit of the report's last digit (19.9632 shows as "20%" or
+    "19.96%"; 181.5 as "$181.50"), so float error never decides it: Python
+    rounds 2.675 to 2.67, while prose rounds it to 2.68. Signs are ignored
+    ("down 0.77%" for -0.77).
+    """
+    tolerance = 0.5 * 10**-decimals + 1e-9
+    return any(abs(abs(s) - abs(value)) <= tolerance for s in sources)
 
 
 def _unsupported(text: str, sources: set[float]) -> list[str]:
