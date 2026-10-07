@@ -17,7 +17,7 @@ vi.mock("../src/db/prisma.js", () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
-    chatUsageEvent: { count: vi.fn(), create: vi.fn() },
+    chatUsageEvent: { count: vi.fn(), create: vi.fn(), aggregate: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -114,13 +114,18 @@ describe("helpers", () => {
 });
 
 describe("limits", () => {
-  it("counts every turn (messages and retries) from the usage events", async () => {
+  beforeEach(() => {
+    db.chatUsageEvent.aggregate.mockResolvedValue({ _sum: { weight: 0 } } as never);
+  });
+
+  it("counts every turn (messages and retries) but not reports", async () => {
     db.chatUsageEvent.count.mockResolvedValue(2);
 
     await getUsage(USER, false);
 
     expect(db.chatUsageEvent.count.mock.calls[0]![0]!.where).toMatchObject({
       userId: USER,
+      kind: { in: ["message", "retry"] },
     });
   });
 
@@ -157,8 +162,12 @@ describe("limits", () => {
     expect(error.message).toContain("Demo accounts");
   });
 
-  it("enforces the global daily cap", async () => {
-    db.chatUsageEvent.count.mockResolvedValueOnce(1).mockResolvedValueOnce(60);
+  it("enforces the global daily cap as a sum of event weights", async () => {
+    db.chatUsageEvent.count.mockResolvedValueOnce(1);
+    // e.g. 57 chat turns and one report (weight 3).
+    db.chatUsageEvent.aggregate.mockResolvedValueOnce({
+      _sum: { weight: 60 },
+    } as never);
 
     const error = await assertWithinLimits(USER, false).catch((e: unknown) => e);
 
@@ -166,10 +175,25 @@ describe("limits", () => {
       code: "chat_limit_reached",
       details: { scope: "global" },
     });
+    expect(db.chatUsageEvent.aggregate.mock.calls[0]![0]).toMatchObject({
+      _sum: { weight: true },
+    });
   });
 
   it("allows a user under both caps", async () => {
-    db.chatUsageEvent.count.mockResolvedValueOnce(4).mockResolvedValueOnce(30);
+    db.chatUsageEvent.count.mockResolvedValueOnce(4);
+    db.chatUsageEvent.aggregate.mockResolvedValueOnce({
+      _sum: { weight: 30 },
+    } as never);
+
+    await expect(assertWithinLimits(USER, false)).resolves.toBeUndefined();
+  });
+
+  it("treats a day with no events as zero global usage", async () => {
+    db.chatUsageEvent.count.mockResolvedValueOnce(0);
+    db.chatUsageEvent.aggregate.mockResolvedValueOnce({
+      _sum: { weight: null },
+    } as never);
 
     await expect(assertWithinLimits(USER, false)).resolves.toBeUndefined();
   });

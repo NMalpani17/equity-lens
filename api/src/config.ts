@@ -45,6 +45,18 @@ const envSchema = z.object({
   // SSE comment sent this often while a turn is open, so the browser sees the
   // stream is alive and proxies don't close an idle connection.
   CHAT_KEEPALIVE_MS: z.coerce.number().int().positive().default(10_000),
+  // Research reports. Generating one is limited per user per UTC day (failed
+  // and cancelled generations count), and it costs about three chat turns, so
+  // it uses this many units of CHAT_GLOBAL_DAILY_LIMIT.
+  REPORT_DAILY_LIMIT: z.coerce.number().int().positive().default(2),
+  REPORT_GLOBAL_WEIGHT: z.coerce.number().int().positive().default(3),
+  // A report for the latest quarter can be regenerated once it is this old.
+  REPORT_REGENERATE_AFTER_DAYS: z.coerce.number().int().nonnegative().default(7),
+  // A generation running longer than this is treated as dead (the ai-service
+  // lets a new one take over after the same window).
+  REPORT_STALE_GENERATION_MINUTES: z.coerce.number().int().positive().default(10),
+  // Time to the ai-service's first response for a report (covers a cold start).
+  REPORT_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   // Comma-separated origins allowed by CORS (exact matches, no wildcards),
   // e.g. "https://equity-lens.vercel.app,http://localhost:5173".
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
@@ -100,6 +112,13 @@ export const config = {
     historyTokens: parsed.data.CHAT_HISTORY_TOKENS,
     connectTimeoutMs: parsed.data.CHAT_CONNECT_TIMEOUT_MS,
     keepaliveMs: parsed.data.CHAT_KEEPALIVE_MS,
+  },
+  reports: {
+    dailyLimit: parsed.data.REPORT_DAILY_LIMIT,
+    globalWeight: parsed.data.REPORT_GLOBAL_WEIGHT,
+    regenerateAfterDays: parsed.data.REPORT_REGENERATE_AFTER_DAYS,
+    staleGenerationMinutes: parsed.data.REPORT_STALE_GENERATION_MINUTES,
+    connectTimeoutMs: parsed.data.REPORT_CONNECT_TIMEOUT_MS,
   },
   clientOrigins: parseOrigins(parsed.data.CLIENT_ORIGIN),
   databaseUrl: parsed.data.DATABASE_URL,

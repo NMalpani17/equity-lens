@@ -74,3 +74,33 @@ export class ServiceUnavailableError extends HttpError {
     super(503, code, message);
   }
 }
+
+/** 403 — the user may not do this (e.g. demo accounts are read-only here). */
+export class ForbiddenError extends HttpError {
+  constructor(code: string, message: string) {
+    super(403, code, message);
+  }
+}
+
+/** 409 — a report can't be generated now (one is running, or it is fresh). */
+export class ReportConflictError extends HttpError {
+  constructor(
+    code: "report_in_progress" | "report_fresh",
+    message: string,
+    details: Record<string, unknown> = {},
+  ) {
+    super(409, code, message, details);
+  }
+}
+
+/** 429 — a research report cap (per user or global) has been reached. */
+export class ReportLimitError extends HttpError {
+  constructor(
+    scope: "user" | "global",
+    limit: number,
+    resetsAt: string,
+    message: string,
+  ) {
+    super(429, "report_limit_reached", message, { scope, limit, resetsAt });
+  }
+}
