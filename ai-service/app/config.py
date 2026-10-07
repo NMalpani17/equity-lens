@@ -135,6 +135,28 @@ class Settings(BaseSettings):
     # How long search_transcripts waits for on-demand indexing within a turn.
     chat_index_wait_seconds: float = 45.0
 
+    # --- Research report (multi-agent) ---
+    # An orchestrated graph: two researchers in parallel, then a writer. The
+    # researchers use a cheaper model; the writer (no tools) the stronger one.
+    report_research_model: str = "google_genai:gemini-3.5-flash-lite"
+    report_writer_model: str = "google_genai:gemini-3.8-flash"
+    report_thinking_level: str = "low"
+    report_research_max_output_tokens: int = 2048
+    # Six sections plus thinking tokens.
+    report_writer_max_output_tokens: int = 8192
+    report_model_timeout_seconds: float = 90.0
+    # Step limits per agent run (model calls / tool calls).
+    report_transcript_max_model_calls: int = 5
+    report_transcript_max_tool_calls: int = 4
+    report_market_max_model_calls: int = 3
+    report_market_max_tool_calls: int = 3
+    # Transcript passages the writer sees at most (the ones the notes cite).
+    report_writer_max_passages: int = 24
+    # Bound on one whole generation.
+    report_timeout_seconds: float = 240.0
+    # A generation lock older than this is assumed dead and may be re-claimed.
+    report_lock_stale_minutes: int = 10
+
     # --- Tracing (Langfuse, optional) ---
     # Tracing is on only when both keys are set. Payloads are masked (portfolio
     # values, contact details, secrets) and user ids hashed before export.
@@ -166,6 +188,13 @@ class Settings(BaseSettings):
         if self.chat_model.startswith("google_genai:") and not self.gemini_api_key:
             missing.append("AI_SERVICE_GEMINI_API_KEY")
         return missing
+
+    @property
+    def report_missing_settings(self) -> list[str]:
+        """Settings a report needs: chat's (models) plus RAG's (transcripts)."""
+        return list(
+            dict.fromkeys(self.chat_missing_settings + self.rag_missing_settings)
+        )
 
     @property
     def rag_missing_settings(self) -> list[str]:
