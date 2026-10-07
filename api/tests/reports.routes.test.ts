@@ -264,16 +264,21 @@ describe("POST /api/reports/:ticker", () => {
     expect(events.at(-1)!.data.code).toBe("incomplete_response");
   });
 
-  it("cancels the generation upstream when the client disconnects", async () => {
+  it("keeps reading upstream after the client leaves, until the report is saved", async () => {
     let upstreamSignal: AbortSignal | undefined;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let drained = false;
     openStream.mockImplementation(async (_req, signal) => {
       upstreamSignal = signal;
       return (async function* () {
         yield agent("transcripts", "running");
-        await new Promise<void>((resolve) =>
-          signal.addEventListener("abort", () => resolve()),
-        );
-        throw new Error("upstream aborted");
+        await gate; // the client leaves while the agents work
+        yield agent("writer", "done");
+        drained = true; // reached only if the relay kept reading
+        yield { type: "done", report: REPORT } as AiReportEvent;
       })();
     });
     const server = app.listen(0);
@@ -292,27 +297,35 @@ describe("POST /api/reports/:ticker", () => {
         received += new TextDecoder().decode(value);
       }
       controller.abort(); // the user closed the tab
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      release();
 
-      await vi.waitFor(() => expect(upstreamSignal?.aborted).toBe(true), {
-        timeout: 2000,
-      });
+      await vi.waitFor(() => expect(drained).toBe(true), { timeout: 2000 });
     } finally {
       server.close();
     }
-    expect(service.refundGeneration).not.toHaveBeenCalled(); // cancelled still counts
+    expect(upstreamSignal?.aborted).toBe(false);
+    expect(service.refundGeneration).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /api/reports/:ticker while connecting", () => {
-  it("still counts a generation the client cancels before the stream opens", async () => {
+  it("still opens and reads the stream if the client leaves while connecting", async () => {
     verifyToken.mockResolvedValue({ userId: USER, isAnonymous: false });
     service.startGeneration.mockResolvedValue(START);
-    openStream.mockImplementation(
-      (_req, signal) =>
-        new Promise((_resolve, reject) =>
-          signal.addEventListener("abort", () => reject(new Error("aborted"))),
-        ),
-    );
+    let opened: () => void = () => {};
+    const connecting = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    let drained = false;
+    openStream.mockImplementation(async (_req, signal) => {
+      await connecting; // a cold ai-service
+      expect(signal.aborted).toBe(false);
+      return (async function* () {
+        drained = true; // reached only if the relay kept reading
+        yield { type: "done", report: REPORT } as AiReportEvent;
+      })();
+    });
     const server = app.listen(0);
     const { port } = server.address() as AddressInfo;
     const controller = new AbortController();
@@ -329,8 +342,9 @@ describe("POST /api/reports/:ticker while connecting", () => {
         received += new TextDecoder().decode(value);
       }
       controller.abort(); // left while the ai-service was still connecting
-      await vi.waitFor(() => expect(openStream).toHaveBeenCalled());
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      opened();
+      await vi.waitFor(() => expect(drained).toBe(true), { timeout: 2000 });
     } finally {
       server.close();
     }

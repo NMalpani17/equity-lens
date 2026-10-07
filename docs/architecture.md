@@ -244,10 +244,15 @@ available. Transcript research with no citable passages fails the report.
 fiscal quarter. The ai-service claims the row before generating
 (`generating_since`, `generation_id`), so two requests never run the same
 report, even on different instances; the claim also refuses a report newer
-than the 7-day regenerate window. It saves the content, or releases the claim
-as soon as a run fails, times out (240 s) or is cancelled, including a claim
-that lands after the client has left. A claim older than 10 minutes (a crashed
-instance) can be taken over, and the old run can no longer save over it.
+than the 7-day regenerate window. The generation then runs as a background
+task; the request's stream only relays its events, so a client that leaves
+doesn't stop it (the ai-service runs with CPU always allocated, so the work
+isn't throttled once the request ends). It saves the content, or releases the
+claim as soon as a run fails or times out (240 s), or is cancelled when the
+instance shuts down. A claim that lands after the client has already left
+(during the claim itself) is released at once. A claim older than 10 minutes
+(a crashed instance) can be taken over, and the old run can no longer save
+over it.
 
 **Caching and freshness.** A report is keyed by the newest indexed quarter
 (`rag_tickers.quarters[0]`). Viewing a cached report reads one row; nothing
@@ -259,8 +264,8 @@ in US market time.
 
 **Who may generate** (the api, `api/src/services/reports.service.ts`): signed-in
 users only (demo users view), not while a generation runs, not within 7 days
-of the current report, 2 per user per UTC day (failed and cancelled
-generations count), and 3 units of the global daily cap (a chat turn is 1).
+of the current report, 2 per user per UTC day (failed generations count),
+and 3 units of the global daily cap (a chat turn is 1).
 The caps are checked and the usage event written under one advisory lock. The
 event is refunded only when nothing was generated: the ai-service couldn't be
 reached, or refused because another generation won the race or the report had
@@ -269,8 +274,9 @@ just become fresh.
 **Streaming.** The browser POSTs to the api, which streams `start`, then
 `agent` events (`transcripts` / `market` / `writer`, each running then done or
 failed, with a summary such as "13 passages from Q2 FY2027 and Q1 FY2027"),
-then `done` with the report or `error`. Closing the page cancels the
-generation upstream.
+then `done` with the report or `error`. A generation always finishes: if
+the user leaves, the api keeps reading the ai-service's stream until the
+report is saved, and the page says the report will be ready when they return.
 
 **Tracing.** Each report is one Langfuse trace (`research-report`, tagged
 `report` and the ticker) with a span per agent (`transcript_researcher`,

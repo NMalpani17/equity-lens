@@ -106,8 +106,9 @@ class Settings(BaseSettings):
     # --- Shutdown ---
     # Cloud Run sends SIGTERM ~10s before killing the instance. Uvicorn first
     # drains open requests (--timeout-graceful-shutdown 3 in the Dockerfile),
-    # then these budgets bound the lifespan shutdown: stop ingestion, then
-    # flush traces.
+    # then these budgets bound the lifespan shutdown: cancel running report
+    # generations (freeing their claims), stop ingestion, then flush traces.
+    shutdown_reports_timeout_seconds: float = 2.0
     shutdown_ingestion_timeout_seconds: float = 3.0
     shutdown_tracing_timeout_seconds: float = 2.0
 

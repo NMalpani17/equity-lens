@@ -258,19 +258,37 @@ def test_a_lost_claim_is_reported_and_released(deps) -> None:
     assert repo.released == ["gen-1"]
 
 
-def test_a_cancelled_generation_releases_the_claim(deps) -> None:
+def test_a_generation_finishes_and_saves_after_the_client_leaves(deps) -> None:
     repo, tracer = FakeRepo(), RecordingTracer()
     svc = service(happy_agents(deps), repo, tracer=tracer)
 
-    async def first_event_then_disconnect() -> ReportEvent:
+    async def leave_then_wait() -> ReportEvent:
         stream = svc.stream(request())
         event = await stream.__anext__()
         await stream.aclose()  # the client went away
+        await svc.wait_for_background()
         return event
 
-    event = asyncio.run(first_event_then_disconnect())
+    event = asyncio.run(leave_then_wait())
 
     assert event.type == "agent"
+    assert [s["generation_id"] for s in repo.saved] == ["gen-1"]
+    assert repo.released == [] and repo.active is None
+    assert tracer.scores[-1]["value"] == "complete"
+
+
+def test_a_shutdown_cancels_running_generations_and_frees_their_claims(deps) -> None:
+    repo, tracer = FakeRepo(), RecordingTracer()
+    svc = service(slow_agents(deps), repo, tracer=tracer)
+
+    async def start_then_shut_down() -> None:
+        stream = svc.stream(request())
+        await stream.__anext__()
+        await stream.aclose()
+        await svc.shutdown(timeout=5)
+
+    asyncio.run(start_then_shut_down())
+
     assert repo.saved == [] and repo.released == ["gen-1"]
     assert tracer.scores[-1]["value"] == "interrupted"
 
@@ -363,26 +381,15 @@ def slow_agents(deps):
     )
 
 
-def cancel_after_first_event(svc: ReportService) -> None:
-    async def go() -> None:
-        stream = svc.stream(request())
-        await stream.__anext__()
-        await stream.aclose()  # the client went away
-
-    asyncio.run(go())
-
-
-@pytest.mark.parametrize("failure", ["failed", "timed_out", "cancelled"])
+@pytest.mark.parametrize("failure", ["failed", "timed_out"])
 def test_the_next_request_generates_at_once_after_a_run_ends_early(
     deps, failure
 ) -> None:
     repo = FakeRepo()
     if failure == "failed":
         collect(service(failing_agents(deps), repo), request())
-    elif failure == "timed_out":
-        collect(service(slow_agents(deps), repo), request())
     else:
-        cancel_after_first_event(service(happy_agents(deps), repo))
+        collect(service(slow_agents(deps), repo), request())
 
     assert repo.released == ["gen-1"] and repo.active is None
     retry = collect(service(happy_agents(deps), repo), request())

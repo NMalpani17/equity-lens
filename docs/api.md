@@ -494,11 +494,13 @@ Then the response is `text/event-stream` (with keepalive comments):
 | `done`  | `{ report }`, the saved report (same shape as above).                                                                          |
 | `error` | `{ code, message, retryable }`, e.g. `research_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.         |
 
-A generation counts toward the daily caps from the moment it starts, including
-one that fails or that the user cancels by closing the connection (which
-cancels it upstream). It doesn't count if nothing was generated: the
-ai-service couldn't be reached, or refused because another generation won the
-race (`report_in_progress`) or the report had just become fresh (`report_fresh`).
+A generation always finishes once it has started: if the client closes the
+connection, the api keeps reading the ai-service's stream until the report is
+saved (and the ai-service finishes it on its own even if that connection
+drops). It counts toward the daily caps from the moment it starts, including
+one that fails. It doesn't count if nothing was generated: the ai-service
+couldn't be reached, or refused because another generation won the race
+(`report_in_progress`) or the report had just become fresh (`report_fresh`).
 
 ## AI service (`http://localhost:8000`)
 

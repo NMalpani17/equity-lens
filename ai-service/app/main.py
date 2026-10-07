@@ -19,6 +19,7 @@ from app.security import InternalTokenMiddleware, require_internal_token
 from app.services.chat.mcp_server import mcp
 from app.services.observability.tracing import shutdown_tracer
 from app.services.rag.container import shutdown_rag_components
+from app.services.report.service import shutdown_report_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Bounded, so a shutdown never hangs: ingestion stops at its next stage
     # (an interrupted job is reclaimed later), then pending traces flush.
     settings = get_settings()
+    # Running report generations first: cancelling one frees its claim, which
+    # needs the database pool that the RAG shutdown closes.
+    await shutdown_report_service(settings.shutdown_reports_timeout_seconds)
     shutdown_rag_components(settings.shutdown_ingestion_timeout_seconds)
     shutdown_tracer(settings.shutdown_tracing_timeout_seconds)
 

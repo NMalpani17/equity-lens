@@ -104,7 +104,8 @@ export function useReports(ticker: string | undefined) {
     return () => window.clearTimeout(timer);
   }, [othersGenerating, ticker, view, loadView]);
 
-  // Leaving the page cancels a running generation.
+  // Leaving the page stops only this browser's request: the server finishes
+  // and saves the report, and it's there when the user comes back.
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const onEvent = useCallback((event: ReportStreamEvent) => {
