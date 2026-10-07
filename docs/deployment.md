@@ -558,8 +558,10 @@ gcloud run jobs execute equity-lens-migrate --region us-east4 --wait
 ```
 
 `migrate deploy` only applies committed migrations from
-`api/prisma/migrations` and never creates new ones (that's `prisma:migrate`,
-for development). It's safe to run when nothing is pending. `DIRECT_URL`
+`api/prisma/migrations` and never creates new ones. It's safe to run when
+nothing is pending. Never use `prisma migrate dev`, `migrate reset`, `db push`
+or a `--shadow-database-url` here: there is one database, and Prisma resets a
+shadow database before using it. `DIRECT_URL`
 must be a session/direct connection: migrations can't run through the
 transaction pooler.
 

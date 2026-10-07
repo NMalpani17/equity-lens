@@ -45,6 +45,39 @@ cp ai-service/.env.example ai-service/.env
 
 > Never commit `.env` files — only `.env.example` is tracked. See `CLAUDE.md`.
 
+## One environment and Claude Code guardrails
+
+There is no separate dev project: the Supabase database, Pinecone index,
+Gemini key, Equibles quota and Langfuse project in your local `.env` files are
+**production**. Local dev, scripts, evals and tests that need a database all
+reach real data.
+
+- **Never** run a Prisma command that uses a shadow database (`prisma migrate
+  dev`, `migrate reset`, `db push`, or `migrate diff --shadow-database-url`):
+  Prisma resets the shadow database first, and on 2026-10-06 that wiped the
+  production `public` schema. Write migration SQL by hand in a new
+  `api/prisma/migrations/<timestamp>_<name>/migration.sql`.
+- Ask before any command that writes to the database, Pinecone, Cloud Storage
+  or Cloud Run (`CLAUDE.md` rule 7).
+- `.claude/settings.json` (committed) holds the shared Claude Code rules, for
+  both the Bash and PowerShell tools:
+  - **deny**: `git push`, `gh`, `docker push`, Prisma `migrate dev` / `migrate
+    reset` / `db push` / `--shadow-database-url`, `npm run prisma*`, `gcloud`
+    deletes, deploys, service updates, job executions and secret reads, and
+    reading or editing `.env` files.
+  - **ask**: `npx prisma`, `gcloud`, `gsutil`, `docker`, `psql`, `pg_dump`,
+    `pg_restore`, inline or stdin Python (`python -c`, `python -`), `python
+    -m scripts.*`, git commands that discard work, `rm`, and installs.
+  - **allow**: lint, format, typecheck, tests, and read-only git plus `add` /
+    `commit`.
+
+  Deny wins over ask, and ask over allow, across every settings file, so a
+  personal `.claude/settings.local.json` can't loosen these. Rules only see the
+  command line: a script that opens a database connection itself isn't
+  recognized, which is why rule 7 exists. `api/tests/repoPolicy.test.ts` keeps
+  the rules from weakening. To turn auto mode off for yourself, set
+  `"permissions": { "disableAutoMode": "disable" }` in `~/.claude/settings.json`.
+
 ## Supabase Auth setup
 
 Authentication uses Supabase Auth. In the Supabase dashboard:
@@ -93,9 +126,9 @@ keywords, reranked); see [architecture.md](architecture.md#rag-pipeline).
    - `DATABASE_URL` — the **same Supabase database** as the API (pooled URL is
      fine; the service disables prepared statements for the pooler).
 2. **Tables:** RAG state lives in Postgres, not on local disk (Cloud Run's
-   filesystem is ephemeral). Prisma owns the schema, so run the API migrations:
-   `npm --prefix api run prisma:migrate` (dev) or `prisma:deploy` (prod). This
-   creates `rag_tickers`, `rag_ingestion_jobs`, `rag_daily_usage` and
+   filesystem is ephemeral). Prisma owns the schema; its migrations (applied
+   by [continuous deployment](deployment.md#continuous-deployment)) create
+   `rag_tickers`, `rag_ingestion_jobs`, `rag_daily_usage` and
    `rag_transcripts` (raw Equibles JSON as `jsonb`).
 3. **Seed** the ten default large caps (creates the Pinecone index on first
    run, ~50 Equibles requests):
@@ -149,8 +182,8 @@ streams the reply. See [architecture.md](architecture.md#a-chat-turn).
    When prepaid credits run out Gemini returns HTTP 402, shown to users as
    "out of credits".
 
-3. **Database.** Conversations live in Postgres. Run the API migrations
-   (`npm --prefix api run prisma:migrate`), which add `chat_conversations`,
+3. **Database.** Conversations live in Postgres. The API migrations (applied
+   by continuous deployment) add `chat_conversations`,
    `chat_messages` (including a `charts` JSONB column for inline charts) and
    `chat_usage_events` (one row per turn — a sent message or a retry — which
    the daily caps count).
@@ -191,12 +224,12 @@ pip install -r requirements-dev.txt
 deactivate && cd ..
 
 npm --prefix api install                      # also runs `prisma generate`
-npm --prefix api run prisma:migrate           # creates/updates tables (first run)
 npm --prefix client install
 ```
 
-> `prisma:migrate` uses `DIRECT_URL`; the running app uses the pooled
-> `DATABASE_URL`. Both must be set in `api/.env` before migrating.
+> Don't run migrations locally: the tables already exist in the one (production)
+> database, and CD applies new migrations after a backup. See
+> [One environment](#one-environment-and-claude-code-guardrails).
 
 ### Run everything with one command
 

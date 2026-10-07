@@ -139,7 +139,7 @@ cp ai-service/.env.example ai-service/.env
 
 npm install                             # root: Husky + concurrently
 cd ai-service && python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt && cd ..
-npm --prefix api install && npm --prefix api run prisma:migrate
+npm --prefix api install            # tables already exist; never migrate locally
 npm --prefix client install
 
 npm run dev                             # client :5173, api :3001, ai-service :8000
