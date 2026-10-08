@@ -487,12 +487,12 @@ it). No body. Rule violations are JSON errors before streaming starts:
 
 Then the response is `text/event-stream` (with keepalive comments):
 
-| Event   | Data                                                                                                                           |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `start` | `{ ticker, quarter }`                                                                                                          |
-| `agent` | `{ agent, state, label, summary? }`: `agent` is `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. |
-| `done`  | `{ report }`, the saved report (same shape as above).                                                                          |
-| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.         |
+| Event   | Data                                                                                                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `start` | `{ ticker, quarter }`                                                                                                                                                                                                    |
+| `agent` | `{ agent, state, label, summary? }`: `agent` is `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. `label` is `"Writing report…"` while running and past tense once done (`"Wrote report"`). |
+| `done`  | `{ report }`, the saved report (same shape as above).                                                                                                                                                                    |
+| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.                                                                                                   |
 
 A generation always finishes once it has started: if the client closes the
 connection, the api keeps reading the ai-service's stream until the report is

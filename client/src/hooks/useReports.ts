@@ -14,10 +14,14 @@ import {
   type ReportView,
 } from "@/lib/reportsApi";
 
-export const AGENTS: { agent: ReportAgent; label: string }[] = [
-  { agent: "transcripts", label: "Researching transcripts…" },
-  { agent: "market", label: "Analyzing price data…" },
-  { agent: "writer", label: "Writing report…" },
+export const AGENTS: { agent: ReportAgent; label: string; doneLabel: string }[] = [
+  {
+    agent: "transcripts",
+    label: "Researching transcripts…",
+    doneLabel: "Researched transcripts",
+  },
+  { agent: "market", label: "Analyzing price data…", doneLabel: "Analyzed price data" },
+  { agent: "writer", label: "Writing report…", doneLabel: "Wrote report" },
 ];
 
 export interface AgentProgress {
@@ -43,6 +47,20 @@ export function defaultTicker(tickers: ReportSummary[]): string | undefined {
   const preferred = tickers.find((t) => t.ticker === DEFAULT_REPORT_TICKER);
   if (preferred && ready(preferred)) return preferred.ticker;
   return (tickers.find(ready) ?? tickers[0])?.ticker;
+}
+
+/**
+ * The label to show for an agent event. The ai-service sends past-tense labels
+ * for finished steps; an older one sent the running label ("Writing report…")
+ * for "done" too, which would read as still running.
+ */
+export function agentLabel(event: {
+  agent: ReportAgent;
+  state: string;
+  label: string;
+}) {
+  if (event.state !== "done" || !event.label.endsWith("…")) return event.label;
+  return AGENTS.find((a) => a.agent === event.agent)?.doneLabel ?? event.label;
 }
 
 function message(error: unknown, fallback: string): string {
@@ -160,7 +178,7 @@ export function useReports(requested: string | undefined) {
               ? {
                   ...item,
                   state: event.state,
-                  label: event.label,
+                  label: agentLabel(event),
                   summary: event.summary,
                 }
               : item,

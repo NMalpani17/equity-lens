@@ -76,6 +76,12 @@ LABELS: dict[AgentName, str] = {
     "market": "Analyzing price data…",
     "writer": "Writing report…",
 }
+# The same steps once finished.
+DONE_LABELS: dict[AgentName, str] = {
+    "transcripts": "Researched transcripts",
+    "market": "Analyzed price data",
+    "writer": "Wrote report",
+}
 CHART_PERIOD = "6mo"
 
 
@@ -215,7 +221,7 @@ class _Progress:
     def done(self, summary: str) -> AgentRun:
         self.run.status = "ok"
         self._finish()
-        self._send("done", LABELS[self.agent], summary)
+        self._send("done", DONE_LABELS[self.agent], summary)
         return self.run
 
     def failed(self, summary: str) -> AgentRun:

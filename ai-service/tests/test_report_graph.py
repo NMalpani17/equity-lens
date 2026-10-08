@@ -296,11 +296,15 @@ def test_researchers_run_in_parallel_then_the_writer(deps) -> None:
         order.index(("transcripts", "done")), order.index(("market", "done"))
     )
     assert order[-1] == ("writer", "done")
-    labels = {e["agent"]: e["label"] for e in events}
+    labels = {(e["agent"], e["state"]): e["label"] for e in events}
     assert labels == {
-        "transcripts": "Researching transcripts…",
-        "market": "Analyzing price data…",
-        "writer": "Writing report…",
+        ("transcripts", "running"): "Researching transcripts…",
+        ("market", "running"): "Analyzing price data…",
+        ("writer", "running"): "Writing report…",
+        # Finished steps read in the past tense.
+        ("transcripts", "done"): "Researched transcripts",
+        ("market", "done"): "Analyzed price data",
+        ("writer", "done"): "Wrote report",
     }
     # Each researcher had its own prompt and only its own tools.
     assert model.calls == {TRANSCRIPT_KEY: 2, MARKET_KEY: 2}

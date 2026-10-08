@@ -21,7 +21,7 @@ import type {
   ReportSummary,
   ReportView,
 } from "@/lib/reportsApi";
-import { GENERATING_POLL_MS } from "@/hooks/useReports";
+import { agentLabel, GENERATING_POLL_MS } from "@/hooks/useReports";
 import { ReportsPage } from "./ReportsPage";
 
 const api = vi.mocked(reportsApi);
@@ -370,7 +370,7 @@ describe("ReportsPage", () => {
       type: "agent",
       agent: "market",
       state: "done",
-      label: "Analyzing price data…",
+      label: "Analyzed price data",
       summary: "2 data sources",
     });
     await waitFor(() =>
@@ -380,7 +380,7 @@ describe("ReportsPage", () => {
           .map((li) => li.textContent),
       ).toEqual([
         "Researching transcripts… (running)",
-        "Analyzing price data… · 2 data sources (done)",
+        "Analyzed price data · 2 data sources (done)",
         "Writing report… (pending)",
       ]),
     );
@@ -558,5 +558,23 @@ describe("ReportsPage status refresh", () => {
 
     await waitFor(() => expect(api.listReports).toHaveBeenCalledTimes(2));
     expect(api.getReport).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("agentLabel", () => {
+  it("keeps the server's label, and reads a finished step in the past tense", () => {
+    expect(agentLabel({ agent: "writer", state: "done", label: "Wrote report" })).toBe(
+      "Wrote report",
+    );
+    // An older ai-service sent the running label for "done" too.
+    expect(
+      agentLabel({ agent: "writer", state: "done", label: "Writing report…" }),
+    ).toBe("Wrote report");
+    expect(
+      agentLabel({ agent: "writer", state: "running", label: "Writing report…" }),
+    ).toBe("Writing report…");
+    expect(
+      agentLabel({ agent: "market", state: "failed", label: "Analyzing price data…" }),
+    ).toBe("Analyzing price data…");
   });
 });
