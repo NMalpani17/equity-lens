@@ -34,12 +34,30 @@ function pendingAgents(): AgentProgress[] {
   return AGENTS.map(({ agent, label }) => ({ agent, label, state: "pending" }));
 }
 
+/** The report /reports opens when no company is in the address. */
+export const DEFAULT_REPORT_TICKER = "NVDA";
+
+/** NVDA if its report is ready, else the first ready report, else the first company. */
+export function defaultTicker(tickers: ReportSummary[]): string | undefined {
+  const ready = (t: ReportSummary) => t.report !== null && !t.report.outdated;
+  const preferred = tickers.find((t) => t.ticker === DEFAULT_REPORT_TICKER);
+  if (preferred && ready(preferred)) return preferred.ticker;
+  return (tickers.find(ready) ?? tickers[0])?.ticker;
+}
+
 function message(error: unknown, fallback: string): string {
   return error instanceof ApiError || error instanceof Error ? error.message : fallback;
 }
 
-export function useReports(ticker: string | undefined) {
+/**
+ * ``requested`` is the company in the address. Without one, the default
+ * company opens (picked once the list loads, then kept while the list
+ * refreshes); the address stays /reports.
+ */
+export function useReports(requested: string | undefined) {
   const [tickers, setTickers] = useState<ReportSummary[] | null>(null);
+  const [fallback, setFallback] = useState<string | undefined>(undefined);
+  const ticker = requested ?? fallback;
   const [usage, setUsage] = useState<ReportUsage | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [view, setView] = useState<ReportView | null>(null);
@@ -85,6 +103,12 @@ export function useReports(ticker: string | undefined) {
   useEffect(() => {
     void loadList();
   }, [loadList]);
+
+  useEffect(() => {
+    if (!requested && fallback === undefined && tickers) {
+      setFallback(defaultTicker(tickers));
+    }
+  }, [requested, fallback, tickers]);
 
   useEffect(() => {
     setView(null);
@@ -184,6 +208,7 @@ export function useReports(ticker: string | undefined) {
   }, [ticker, generating, onEvent, loadView, loadList]);
 
   return {
+    ticker,
     tickers,
     usage,
     listError,

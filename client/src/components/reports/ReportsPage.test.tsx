@@ -160,6 +160,20 @@ const summaries: ReportSummary[] = [
   },
 ];
 
+function summary(ticker: string, report: { outdated: boolean } | null): ReportSummary {
+  return {
+    ticker,
+    companyName: ticker,
+    latestQuarter: Q2,
+    report: report && {
+      generatedAt: "2026-10-07T12:00:00.000Z",
+      quarter: Q2,
+      ...report,
+    },
+    generating: false,
+  };
+}
+
 function renderAt(path: string, { isDemo = false } = {}) {
   vi.mocked(useAuth).mockReturnValue({
     isDemo,
@@ -188,27 +202,72 @@ beforeEach(() => {
 
 describe("ReportsPage", () => {
   it("lists companies with their report status and opens the chosen one", async () => {
-    renderAt("/reports");
+    api.getReport.mockImplementation(async (ticker) =>
+      ticker === "AAPL"
+        ? view({ ticker: "AAPL", companyName: "Apple Inc.", report: null })
+        : view(),
+    );
+    renderAt("/reports/nvda");
 
     const picker = await screen.findByLabelText("Company");
     const options = within(picker)
       .getAllByRole("option")
       .map((o) => o.textContent);
     expect(options).toEqual([
-      "Choose a company",
       "AAPL · Apple Inc. (no report yet)",
       "NVDA · Nvidia Corp (report ready)",
     ]);
-    expect(
-      screen.getByText("Choose a company to read its report."),
-    ).toBeInTheDocument();
 
-    fireEvent.change(picker, { target: { value: "NVDA" } });
+    fireEvent.change(picker, { target: { value: "AAPL" } });
+
+    expect(
+      await screen.findByText(/There's no report for Apple Inc\. \(Q2 FY2027\) yet\./),
+    ).toBeVisible();
+    expect(api.getReport).toHaveBeenLastCalledWith("AAPL");
+  });
+
+  it("opens NVDA's ready report when no company is chosen", async () => {
+    renderAt("/reports");
 
     expect(
       await screen.findByRole("heading", { name: "Nvidia Corp (NVDA)" }),
     ).toBeVisible();
+    expect(screen.getByLabelText("Company")).toHaveValue("NVDA");
+    expect(api.getReport).toHaveBeenCalledTimes(1);
     expect(api.getReport).toHaveBeenCalledWith("NVDA");
+  });
+
+  it.each([
+    // NVDA isn't ready: the first ready report instead.
+    [
+      [
+        summary("AAPL", null),
+        summary("MSFT", { outdated: false }),
+        summary("NVDA", { outdated: true }),
+      ],
+      "MSFT",
+    ],
+    // Nothing is ready: the first company.
+    [[summary("AAPL", null), summary("NVDA", null)], "AAPL"],
+  ])(
+    "falls back to the first ready report, then the first company",
+    async (tickers, expected) => {
+      api.listReports.mockResolvedValue({ tickers, usage: view().usage });
+
+      renderAt("/reports");
+
+      await waitFor(() => expect(api.getReport).toHaveBeenCalledWith(expected));
+      expect(api.getReport).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("says so when no company is indexed", async () => {
+    api.listReports.mockResolvedValue({ tickers: [], usage: view().usage });
+
+    renderAt("/reports");
+
+    expect(await screen.findByText("No companies are indexed yet.")).toBeVisible();
+    expect(api.getReport).not.toHaveBeenCalled();
   });
 
   it("shows the report with its dates, six sections and the disclaimer", async () => {

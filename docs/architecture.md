@@ -295,7 +295,9 @@ the user leaves, the api keeps reading the ai-service's stream until the
 report is saved, and the page says the report will be ready when they return.
 When the tab becomes visible or regains focus the page refetches the list and
 the open report, and while any report is generating it checks again every
-10 s.
+10 s. `/reports` without a company opens NVDA's report if it is ready, else
+the first ready report, else the first company; the address stays
+`/reports`, and the choice is kept while the list refreshes.
 
 **Tracing.** Each report is one Langfuse trace (`research-report`, tagged
 `report` and the ticker) with a span per agent (`transcript_researcher`,
