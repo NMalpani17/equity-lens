@@ -143,7 +143,8 @@ describe("listReports", () => {
       ["AAPL", true, false],
       ["MSFT", null, true],
     ]);
-    expect(items[2]!.companyName).toBe("MSFT");
+    // Curated names apply even when the row has none.
+    expect(items[2]!.companyName).toBe("Microsoft Corporation");
     // Report content is never loaded for the list.
     expect(db.researchReport.findMany.mock.calls[0]![0]).toMatchObject({
       select: { ticker: true, generatedAt: true },
@@ -162,10 +163,10 @@ describe("getReport", () => {
 
     expect(view.report).toMatchObject({
       ticker: "NVDA",
-      companyName: "Nvidia Corp",
+      companyName: "NVIDIA Corporation",
       quarter: { label: "Q2 FY2027", callDate: "2026-08-26" },
       priorQuarter: { label: "Q1 FY2027" },
-      citations: [{ id: 1, companyName: "Nvidia Corp", fiscalQuarter: 2 }],
+      citations: [{ id: 1, companyName: "NVIDIA Corporation", fiscalQuarter: 2 }],
       dataSources: [{ id: "D2", asOf: "2026-10-06" }],
       asOf: { latestCall: "2026-08-26" },
     });

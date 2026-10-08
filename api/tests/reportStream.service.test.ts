@@ -64,7 +64,7 @@ describe("mapReportEvent", () => {
     expect(event).toMatchObject({
       type: "done",
       report: {
-        companyName: "Nvidia Corp",
+        companyName: "NVIDIA Corporation",
         quarter: { label: "Q2 FY2027" },
         generatedAt: "2026-10-07T12:00:00.123Z",
         sections: [{ key: "summary" }, {}, {}, {}, {}, {}],

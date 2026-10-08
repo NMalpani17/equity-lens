@@ -83,7 +83,7 @@ call transcripts from Equibles and caches the raw JSON in Postgres
 (`rag_transcripts`), so re-chunking or re-embedding never spends Equibles quota
 again. Transcripts are split into ~400-token chunks with 60-token overlap,
 keeping speaker, role, section (prepared remarks or Q&A) and fiscal period. Each
-chunk is embedded with a **context header** prepended (`AAPL (Apple Inc) · Q3
+chunk is embedded with a **context header** prepended (`AAPL (Apple Inc.) · Q3
 FY2025 earnings call · 2025-07-31 · Q&A · Kevan Parekh, CFO`), which gives an
 isolated passage the company and period it belongs to. Dense vectors come from
 Gemini (`gemini-embedding-001`, 768-d) and sparse keyword vectors from
@@ -92,6 +92,17 @@ are stable (`TICKER#FY2025Q3#0042`), so re-runs are idempotent. Embedding calls
 are throttled client-side (texts and estimated tokens per minute) and honor
 Gemini's `retryDelay`. All RAG state (tickers, jobs, daily usage, transcript
 cache) lives in Postgres because Cloud Run's filesystem is ephemeral.
+
+**Company names.** Equibles titles carry SEC-style names ("Nvidia Corp",
+"Amazon Com Inc"). A curated table
+(`ai-service/app/services/rag/company_names.py`) gives the indexed and demo
+companies their proper names ("NVIDIA Corporation", "Amazon.com, Inc."); any
+other name only gets the period on a trailing Inc / Corp / Co / Ltd. Names are
+cleaned at ingestion and again on every read (ticker rows, search hits), and
+the api applies the same table (`api/src/services/companyNames.ts`, kept in
+sync) to the `rag_tickers` rows and stored reports it reads directly, so older
+rows and vectors display correctly without a data migration. Chat messages
+saved before the change keep the names they were stored with.
 
 **Freshness refresh.** Companies report every quarter, so an indexed ticker
 slowly goes stale. When a search (the chat tool or `/rag/search`) hits a ticker

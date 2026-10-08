@@ -22,6 +22,7 @@ import {
   ReportLimitError,
 } from "../errors.js";
 import { logger } from "../logger.js";
+import { companyDisplayName } from "./companyNames.js";
 import {
   periodLabel,
   reportContentSchema,
@@ -141,7 +142,7 @@ function newestFirst<T extends ReportRow>(rows: T[]): T[] {
 }
 
 function companyName(ticker: RagTicker): string {
-  return ticker.companyName ?? ticker.ticker;
+  return companyDisplayName(ticker.ticker, ticker.companyName);
 }
 
 export async function getReportUsage(

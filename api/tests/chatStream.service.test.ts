@@ -88,7 +88,7 @@ describe("mapEvent", () => {
     expect(event).toMatchObject({
       type: "done",
       citations: [
-        { companyName: "Nvidia Corp", fiscalQuarter: 2, callDate: "2026-08-26" },
+        { companyName: "NVIDIA Corporation", fiscalQuarter: 2, callDate: "2026-08-26" },
       ],
       inputTokens: 10,
       outputTokens: 5,

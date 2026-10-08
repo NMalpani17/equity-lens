@@ -13,6 +13,7 @@ import {
   type ChartDto,
   type CitationDto,
 } from "./aiSchemas.js";
+import { companyDisplayName } from "./companyNames.js";
 
 export const SECTION_KEYS = [
   "summary",
@@ -116,7 +117,7 @@ function toPeriod(p: z.infer<typeof periodSchema>): ReportPeriodDto {
 export function toReportDto(content: ReportContent, generatedAt: Date): ReportDto {
   return {
     ticker: content.ticker,
-    companyName: content.company_name,
+    companyName: companyDisplayName(content.ticker, content.company_name),
     quarter: toPeriod(content.quarter),
     priorQuarter: content.prior_quarter ? toPeriod(content.prior_quarter) : null,
     sections: content.sections,

@@ -4,6 +4,8 @@
  */
 import { z } from "zod";
 
+import { companyDisplayName } from "./companyNames.js";
+
 export const citationSchema = z.object({
   id: z.number().int(),
   ticker: z.string(),
@@ -104,7 +106,7 @@ export function toCitation(c: z.infer<typeof citationSchema>): CitationDto {
   return {
     id: c.id,
     ticker: c.ticker,
-    companyName: c.company_name,
+    companyName: companyDisplayName(c.ticker, c.company_name),
     fiscalYear: c.fiscal_year,
     fiscalQuarter: c.fiscal_quarter,
     callDate: c.call_date,

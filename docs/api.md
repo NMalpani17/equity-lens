@@ -117,7 +117,7 @@ calendar.
       "retrievalScore": 0.63,
       "rerankScore": 0.91,
       "ticker": "AAPL",
-      "companyName": "Apple Inc",
+      "companyName": "Apple Inc.",
       "fiscalYear": 2025,
       "fiscalQuarter": 3,
       "callDate": "2025-07-31",
@@ -258,7 +258,7 @@ A saved assistant message:
     {
       "id": 1,
       "ticker": "NVDA",
-      "companyName": "Nvidia Corp",
+      "companyName": "NVIDIA Corporation",
       "fiscalYear": 2027,
       "fiscalQuarter": 2,
       "callDate": "2026-08-26",
@@ -351,7 +351,7 @@ them but not generate them.
   "tickers": [
     {
       "ticker": "NVDA",
-      "companyName": "Nvidia Corp",
+      "companyName": "NVIDIA Corporation",
       "latestQuarter": {
         "fiscalYear": 2027,
         "fiscalQuarter": 2,
@@ -391,7 +391,7 @@ one with `outdated: true`, plus permissions:
 ```json
 {
   "ticker": "NVDA",
-  "companyName": "Nvidia Corp",
+  "companyName": "NVIDIA Corporation",
   "latestQuarter": {
     "fiscalYear": 2027,
     "fiscalQuarter": 2,
@@ -399,7 +399,7 @@ one with `outdated: true`, plus permissions:
   },
   "report": {
     "ticker": "NVDA",
-    "companyName": "Nvidia Corp",
+    "companyName": "NVIDIA Corporation",
     "quarter": {
       "fiscalYear": 2027,
       "fiscalQuarter": 2,
@@ -420,7 +420,7 @@ one with `outdated: true`, plus permissions:
       {
         "id": 1,
         "ticker": "NVDA",
-        "companyName": "Nvidia Corp",
+        "companyName": "NVIDIA Corporation",
         "fiscalYear": 2027,
         "fiscalQuarter": 2,
         "…": "…"
@@ -548,7 +548,7 @@ indexed call with the one before it. The structured result:
 {
   "status": "ok",
   "ticker": "NVDA",
-  "company_name": "Nvidia Corp",
+  "company_name": "NVIDIA Corporation",
   "current": { "fiscal_year": 2027, "fiscal_quarter": 2, "label": "FY2027Q2" },
   "prior": { "fiscal_year": 2027, "fiscal_quarter": 1, "label": "FY2027Q1" },
   "focus": "margins",
