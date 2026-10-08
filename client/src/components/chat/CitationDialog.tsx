@@ -6,6 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Citation } from "@/lib/chatApi";
+import { formatDate } from "@/lib/format";
 
 interface CitationDialogProps {
   citation: Citation | null;
@@ -30,7 +31,7 @@ export function CitationDialog({ citation, onOpenChange }: CitationDialogProps) 
               </DialogTitle>
               <DialogDescription>
                 Q{citation.fiscalQuarter} FY{citation.fiscalYear} earnings call
-                {citation.callDate ? ` · ${citation.callDate}` : ""} ·{" "}
+                {citation.callDate ? ` · ${formatDate(citation.callDate)}` : ""} ·{" "}
                 {SECTION_LABELS[citation.section] ?? citation.section}
               </DialogDescription>
             </DialogHeader>

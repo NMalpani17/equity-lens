@@ -305,6 +305,7 @@ describe("ReportsPage", () => {
     const summary = await screen.findByText(/Demand led the quarter/);
     fireEvent.click(within(summary).getByRole("button", { name: /Source 1/ }));
     expect(await screen.findByText("Data center revenue was a record.")).toBeVisible();
+    expect(screen.getByText(/Q2 FY2027 earnings call · Aug 26, 2026/)).toBeVisible();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
 
     const stock = screen.getByText(/Up 20% over 6 months/);

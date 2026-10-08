@@ -236,7 +236,7 @@ describe("ChatPage", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/Nvidia Corp \(NVDA\)/)).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/Q2 FY2027 earnings call · 2026-08-26/),
+      within(dialog).getByText(/Q2 FY2027 earnings call · Aug 26, 2026/),
     ).toBeInTheDocument();
     expect(within(dialog).getByText(citation.text)).toBeInTheDocument();
   });
