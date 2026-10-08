@@ -387,7 +387,7 @@ describe("ReportsPage", () => {
     expect(screen.getByRole("button", { name: /Generating…/ })).toBeDisabled();
     expect(
       screen.getByText(
-        "Takes about a minute. You can leave this page; the report will be ready when you return.",
+        "Takes 1–2 minutes. You can leave this page; the report will be ready when you return.",
       ),
     ).toBeVisible();
     expect(screen.getByLabelText("Company")).toBeDisabled();
