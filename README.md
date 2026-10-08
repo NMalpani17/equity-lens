@@ -39,8 +39,8 @@ Click **Try demo**; no sign-up needed.
 - **Multi-agent research reports.** A Reports page with one report per
   company: summary, demand and business drivers, guidance and outlook, what
   changed vs last quarter, stock performance (with a price chart) and risks.
-  A fixed LangGraph graph runs a transcript researcher and a market-data
-  analyst (Gemini Flash-Lite) in parallel, then a writer (Flash) with no
+  A fixed LangGraph graph runs a transcript researcher (Gemini Flash) and a
+  market-data analyst (Flash-Lite) in parallel, then a writer (Flash) with no
   tools. Every claim cites a transcript passage or a market-data result, and
   the report shows when it was generated and what its data is current to.
   Reports are shared and cached per ticker and quarter, so viewing one costs

@@ -70,20 +70,26 @@ def estimate(
 
 
 # --- Research reports ------------------------------------------------------------
-# Per report, by agent: (input, output) tokens. "Typical" assumes the
-# transcript researcher's context grows over ~5 model calls from ~11K tokens
-# (the comparison passages) as search results are added, a short market
-# analyst run, and a writer shown ~24 passages. "Most" assumes every agent
-# uses its full step limit and output cap.
+# Per report, by agent: (input, output) tokens. "Typical" is a little above
+# the most measured in the 2026-10-07/08 eval runs (transcript researcher
+# 9.6K-22.5K in / 0.7K-1.4K out over 1-2 calls, market analyst ~5K / 0.4K,
+# writer 5.5K-7.8K / 1.1K-1.9K), with room for Flash's thinking. "Most"
+# assumes every agent uses its full step limit and output cap, plus the
+# comparison guards: the transcript researcher's corrective turn reruns its
+# agent, and the writer may write twice.
 EST_REPORT_TOKENS: dict[str, tuple[int, int]] = {
-    "transcripts": (75_000, 2_500),
+    "transcripts": (25_000, 2_000),
     "market": (6_000, 600),
     "writer": (13_000, 3_000),
 }
 # Largest context per model call, for the upper bound.
 MAX_REPORT_CONTEXT = {"transcripts": 22_000, "market": 8_000, "writer": 16_000}
-# Rerank calls per report: two for the comparison plus one per search.
-REPORT_RERANKS_MAX = 2 + 4
+# Agent runs at most: the transcript researcher's corrective turn, the
+# writer's retry.
+MAX_REPORT_RUNS = {"transcripts": 2, "market": 1, "writer": 2}
+# Rerank calls per report: two for the comparison plus one per search, in
+# each of the transcript researcher's runs.
+REPORT_RERANKS_MAX = 2 + 2 * 4
 
 
 @dataclass(frozen=True)
@@ -106,18 +112,19 @@ class ReportEstimate:
 def estimate_reports(settings: "Settings", reports: int) -> ReportEstimate:
     """Expected and worst-case spend for ``reports`` research reports."""
     models = {
-        "transcripts": settings.report_research_model,
-        "market": settings.report_research_model,
+        "transcripts": settings.report_transcript_model,
+        "market": settings.report_market_model,
         "writer": settings.report_writer_model,
     }
-    calls = {
+    calls_per_run = {
         "transcripts": settings.report_transcript_max_model_calls,
         "market": settings.report_market_max_model_calls,
         "writer": 1,
     }
+    calls = {agent: n * MAX_REPORT_RUNS[agent] for agent, n in calls_per_run.items()}
     max_output = {
-        "transcripts": settings.report_research_max_output_tokens,
-        "market": settings.report_research_max_output_tokens,
+        "transcripts": settings.report_transcript_max_output_tokens,
+        "market": settings.report_market_max_output_tokens,
         "writer": settings.report_writer_max_output_tokens,
     }
     typical = {

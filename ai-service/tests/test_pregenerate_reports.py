@@ -64,7 +64,7 @@ def test_without_yes_it_only_prints_the_estimate(capsys) -> None:
     assert "Reports: 4 (AAPL, MSFT, NVDA, TSLA)" in out
     assert f"~${expected.typical_total:.2f} typical" in out
     assert f"${expected.most_total:.2f} at most" in out
-    assert "Pinecone reranks: at most 24" in out
+    assert "Pinecone reranks: at most 40" in out
     assert "Estimate only: nothing was contacted" in out
 
 
@@ -73,15 +73,28 @@ def test_report_estimate_matches_the_documented_prices() -> None:
 
     # Flash-Lite $0.30/$2.50, Flash $0.75/$3.75 per 1M tokens.
     assert estimate.models == {
-        "transcripts": "gemini-3.5-flash-lite",
+        "transcripts": "gemini-3.8-flash",
         "market": "gemini-3.5-flash-lite",
         "writer": "gemini-3.8-flash",
     }
+    assert estimate.typical_usd["transcripts"] == pytest.approx(
+        (25_000 * 0.75 + 2_000 * 3.75) / 1e6
+    )
     assert estimate.typical_usd["writer"] == pytest.approx(
         (13_000 * 0.75 + 3_000 * 3.75) / 1e6
     )
-    assert estimate.typical_total == pytest.approx(0.2122, abs=1e-4)
-    assert estimate.most_total == pytest.approx(0.4955, abs=1e-4)
+    assert estimate.typical_total == pytest.approx(0.2022, abs=1e-4)
+    # At most: the researcher's corrective turn reruns its agent (2 x 5 calls
+    # of 22K in / 4,096 out), the market analyst 3 calls of 8K / 2,048, and
+    # the writer writes twice (16K / 8,192 each).
+    assert estimate.most_usd["transcripts"] == pytest.approx(
+        (10 * 22_000 * 0.75 + 10 * 4_096 * 3.75) / 1e6
+    )
+    assert estimate.most_usd["writer"] == pytest.approx(
+        (2 * 16_000 * 0.75 + 2 * 8_192 * 3.75) / 1e6
+    )
+    assert estimate.most_total == pytest.approx(1.7064, abs=1e-4)
+    assert estimate.reranks_max == 4 * 10
 
 
 def test_yes_generates_each_ticker_and_reports_actual_spend(capsys) -> None:

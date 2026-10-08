@@ -46,7 +46,7 @@ from .graph import (
     build_report_graph,
     run_report_graph,
 )
-from .llm import build_research_model, build_writer
+from .llm import build_market_model, build_transcript_model, build_writer
 from .repository import Claim, ClaimOutcome, ReportRepository
 
 with warnings.catch_warnings():
@@ -260,7 +260,8 @@ class ReportService:
             metadata={
                 "ticker": ticker,
                 "quarter": latest.label,
-                "research_model": settings.report_research_model,
+                "transcript_model": settings.report_transcript_model,
+                "market_model": settings.report_market_model,
                 "writer_model": settings.report_writer_model,
             },
         )
@@ -394,7 +395,8 @@ def _usage(content: ResearchReportContent) -> dict[str, Any]:
 def default_agents(settings: Settings) -> ReportAgents:
     return ReportAgents(
         settings=settings,
-        research_model=lambda: build_research_model(settings),
+        transcript_model=lambda: build_transcript_model(settings),
+        market_model=lambda: build_market_model(settings),
         writer=lambda: build_writer(settings),
         compare=lambda turn, ticker: tools.compare_quarters(
             mcp_server.tool_deps(), turn, ticker=ticker

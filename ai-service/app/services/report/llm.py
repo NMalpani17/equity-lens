@@ -22,12 +22,21 @@ def _model(settings: Settings, spec: str, max_tokens: int) -> BaseChatModel:
     return init_chat_model(spec, **kwargs)
 
 
-def build_research_model(settings: Settings) -> BaseChatModel:
-    """Flash-Lite by default: both researchers' tool-calling agents."""
+def build_transcript_model(settings: Settings) -> BaseChatModel:
+    """Flash by default: the transcript researcher's tool-calling agent."""
     return _model(
         settings,
-        settings.report_research_model,
-        settings.report_research_max_output_tokens,
+        settings.report_transcript_model,
+        settings.report_transcript_max_output_tokens,
+    )
+
+
+def build_market_model(settings: Settings) -> BaseChatModel:
+    """Flash-Lite by default: the market analyst's tool-calling agent."""
+    return _model(
+        settings,
+        settings.report_market_model,
+        settings.report_market_max_output_tokens,
     )
 
 

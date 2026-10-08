@@ -7,13 +7,13 @@ A fixed orchestration of specialized agents, not a supervisor: the edges
 never change and no model decides who runs next. Each agent has its own
 prompt, its own tools and its own step limits:
 
-- transcript_researcher (research model): calls the existing
+- transcript_researcher (transcript model, Flash): calls the existing
   QuarterComparisonService (through the compare_quarters tool logic, without
   an LLM step), then runs a tool-calling agent with search_transcripts only,
   and returns cited notes. If the latest call has no comparable earlier call,
   it researches the latest call alone and the report states that no
   comparison is available.
-- market_analyst (research model): a tool-calling agent with get_quote and
+- market_analyst (market model, Flash-Lite): a tool-calling agent with get_quote and
   get_price_history; its tool results become [Dn] data sources and the chart.
   If it fails, the report still ships with price data marked unavailable.
 - writer (writer model, no tools): turns both sets of notes, the passages the
@@ -171,7 +171,8 @@ class ReportAgents:
     """
 
     settings: Settings
-    research_model: Callable[[], BaseChatModel]
+    transcript_model: Callable[[], BaseChatModel]
+    market_model: Callable[[], BaseChatModel]
     writer: Callable[[], Runnable]
     compare: Callable[[TurnContext, str], SearchOutput]
 
@@ -301,7 +302,7 @@ def build_report_graph(
     async def transcript_researcher(
         state: ReportState, config: RunnableConfig
     ) -> ReportState:
-        progress = _Progress("transcripts", settings.report_research_model)
+        progress = _Progress("transcripts", settings.report_transcript_model)
         try:
             comparison = await RunnableLambda(
                 lambda ticker: agents.compare(turn, ticker), name="compare_quarters"
@@ -323,7 +324,7 @@ def build_report_graph(
                     "not_indexed", f"{inputs.ticker} has no indexed earnings call."
                 )
             agent = create_agent(
-                agents.research_model(),
+                agents.transcript_model(),
                 transcript_tools,
                 system_prompt=prompts.transcript_system(
                     company=inputs.company_name,
@@ -399,11 +400,11 @@ def build_report_graph(
         }
 
     async def market_analyst(state: ReportState, config: RunnableConfig) -> ReportState:
-        progress = _Progress("market", settings.report_research_model)
+        progress = _Progress("market", settings.report_market_model)
         research = MarketResearch()
         try:
             agent = create_agent(
-                agents.research_model(),
+                agents.market_model(),
                 market_tools,
                 system_prompt=prompts.market_system(
                     ticker=inputs.ticker, today=inputs.today

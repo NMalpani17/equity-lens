@@ -119,12 +119,18 @@ Required and production-relevant settings:
 | `AI_SERVICE_LANGFUSE_BASE_URL`   | Langfuse host                                                    | No (`https://cloud.langfuse.com`)  | No      | Your Langfuse region URL                    |
 | `AI_SERVICE_TRACE_USER_SALT`     | HMAC key for hashed user ids in traces                           | No (recommended with tracing)      | **Yes** | Any random string; keep it stable           |
 
-Research report settings (all optional): `AI_SERVICE_REPORT_RESEARCH_MODEL`
-(`google_genai:gemini-3.5-flash-lite`) and `AI_SERVICE_REPORT_WRITER_MODEL`
-(`google_genai:gemini-3.8-flash`), `AI_SERVICE_REPORT_THINKING_LEVEL`, the
-per-agent step limits (`AI_SERVICE_REPORT_TRANSCRIPT_MAX_MODEL_CALLS` 5 /
-`..._TOOL_CALLS` 4, `AI_SERVICE_REPORT_MARKET_MAX_MODEL_CALLS` 3 / `..._TOOL_CALLS`
-3), output caps, `AI_SERVICE_REPORT_WRITER_MAX_PASSAGES` (24),
+Research report settings (all optional): the models,
+`AI_SERVICE_REPORT_TRANSCRIPT_MODEL` (`google_genai:gemini-3.8-flash`),
+`AI_SERVICE_REPORT_MARKET_MODEL` (`google_genai:gemini-3.5-flash-lite`) and
+`AI_SERVICE_REPORT_WRITER_MODEL` (`google_genai:gemini-3.8-flash`), which
+replace the earlier shared `AI_SERVICE_REPORT_RESEARCH_MODEL`;
+`AI_SERVICE_REPORT_THINKING_LEVEL`, the per-agent step limits
+(`AI_SERVICE_REPORT_TRANSCRIPT_MAX_MODEL_CALLS` 5 / `..._TOOL_CALLS` 4,
+`AI_SERVICE_REPORT_MARKET_MAX_MODEL_CALLS` 3 / `..._TOOL_CALLS` 3), output caps
+(`AI_SERVICE_REPORT_TRANSCRIPT_MAX_OUTPUT_TOKENS` 4096,
+`AI_SERVICE_REPORT_MARKET_MAX_OUTPUT_TOKENS` 2048,
+`AI_SERVICE_REPORT_WRITER_MAX_OUTPUT_TOKENS` 8192),
+`AI_SERVICE_REPORT_WRITER_MAX_PASSAGES` (24),
 `AI_SERVICE_REPORT_TIMEOUT_SECONDS` (240) and
 `AI_SERVICE_REPORT_LOCK_STALE_MINUTES` (10, keep equal to the api's
 `REPORT_STALE_GENERATION_MINUTES`). Reports use the same Gemini key; no new
@@ -682,11 +688,15 @@ rebuild `rag_tickers` from the vectors if the database was lost too.
 
    ```bash
    python -m scripts.pregenerate_reports           # estimate only: AAPL, MSFT, NVDA, TSLA
-   python -m scripts.pregenerate_reports --yes     # generate and save (~$0.21 typical, $0.50 at most)
+   python -m scripts.pregenerate_reports --yes     # generate and save (~$0.20 typical, $1.71 at most)
    ```
 
    Reports under 7 days old are skipped unless `--force`; `--max-cost`
    (default $1.00) stops before the next report once actual spend reaches it.
+   The upper bound assumes every agent uses its full step limit and output
+   cap, and that both comparison guards fire (the researcher's corrective
+   turn and the writer's retry). Measured reports cost $0.016–0.026 each with
+   a Flash-Lite transcript researcher; Flash adds about a cent.
    The run is traced in Langfuse, tagged `pregenerate`. Before exiting, the
    script (like the evals) waits up to 30 s for its traces to upload.
 

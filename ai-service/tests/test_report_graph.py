@@ -206,7 +206,8 @@ def settings(**overrides: Any) -> Settings:
 def make_agents(tool_deps: ToolDeps, model: ByPromptModel, writer_runnable, **cfg):
     return ReportAgents(
         settings=settings(**cfg),
-        research_model=lambda: model,
+        transcript_model=lambda: model,
+        market_model=lambda: model,
         writer=lambda: writer_runnable,
         compare=lambda turn, ticker: tools.compare_quarters(
             tool_deps, turn, ticker=ticker
@@ -315,7 +316,9 @@ def test_researchers_run_in_parallel_then_the_writer(deps) -> None:
     runs = {r.agent: r for r in final["runs"]}
     assert runs["transcripts"].tool_calls == 1 and runs["market"].tool_calls == 2
     assert runs["writer"].model == "gemini-3.8-flash"
-    assert runs["transcripts"].model == "gemini-3.5-flash-lite"
+    # The transcript researcher runs on Flash, the market analyst on Flash-Lite.
+    assert runs["transcripts"].model == "gemini-3.8-flash"
+    assert runs["market"].model == "gemini-3.5-flash-lite"
     assert runs["writer"].input_tokens == 6000 and runs["writer"].cost_usd > 0
     assert all(r.status == "ok" and r.latency_ms >= 0 for r in runs.values())
 

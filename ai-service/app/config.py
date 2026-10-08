@@ -137,12 +137,17 @@ class Settings(BaseSettings):
     chat_index_wait_seconds: float = 45.0
 
     # --- Research report (multi-agent) ---
-    # An orchestrated graph: two researchers in parallel, then a writer. The
-    # researchers use a cheaper model; the writer (no tools) the stronger one.
-    report_research_model: str = "google_genai:gemini-3.5-flash-lite"
+    # An orchestrated graph: two researchers in parallel, then a writer (no
+    # tools). The transcript researcher pairs figures across two quarters, so
+    # it runs on Flash (Flash-Lite missed most pairs); the market analyst only
+    # calls two tools and stays on Flash-Lite.
+    report_transcript_model: str = "google_genai:gemini-3.8-flash"
+    report_market_model: str = "google_genai:gemini-3.5-flash-lite"
     report_writer_model: str = "google_genai:gemini-3.8-flash"
     report_thinking_level: str = "low"
-    report_research_max_output_tokens: int = 2048
+    # Output caps include thinking tokens.
+    report_transcript_max_output_tokens: int = 4096
+    report_market_max_output_tokens: int = 2048
     # Six sections plus thinking tokens.
     report_writer_max_output_tokens: int = 8192
     report_model_timeout_seconds: float = 90.0

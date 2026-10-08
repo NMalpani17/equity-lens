@@ -46,7 +46,8 @@ def test_content_finds_sections_and_defaults_the_disclaimer() -> None:
 def test_report_settings_need_chat_and_rag_settings() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.report_research_model == "google_genai:gemini-3.5-flash-lite"
+    assert settings.report_transcript_model == "google_genai:gemini-3.8-flash"
+    assert settings.report_market_model == "google_genai:gemini-3.5-flash-lite"
     assert settings.report_writer_model == "google_genai:gemini-3.8-flash"
     missing = settings.report_missing_settings
     assert "AI_SERVICE_GEMINI_API_KEY" in missing
