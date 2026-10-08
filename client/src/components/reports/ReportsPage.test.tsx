@@ -312,7 +312,7 @@ describe("ReportsPage", () => {
     fireEvent.click(within(stock).getByRole("button", { name: /Market data D2/ }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/NVDA price history, 6mo/)).toBeVisible();
-    expect(within(dialog).getByText("20.00%")).toBeVisible();
+    expect(within(dialog).getByText("+20.00%")).toHaveClass("text-emerald-600");
     expect(within(dialog).getByText("Sep 30, 2026")).toBeVisible();
   });
 
