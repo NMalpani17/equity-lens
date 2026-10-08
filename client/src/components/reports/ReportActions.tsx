@@ -39,7 +39,7 @@ export function ReportActions({
       <p className="text-xs text-muted-foreground" role={note ? "status" : undefined}>
         {note ??
           (generating
-            ? "Takes about a minute. You can leave this page; the report will be ready when you return."
+            ? "Takes 1–2 minutes. You can leave this page; the report will be ready when you return."
             : `${view.usage.remaining} of ${view.usage.limit} reports left today.`)}
       </p>
     </div>

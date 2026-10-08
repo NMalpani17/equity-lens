@@ -43,9 +43,20 @@ Click **Try demo**; no sign-up needed.
   market-data analyst (Flash-Lite) in parallel, then a writer (Flash) with no
   tools. Every claim cites a transcript passage or a market-data result, and
   the report shows when it was generated and what its data is current to.
-  Reports are shared and cached per ticker and quarter, so viewing one costs
-  nothing; signed-in users can generate 2 a day, and demo users can view
-  them. [How it works](docs/architecture.md#research-reports).
+  "What changed" compares like with like (guidance with earlier guidance,
+  results with earlier results) and lists results against their guidance
+  under "Results vs guidance" as met, beat or missed. Guards make sure it
+  always cites the earlier quarter; if it still can't, the report fails and
+  isn't counted against the user. Reports are shared and cached per ticker and
+  quarter, so viewing one costs nothing; signed-in users can generate 2 a day
+  (about $0.06 and 45–102 s each, measured), and demo users can view them.
+  [How it works](docs/architecture.md#research-reports).
+
+  <p>
+    <img src="docs/images/report.png" width="58%" alt="Research report for Microsoft Corporation (MSFT) based on the Q4 FY2026 earnings call, compared with Q3 FY2026: generation, call, quote and price dates, then a summary and demand and business drivers with inline citation markers">
+    <img src="docs/images/report-progress.png" width="39%" alt="A report generating for AMD: transcript research done (19 passages from Q2 FY2026 and Q1 FY2026), price data analyzed (3 data sources), and the writer still running">
+  </p>
+
 - **Charts in answers.** Price and allocation charts built only from tool data,
   never from numbers the model wrote. They stream in with the answer and are
   saved with the conversation.
@@ -111,17 +122,20 @@ api's service account can invoke.
   (5.00 vs 4.67) and was preferred 6 to 1 (11 ties); Flash-Lite cost about half
   per turn ($0.0028 vs $0.0059). Flash stays the default. Method and the
   judge-bias note are in [docs/evaluation.md](docs/evaluation.md#chat-evaluation).
-  Research reports have their own eval: nine deterministic checks per report
+  Research reports have their own eval: eleven deterministic checks per report
   (sections, citations, every figure traced to its source, both quarters cited
-  in "what changed") plus the Pro judge. NVDA, AAPL and MSFT passed 9/9 and
-  scored 5/5/5, at $0.018–0.025 per report
+  in "what changed", Results vs guidance items citing both the guidance and
+  the result, readable dates) plus the Pro judge. In the latest runs NVDA and
+  AAPL passed 11/11 and MSFT 10/11 (the number check doesn't yet read "27
+  cents" as $0.27), and the judge scored all three 5/5/5
   ([results](docs/evaluation.md#research-report-evaluation)).
-- **Privacy-aware tracing.** Every chat turn is traced in Langfuse, including
-  agent steps, tool calls with latency, and model calls with tokens and cost.
-  User ids are hashed, and portfolio values, contact details and secrets are
-  masked before export. Tracing is optional and can't slow or break a turn.
+- **Privacy-aware tracing.** Every chat turn and research report is traced in
+  Langfuse, including agent steps, tool calls with latency, and model calls
+  with tokens and cost. User ids are hashed, and portfolio values, contact
+  details and secrets are masked before export. Tracing is optional and can't
+  slow or break a turn.
 
-  <img src="docs/images/langfuse-trace.png" width="600" alt="Langfuse trace of one chat turn: the LangGraph tree of model calls and tool calls (resolve_company, get_price_history, search_transcripts) with per-step latency and cost, total latency, cost and tokens, a hashed user id, and the arguments and response of each tool call">
+  <img src="docs/images/langfuse-trace.png" width="600" alt="Langfuse timeline of one research report for AMD: 45.3 s and $0.057 in total, with the market analyst (2.8 s) and the transcript researcher (28.2 s) running in parallel, then the writer (17.1 s), each span with its cost">
 
 - **Guardrails.** Off-topic and prompt-injection requests are refused before
   the model runs. The agent gives facts rather than buy/sell advice, and daily

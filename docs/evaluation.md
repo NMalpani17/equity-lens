@@ -246,7 +246,64 @@ in full, and the market data.
 
 ### Report results
 
-Run of 2026-10-07 (`20261007T195445Z`; judge `gemini-3.1-pro-preview`):
+Latest, 2026-10-08 (judge `gemini-3.1-pro-preview`). NVDA and AAPL are from
+run `20261008T041846Z`; MSFT is from `20261008T042722Z`, re-run after the
+transcript researcher was cut to two searches and the writer was told to cite
+earlier-quarter figures to earlier-quarter passages:
+
+| Ticker | Quarter   | Checks | Faithfulness | Relevance | Completeness | Citations | Tokens in / out | Report cost | Judge cost | Latency |
+| ------ | --------- | ------ | ------------ | --------- | ------------ | --------- | --------------- | ----------- | ---------- | ------- |
+| NVDA   | Q2 FY2027 | 11/11  | 5            | 5         | 5            | 16        | 87,987 / 5,662  | $0.0845     | $0.0368    | 54.1s   |
+| AAPL   | Q3 FY2026 | 11/11  | 5            | 5         | 5            | 21        | 87,534 / 5,342  | $0.0829     | $0.0213    | 46.4s   |
+| MSFT   | Q4 FY2026 | 10/11  | 5            | 5         | 5            | 22        | 55,854 / 6,111  | $0.0621     | $0.0415    | 101.8s  |
+
+- **Setup:** transcript researcher on `gemini-3.8-flash`, market analyst on
+  `gemini-3.5-flash-lite`, writer on `gemini-3.8-flash`. NVDA and AAPL ran
+  with four researcher searches, MSFT with two (the current default).
+- **MSFT's one miss is the check, not the report:** "$0.27" is cited to a
+  passage that says "27 cents", and the number check doesn't convert cents.
+- **No comparison guard fired** in any of the day's runs.
+- **Cost and time:** with two searches the MSFT report cost $0.062 (the
+  researcher $0.039: 3 calls, 37.9K tokens in), against $0.089 with four
+  (researcher $0.067: 5 calls). It took longer, though: 101.8 s against 80.4 s,
+  with the researcher at 69.9 s for three calls against 63.5 s for five. One
+  sample each, so the time per report isn't settled.
+- **Caveats:** three reports, a Gemini judge grading Gemini output (see the
+  bias note above), and scores at the ceiling. The judge is also lenient: it
+  gave MSFT 5 for faithfulness in run 3 below even though the checks found
+  earlier-quarter figures cited to newer-quarter passages.
+
+**How the 2026-10-08 runs got there.** Four runs, each fixing what the one
+before showed:
+
+1. `20261008T032317Z` (transcript researcher on Flash-Lite, first like-for-like
+   rules), $0.114. Judge 5/5/5 on all three; checks as run: NVDA 10/11, AAPL
+   10/11, MSFT 9/11. Three of the four failures were check bugs (a "met" or
+   "beat" verdict at the end of an item, "one and a half billion", "52-week"),
+   fixed with regression tests built from those sentences. The real miss:
+   MSFT's "What changed" cited no Q3 passage. The researcher had 12 Q3
+   passages holding at least eight like-for-like pairs but wrote placeholder
+   bullets, which led to the comparison guards and a clearer rule that each
+   call's next-quarter guidance is the same kind of period.
+2. `20261008T035526Z` (that prompt fix and the guards), $0.108. No guard
+   fired. The judge scored NVDA and AAPL 2 for faithfulness for comparing
+   next-quarter guidance across calls, which the rules allow: its rubric read
+   "same metric" as "same target quarter", and was reworded. MSFT's comparison
+   still held a single pair, so the transcript researcher moved to Flash. The
+   like-for-like check's word matching also failed correct answers
+   ("beating", "missing") and was replaced by the structural
+   `results_vs_guidance` check.
+3. `20261008T041846Z` (researcher on Flash), $0.337: the NVDA and AAPL rows
+   above, and MSFT 9/11 with a full comparison but some Q3 figures cited to Q4
+   passages. The researcher used all four searches it was allowed (about 70K
+   input tokens, $0.06 and 29–64 s per report).
+4. `20261008T042722Z` (MSFT only, two searches, the writer's citation rule),
+   $0.104: the MSFT row above.
+
+#### Earlier: 2026-10-07
+
+Run `20261007T195445Z` (nine checks at the time; transcript researcher on
+Flash-Lite; judge `gemini-3.1-pro-preview`):
 
 | Ticker | Quarter   | Checks | Faithfulness | Relevance | Completeness | Citations | Tokens in / out | Report cost | Judge cost | Latency |
 | ------ | --------- | ------ | ------------ | --------- | ------------ | --------- | --------------- | ----------- | ---------- | ------- |
