@@ -52,10 +52,9 @@ Click **Try demo**; no sign-up needed.
   (about $0.06 and 45–102 s each, measured), and demo users can view them.
   [How it works](docs/architecture.md#research-reports).
 
-  <p>
-    <img src="docs/images/report.png" width="58%" alt="Research report for Microsoft Corporation (MSFT) based on the Q4 FY2026 earnings call, compared with Q3 FY2026: generation, call, quote and price dates, then a summary and demand and business drivers with inline citation markers">
-    <img src="docs/images/report-progress.png" width="39%" alt="A report generating for AMD: transcript research done (19 passages from Q2 FY2026 and Q1 FY2026), price data analyzed (3 data sources), and the writer still running">
-  </p>
+  <img src="docs/images/report-progress.png" width="600" alt="A report generating for AMD: transcript research done (19 passages from Q2 FY2026 and Q1 FY2026), price data analyzed (3 data sources), and the writer still running">
+
+  <img src="docs/images/report.png" width="600" alt="Research report for Microsoft Corporation (MSFT) based on the Q4 FY2026 earnings call, compared with Q3 FY2026: generation, call, quote and price dates, then a summary and demand and business drivers with inline citation markers">
 
 - **Charts in answers.** Price and allocation charts built only from tool data,
   never from numbers the model wrote. They stream in with the answer and are
