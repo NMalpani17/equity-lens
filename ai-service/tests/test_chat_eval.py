@@ -20,6 +20,7 @@ from app.services.chat.guardrails import ADVICE_NOTE, OFF_TOPIC_REPLY
 from app.services.chat.tools import ToolDeps, calculate_position_tool
 from app.services.evals.checks import comparison_items, run_checks
 from app.services.evals.judge import (
+    JUDGE_SYSTEM_PROMPT,
     MAX_EVIDENCE_CHARS,
     JudgedAnswer,
     JudgeVerdict,
@@ -817,3 +818,18 @@ def test_only_list_items_count_as_comparison_items() -> None:
     )
 
     assert items == {"results vs guidance": ["* one", "- two", "1. three"]}
+
+
+def test_the_judge_counts_each_calls_next_quarter_guidance_as_like_for_like() -> None:
+    # The 2026-10-08 run: the judge scored correct NVDA and AAPL reports 2 for
+    # comparing Q3 guidance with Q2 guidance, reading "same metric" as "same
+    # target quarter".
+    rubric = " ".join(JUDGE_SYSTEM_PROMPT.split())
+
+    assert (
+        "Each call's guidance for its own next quarter is like for like even "
+        "though the target quarters differ" in rubric
+    )
+    assert '9-11% in the newer call is correctly "lowered"' in rubric
+    assert "and so is each call's full-year guidance" in rubric
+    assert "or giving a wrong verdict, is a faithfulness error" in rubric
