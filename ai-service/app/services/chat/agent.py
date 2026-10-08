@@ -103,11 +103,28 @@ class ChatEvent:
 
 
 @dataclass
+class _PlacedChart:
+    """A chart, placed by the tool call that first produced it.
+
+    Parallel tool calls finish in any order, so charts are ordered by when the
+    model issued the calls (``position``), not by when results arrived. A
+    repeated chart keeps its first position but shows the data of the latest
+    issued call (``source``), whichever finished last.
+    """
+
+    position: int
+    source: int
+    chart: ChatChart
+
+
+@dataclass
 class _TurnState:
     tool_calls: dict[str, ToolCallSummary] = field(default_factory=dict)
+    # Tool call id -> the order the model issued it in.
+    call_order: dict[str, int] = field(default_factory=dict)
     citations: list[Citation] = field(default_factory=list)
-    # Chart key -> chart; a repeated chart replaces the earlier one in place.
-    charts: dict[str, ChatChart] = field(default_factory=dict)
+    # Chart key -> placed chart; a repeated chart replaces the earlier one in place.
+    charts: dict[str, _PlacedChart] = field(default_factory=dict)
     final: AIMessage | None = None
     ended_on_tool_calls: bool = False
     input_tokens: int = 0
@@ -479,6 +496,7 @@ class ChatService:
                 args=args,
             )
             state.tool_calls[call_id] = summary
+            state.call_order.setdefault(call_id, len(state.call_order))
             events.append(
                 ChatEvent(
                     "tool_start",
@@ -532,9 +550,18 @@ class ChatService:
         if chart is None:
             return None
         key = chart_key(chart)
-        if key not in state.charts and len(state.charts) >= MAX_CHARTS_PER_TURN:
+        order = state.call_order.get(summary.id, len(state.call_order))
+        placed = state.charts.get(key)
+        if placed is None:
+            if len(state.charts) >= MAX_CHARTS_PER_TURN:
+                return None
+            state.charts[key] = _PlacedChart(order, order, chart)
+            return chart
+        placed.position = min(placed.position, order)
+        if order < placed.source:
+            # An earlier-issued call finished last: keep the newer data.
             return None
-        state.charts[key] = chart
+        placed.source, placed.chart = order, chart
         return chart
 
     def _record_status(self, state: _TurnState) -> None:
@@ -579,7 +606,10 @@ class ChatService:
             "content": content,
             "status": status,
             "citations": [c.model_dump() for c in state.citations],
-            "charts": [c.model_dump(mode="json") for c in state.charts.values()]
+            "charts": [
+                placed.chart.model_dump(mode="json")
+                for placed in sorted(state.charts.values(), key=lambda p: p.position)
+            ]
             if status in _CHART_STATUSES
             else [],
             "tool_calls": [t.model_dump() for t in state.tool_calls.values()],

@@ -359,7 +359,10 @@ cells.
 When `get_price_history` or `get_portfolio` succeeds, the agent builds a typed
 chart from the tool's structured output, never from the model's text, so a chart
 can't show a number the model made up. Charts stream as `chart` events, are
-attached to `done`, validated by the api with Zod, and saved on the message. The
+attached to `done`, validated by the api with Zod, and saved on the message.
+`done` lists them in the order the model issued the tool calls, not the order
+parallel calls finished; a repeated chart (same ticker and period) keeps its
+first place and shows the latest-issued call's data. The
 client renders them below the answer once it has finished streaming (so the
 growing text never pushes a drawn chart down), with Recharts lazy-loaded in its
 own chunk and a "View data" table for each. Chart shapes are in [api.md](api.md#ai-analyst-chat).
