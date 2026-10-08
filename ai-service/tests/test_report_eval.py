@@ -31,7 +31,7 @@ TEXT = {
         "New, Lowered / worse, No longer mentioned, Unchanged: nothing found in "
         "the retrieved passages."
     ),
-    "stock": "- Up 19.96% over 6 months, last close $181.50 on 2026-10-06 [D2].",
+    "stock": "- Up 19.96% over 6 months, last close $181.50 on Oct 6, 2026 [D2].",
     "risks": "- Supply constraints persist in 2027 [1].",
 }
 
@@ -109,11 +109,15 @@ def test_a_good_report_passes_every_check() -> None:
         "comparison_like_for_like",
         "no_fundamentals",
         "disclaimer_and_dates",
+        "readable_dates",
     ]
 
 
 def test_figures_skip_years_dates_labels_markers_and_small_counts() -> None:
-    text = "In Q2 FY2027 [3] on 2026-08-26, 6 months, 2 quarters: $5, 8%, 1.5 and 40."
+    text = (
+        "In Q2 FY2027 [3] on 2026-08-26, 6 months, 2 quarters: $5, 8%, 1.5 and 40, "
+        "as of Jul 30, 2026 and Sept. 30, 2026."
+    )
 
     assert figures(text) == [(5.0, 0), (8.0, 0), (1.5, 1), (40.0, 0)]
 
@@ -148,6 +152,11 @@ def test_figures_skip_years_dates_labels_markers_and_small_counts() -> None:
             },
             "comparison_like_for_like",
             "mixed guidance and results",
+        ),
+        (
+            {"stock": "- Up 19.96% through 2026-10-06 [D2]."},
+            "readable_dates",
+            "ISO dates ['2026-10-06']",
         ),
         (
             {"stock": "- Trades at a P/E of 40 [D2]."},
@@ -275,7 +284,7 @@ def test_evaluate_checks_and_judges_each_report() -> None:
     assert request.user_id == "system:eval" and request.regenerate_after_days == 0
     assert tags == ("eval",)
     table = eval_report.results_table(results)
-    assert "| NVDA | Q2 FY2027 | 10/10 | — | 5 | 4 | 4 |" in table
+    assert "| NVDA | Q2 FY2027 | 11/11 | — | 5 | 4 | 4 |" in table
     assert "research_failed: m" in table
 
 

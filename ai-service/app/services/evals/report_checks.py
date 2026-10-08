@@ -16,6 +16,8 @@
 - no_fundamentals: no valuation figures in Stock performance (there is no
   fundamentals tool)
 - disclaimer_and_dates: the not-advice note and the "as of" dates
+- readable_dates: no ISO dates in the text ("Apr 8, 2026", not
+  "2026-04-08")
 """
 
 import json
@@ -24,6 +26,7 @@ from typing import Any
 
 from app.models.report import SECTIONS, ResearchReportContent
 from app.services.report.assemble import UNAVAILABLE_SECTIONS
+from app.services.report.dates import ISO_DATE_RE, READABLE_DATE_RE
 
 from .checks import (
     comparison_closing_line,
@@ -34,10 +37,10 @@ from .models import CheckResult
 
 _PASSAGE_REF_RE = re.compile(r"\[(\d{1,3})\]")
 _DATA_REF_RE = re.compile(r"\[(D\d{1,2})\]")
-# Not figures: citation markers, ISO dates, fiscal labels, years.
+# Not figures: citation markers, dates, fiscal labels, years.
 _NOT_FIGURES_RE = re.compile(
     r"\[D?\d{1,3}\]"
-    r"|\b\d{4}-\d{2}-\d{2}\b"
+    rf"|{ISO_DATE_RE.pattern}|{READABLE_DATE_RE.pattern}"
     r"|\b\d{1,2}:\d{2}\b"  # clock times, e.g. a quote "as of 3:54 PM EDT"
     r"|\bQ[1-4]\b|\bFY\s?\d{2,4}\b"
     r"|\b(?:19|20)\d{2}\b"
@@ -216,6 +219,9 @@ def run_report_checks(report: ResearchReportContent) -> list[CheckResult]:
     ):
         missing.append("market data dates")
     results.append(_result("disclaimer_and_dates", not missing, f"missing {missing}"))
+
+    iso = sorted({m.group(0) for m in ISO_DATE_RE.finditer(all_text)})
+    results.append(_result("readable_dates", not iso, f"ISO dates {iso[:4]}"))
     return results
 
 

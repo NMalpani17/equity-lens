@@ -353,6 +353,30 @@ def test_report_cites_only_passages_the_writer_saw_and_known_data(deps) -> None:
     assert USER_KEYS.isdisjoint(all_keys(report.model_dump(mode="json")))
 
 
+def test_dates_read_like_apr_8_2026(deps) -> None:
+    seen: list = []
+    draft = DRAFT.model_copy(
+        update={
+            "stock": "- Up 20% from 2025-10-06 to 2026-04-04 [D2]; not a date: "
+            "2026-13-40."
+        }
+    )
+    model = ByPromptModel(scripts=research_script())
+    _, final, turn = run(make_agents(deps, model, writer(draft, seen=seen)))
+
+    report = assemble(final, turn)
+
+    stock = next(s.markdown for s in report.sections if s.key == "stock")
+    assert stock == (
+        "- Up 20% from Oct 6, 2025 to Apr 4, 2026 [D2]; not a date: 2026-13-40."
+    )
+    system = seen[0][0].text
+    assert 'e.g. "Apr 8, 2026", never as "2026-04-08"' in system
+    assert "earnings call (Aug 26, 2026)" in system
+    # Stored dates stay ISO; the client formats them.
+    assert report.as_of.latest_call == "2026-08-26"
+
+
 def test_report_ships_without_price_data_when_the_market_analyst_fails(deps) -> None:
     deps.market().get_quote.side_effect = ProviderUnavailableError("down")
     deps.history().get_history.side_effect = ProviderUnavailableError("down")

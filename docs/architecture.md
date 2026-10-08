@@ -255,6 +255,10 @@ market analyst fails, the report still ships with "Price data was unavailable
 when this report was generated." in Stock performance; if the latest call has
 no comparable earlier call, "What changed" says no comparable prior quarter is
 available. Transcript research with no citable passages fails the report.
+Dates in the text read like "Apr 8, 2026": the writer is told so, and any
+ISO date that slips through is rewritten when the report is assembled
+(`ai-service/app/services/report/dates.py`); the stored "as of" fields stay
+ISO and the client formats them.
 
 **One generation at a time.** `research_reports` has one row per ticker and
 fiscal quarter. The ai-service claims the row before generating

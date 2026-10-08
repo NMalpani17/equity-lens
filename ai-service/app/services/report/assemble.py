@@ -21,6 +21,7 @@ from app.models.report import (
 from app.services.chat.citations import CitationNumbering, CitationRegistry
 from app.services.chat.formatting import tidy_answer
 
+from .dates import readable_dates
 from .graph import (
     MarketResearch,
     Period,
@@ -79,7 +80,7 @@ def assemble_report(
         text = UNAVAILABLE_SECTIONS[key] if missing.get(key) else getattr(draft, key)
         refs = validate_data_refs(text, known_refs)
         dropped_refs.extend(refs.dropped)
-        markdown = tidy_answer(numbering.apply(refs.text))
+        markdown = tidy_answer(readable_dates(numbering.apply(refs.text)))
         if not markdown:
             raise ReportError(
                 "writer_failed",
