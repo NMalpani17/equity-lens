@@ -60,7 +60,13 @@ comparable earlier call is indexed, so there is no comparison: research \
 TRANSCRIPT_OUTPUT = f"""Short bullet notes under exactly these headings: \
 "## Drivers", "## Guidance", "## Changes", "## Risks". Under "## Changes", \
 compare {{current}} with {{prior}} following these rules:
-{COMPARISON_RULES}"""
+{COMPARISON_RULES}
+- Before writing "## Changes", go through the {{prior}} passages and pair \
+each figure guided or reported there with the {{current}} figure for the same \
+metric, then classify each pair. A change cites a {{prior}} passage and a \
+{{current}} passage.
+- Leave out a heading with nothing under it; never write a placeholder bullet \
+such as "not discussed" or "no comparable guidance"."""
 TRANSCRIPT_OUTPUT_NO_COMPARISON = """Short bullet notes under exactly these \
 headings: "## Drivers", "## Guidance", "## Risks". There is no "## Changes" \
 section: no earlier call can be compared."""
@@ -198,6 +204,33 @@ def writer_system(
         compared_with=f", compared with {prior}" if prior else "",
         changes_rule=changes_rule,
         stock_rule=STOCK_AVAILABLE if market_available else STOCK_UNAVAILABLE,
+    )
+
+
+def _id_list(ids: Sequence[int]) -> str:
+    return " ".join(f"[{i}]" for i in ids)
+
+
+def transcript_correction(*, current: str, prior: str, prior_ids: Sequence[int]) -> str:
+    """One corrective turn when the notes' Changes cite no earlier-quarter passage."""
+    return (
+        f'Your "## Changes" notes cite no {prior} passage, so they compare '
+        f"nothing. The {prior} passages are {_id_list(prior_ids)}. Pair each figure "
+        f"guided or reported in them with the {current} figure for the same metric "
+        "(each call's next-quarter guidance is the same kind of period; reported "
+        "results compare with reported results), classify each pair under the "
+        "comparison headings, and cite both quarters. Then write your full notes "
+        "again, all four sections."
+    )
+
+
+def writer_correction(*, current: str, prior: str, prior_ids: Sequence[int]) -> str:
+    """The writer's retry when its "changes" section cites no earlier quarter."""
+    return (
+        f'Your previous draft\'s "changes" section cited no {prior} passage, so it '
+        f'compared nothing. Write all sections again. In "changes", compare '
+        f"{current} with {prior} like with like, citing {prior} passages "
+        f"({_id_list(prior_ids)}) next to the {current} passages they compare with."
     )
 
 

@@ -335,6 +335,10 @@ def test_system_prompt_sets_the_comparison_rules() -> None:
     assert "never put it under Raised / improved or Lowered / worse" in prompt
     assert "worded as met, beat or missed" in prompt
     assert "9-11% in the newer call is Lowered / worse" in prompt
+    # Each call's next-quarter guidance is the same kind of period; results
+    # compare with results.
+    assert "own next quarter is the same kind of period" in prompt
+    assert "43% in the newer one is Raised / improved" in prompt
     # Raised / Lowered only for a changed value; a repeated one is Unchanged.
     assert "only when the value or position itself changed" in prompt
     assert 'it goes under "Unchanged"' in prompt

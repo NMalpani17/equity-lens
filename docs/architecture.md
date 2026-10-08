@@ -204,8 +204,9 @@ wait-for-indexing, turn citation ids and the model-facing text.
   longer mentioned and Unchanged, then Results vs guidance, in that order,
   using only those with content. Changes compare like with like: guidance
   with the earlier guidance for the same metric and period (next-quarter
-  growth guided 14–17%, then 9–11%, is Lowered / worse), results with earlier
-  results. A result measured against its guidance is never Raised or Lowered;
+  growth guided 14–17%, then 9–11%, is Lowered / worse; each call's guidance
+  for its own next quarter counts as the same period), results with earlier
+  results (cloud growth 40%, then 43%, is Raised / improved). A result measured against its guidance is never Raised or Lowered;
   it goes under Results vs guidance, worded met, beat or missed. Raised /
   improved and Lowered / worse are only for a value that itself changed
   between the quarters; a value that is the same in both (a reaffirmed tax
@@ -255,6 +256,17 @@ market analyst fails, the report still ships with "Price data was unavailable
 when this report was generated." in Stock performance; if the latest call has
 no comparable earlier call, "What changed" says no comparable prior quarter is
 available. Transcript research with no citable passages fails the report.
+
+**"What changed" always compares.** When a comparison is available, the
+section must cite the earlier quarter, in four layers (`graph.py`): if the
+researcher's Changes notes cite no earlier-quarter passage, it gets one
+corrective turn listing those passages; if they still don't, the writer is
+shown up to 8 earlier-quarter passages anyway (within its 24-passage cap); if
+the writer's draft cites none, it writes once more, told what was missing; and
+if that draft still cites none, the report fails with `comparison_failed`
+(retryable, and refunded). If no earlier-quarter passage was retrieved at all,
+the report states that no comparable prior quarter is available instead.
+
 Dates in the text read like "Apr 8, 2026": the writer is told so, and any
 ISO date that slips through is rewritten when the report is assembled
 (`ai-service/app/services/report/dates.py`); the stored "as of" fields stay
@@ -287,9 +299,10 @@ users only (demo users view), not while a generation runs, not within 7 days
 of the current report, 2 per user per UTC day (failed generations count),
 and 3 units of the global daily cap (a chat turn is 1).
 The caps are checked and the usage event written under one advisory lock. The
-event is refunded only when nothing was generated: the ai-service couldn't be
+event is refunded when nothing was generated (the ai-service couldn't be
 reached, or refused because another generation won the race or the report had
-just become fresh.
+just become fresh) and when the report failed because it couldn't compare the
+quarters (`comparison_failed`), which is no fault of the user's.
 
 **Streaming.** The browser POSTs to the api, which streams `start`, then
 `agent` events (`transcripts` / `market` / `writer`, each running then done or

@@ -17,6 +17,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import RunnableLambda
 
 from app.config import Settings
+from app.models.comparison import ThemePassages
 from app.models.quote import Quote
 from app.models.rag import RagFilters, RagSearchResponse
 from app.models.report import ReportDraft
@@ -28,18 +29,21 @@ from app.services.chat.tools import ToolDeps
 from app.services.market_data.base import ProviderUnavailableError
 from app.services.report.assemble import PRICE_UNAVAILABLE, assemble_report
 from app.services.report.graph import (
+    COMPARISON_FAILED,
     Period,
     ReportAgents,
     ReportError,
     ReportInputs,
     build_report_graph,
     run_report_graph,
+    with_prior_passages,
 )
 from app.services.report.prompts import NO_COMPARISON
 from app.services.report.sources import DataSourceRegistry, validate_data_refs
 from tests.chat_fakes import ai, search_result
 from tests.test_chat_charts import history, history_result
 from tests.test_chat_comparison import comparison
+from tests.test_chat_comparison import passage as comparison_passage
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -525,3 +529,142 @@ def test_citation_numbering_spans_texts_and_honors_the_allow_list() -> None:
     assert numbering.apply("B [2][3][1].") == "B [1][2]."
     assert [c.id for c in numbering.citations] == [1, 2]
     assert numbering.dropped == [1]
+
+
+# --- "What changed" must cite the earlier quarter -------------------------------
+# The comparison registers [1][2] from Q2 FY2027 and [3][4] from Q1 FY2027.
+
+NOTES_WITHOUT_PRIOR = TRANSCRIPT_NOTES.replace(
+    "### Raised / improved\n- Guidance rose from Q1 FY2027 [3] to Q2 FY2027 [2].",
+    "### New\n- Newly discussed in Q2 FY2027 [2].",
+)
+DRAFT_WITHOUT_PRIOR = DRAFT.model_copy(
+    update={
+        "changes": "### New\n- Newly discussed [2].\n\nRaised / improved, Lowered / "
+        "worse, No longer mentioned, Unchanged: nothing found in the retrieved "
+        "passages."
+    }
+)
+
+
+def writers(*drafts: ReportDraft, seen: list | None = None):
+    """A writer that returns ``drafts`` in turn (the last one from then on)."""
+    calls = [0]
+
+    def respond(messages: list[BaseMessage]) -> dict:
+        if seen is not None:
+            seen.append(messages)
+        draft = drafts[min(calls[0], len(drafts) - 1)]
+        calls[0] += 1
+        return {"raw": ai("{...}", usage=(6000, 1500)), "parsed": draft}
+
+    return RunnableLambda(respond)
+
+
+def researcher_replies(*notes: str) -> dict[str, list[AIMessage]]:
+    """One search, then each of ``notes`` as successive answers."""
+    first = research_script()[TRANSCRIPT_KEY][0]
+    return research_script(
+        **{TRANSCRIPT_KEY: [first, *(ai(n, usage=(3000, 400)) for n in notes)]}
+    )
+
+
+def test_notes_that_compare_nothing_get_one_corrective_turn(deps) -> None:
+    model = ByPromptModel(
+        scripts=researcher_replies(NOTES_WITHOUT_PRIOR, TRANSCRIPT_NOTES)
+    )
+    _, final, _ = run(make_agents(deps, model, writer()))
+
+    research = final["transcripts"]
+    assert research.notes == TRANSCRIPT_NOTES
+    assert model.calls[TRANSCRIPT_KEY] == 3  # search, notes, corrected notes
+    correction = model.seen[TRANSCRIPT_KEY][-1][-1].text
+    assert "cite no Q1 FY2027 passage" in correction
+    assert "[3] [4]" in correction
+    runs = {r.agent: r for r in final["runs"]}
+    assert runs["transcripts"].model_calls == 3
+
+
+def test_notes_that_still_compare_nothing_show_the_writer_the_earlier_quarter(
+    deps,
+) -> None:
+    seen: list = []
+    model = ByPromptModel(scripts=researcher_replies(NOTES_WITHOUT_PRIOR))
+    _, final, turn = run(make_agents(deps, model, writer(seen=seen)))
+
+    assert model.calls[TRANSCRIPT_KEY] == 3  # one correction, no more
+    assert final["transcripts"].passage_ids[-2:] == [3, 4]
+    task = seen[0][1].text
+    assert '<passage id="3"' in task and '<passage id="4"' in task
+    # The writer compared with Q1 FY2027 [3], so the report ships.
+    report = assemble(final, turn)
+    assert {(c.fiscal_year, c.fiscal_quarter) for c in report.citations} >= {(2027, 1)}
+
+
+def test_earlier_passages_fit_within_the_writer_cap() -> None:
+    assert with_prior_passages([1, 2, 5, 6], [3, 4], limit=4) == [1, 2, 3, 4]
+    assert with_prior_passages([1, 3], [3, 4], limit=24) == [1, 3, 4]
+    assert len(with_prior_passages(list(range(30)), list(range(40, 60)), 24)) == 24
+
+
+def test_a_draft_that_compares_nothing_is_written_once_more(deps) -> None:
+    seen: list = []
+    model = ByPromptModel(scripts=research_script())
+    _, final, turn = run(
+        make_agents(deps, model, writers(DRAFT_WITHOUT_PRIOR, DRAFT, seen=seen))
+    )
+
+    assert len(seen) == 2
+    correction = seen[1][-1].text
+    assert "cited no Q1 FY2027 passage" in correction and "[3]" in correction
+    assert final["draft"] == DRAFT
+    runs = {r.agent: r for r in final["runs"]}
+    assert runs["writer"].model_calls == 2 and runs["writer"].input_tokens == 12000
+    assert assemble(final, turn).sections[3].markdown.count("[") >= 2
+
+
+def test_a_report_that_still_compares_nothing_fails_retryably(deps) -> None:
+    model = ByPromptModel(scripts=research_script())
+
+    with pytest.raises(ReportError) as error:
+        run(make_agents(deps, model, writers(DRAFT_WITHOUT_PRIOR)))
+
+    assert error.value.code == COMPARISON_FAILED == "comparison_failed"
+    assert error.value.retryable is True
+    assert error.value.message == "Couldn't compare with Q1 FY2027. Please try again."
+
+
+def test_no_earlier_passages_means_no_comparison(deps) -> None:
+    deps.comparison().compare.return_value = comparison(
+        themes=[
+            ThemePassages(
+                key="guidance",
+                label="Guidance and outlook",
+                current=[comparison_passage(1, 2), comparison_passage(2, 2)],
+                prior=[],
+            )
+        ]
+    )
+    model = ByPromptModel(scripts=research_script())
+    _, final, turn = run(make_agents(deps, model, writer()))
+
+    assert final["transcripts"].prior is None
+    report = assemble(final, turn)
+    assert report.comparison_available is False
+    assert report.sections[3].markdown == NO_COMPARISON
+
+
+def test_the_researcher_pairs_figures_and_writes_no_placeholders() -> None:
+    from app.services.report.prompts import transcript_system
+
+    system = transcript_system(
+        company="Microsoft Corporation",
+        ticker="MSFT",
+        today=TODAY,
+        current="Q4 FY2026",
+        prior="Q3 FY2026",
+        searches=3,
+    )
+
+    assert "go through the Q3 FY2026 passages and pair each figure" in system
+    assert "never write a placeholder bullet" in system

@@ -31,8 +31,13 @@ if there is anything for it. Use no other headings.
 - Compare like with like. Guidance is compared only with the earlier \
 quarter's guidance for the same metric and the same kind of period (e.g. \
 next-quarter revenue growth guided at 14-17% in the earlier call vs 9-11% in \
-the newer call is Lowered / worse). A reported result is compared only with \
-the earlier quarter's reported result for the same metric.
+the newer call is Lowered / worse). Each call's guidance for its own next \
+quarter is the same kind of period even though the quarters differ (Q4 \
+guidance given in the Q3 call vs Q1 guidance given in the Q4 call), and so is \
+each call's full-year guidance. A reported result is compared only with the \
+earlier quarter's reported result for the same metric (e.g. cloud revenue \
+growth of 40% in the earlier quarter and 43% in the newer one is Raised / \
+improved).
 - A reported result measured against the guidance given for it is not a \
 change: never put it under Raised / improved or Lowered / worse, and never \
 call it raised or lowered. It goes under "### Results vs guidance", worded as \
