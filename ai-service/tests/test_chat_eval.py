@@ -290,7 +290,7 @@ def test_closing_line_is_left_out_when_every_category_has_content() -> None:
     )
 
 
-LIKE_FOR_LIKE_ANSWER = """\
+RESULTS_ANSWER = """\
 ### Lowered / worse
 - Next-quarter revenue growth guidance fell from 14-17% [2] to 9-11% [1].
 
@@ -302,63 +302,48 @@ retrieved passages.
 """
 
 
-def like_for_like(content: str):
+def comparison_checks(content: str, **expect: Any):
     record = turn(content, citations=[citation(1), citation(2, quarter=1)])
-    results = run_checks(case(comparison_sections=True), record)
+    results = run_checks(case(comparison_sections=True, **expect), record)
     return {r.name: r for r in results}
 
 
 def test_results_vs_guidance_goes_under_its_own_heading() -> None:
-    results = like_for_like(LIKE_FOR_LIKE_ANSWER)
+    results = comparison_checks(RESULTS_ANSWER)
 
     assert [name for name, r in results.items() if not r.passed] == []
     # Results vs guidance is never one of the closing line's categories.
     assert results["comparison_closing"].passed is True
 
 
-@pytest.mark.parametrize(
-    ("item", "detail"),
-    [
-        # A result measured against guidance, under a change heading.
-        (
-            "- Revenue growth was lowered: Q3 actual 16% vs 9-11% guidance [1][2].",
-            "mixed guidance and results",
-        ),
-        ("- Q3 revenue beat the 14-17% guidance [1][2].", "mixed guidance"),
-        ("- Revenue came in above the high end of guidance [1].", "mixed guidance"),
-    ],
-)
-def test_a_result_against_guidance_is_not_a_change(item: str, detail: str) -> None:
-    content = LIKE_FOR_LIKE_ANSWER.replace(
-        "- Next-quarter revenue growth guidance fell from 14-17% [2] to 9-11% [1].",
-        item,
-    )
+@pytest.mark.parametrize("expect", [{}, {"citation_periods": ["FY2027Q2", "FY2027Q1"]}])
+def test_a_results_vs_guidance_item_cites_both_quarters(expect: dict) -> None:
+    one_sided = RESULTS_ANSWER.replace("Q2 [1][2]: met", "Q2 [1]: met")
 
-    result = like_for_like(content)["comparison_like_for_like"]
+    result = comparison_checks(one_sided, **expect)["results_vs_guidance"]
 
     assert result.passed is False
-    assert detail in result.detail
+    assert "not citing both quarters" in result.detail
 
 
-def test_a_results_vs_guidance_item_says_met_beat_or_missed() -> None:
-    content = LIKE_FOR_LIKE_ANSWER.replace(
-        "within the 14-17% guidance given in Q2 [1][2]: met", "versus 14-17% [1][2]"
+def test_results_vs_guidance_is_optional() -> None:
+    # Some companies give no guidance, so there is nothing to measure against.
+    without = RESULTS_ANSWER.split("### Results vs guidance")[0] + (
+        "New, Raised / improved, No longer mentioned, Unchanged: nothing found in "
+        "the retrieved passages."
     )
 
-    result = like_for_like(content)["comparison_like_for_like"]
-
-    assert result.passed is False
-    assert "not worded met/beat/missed" in result.detail
+    assert comparison_checks(without)["results_vs_guidance"].passed is True
 
 
-def test_a_milestone_that_exceeded_a_figure_is_not_guidance() -> None:
-    content = LIKE_FOR_LIKE_ANSWER.replace(
-        "- Next-quarter revenue growth guidance fell from 14-17% [2] to 9-11% [1].",
-        "- Services revenue exceeded $100 billion for the year [1], up from $85 "
-        "billion [2].",
+def test_the_verdict_wording_is_left_to_the_judge() -> None:
+    # Structure only: no met / beat / missed word-matching.
+    reworded = RESULTS_ANSWER.replace(
+        "within the 14-17% guidance given in Q2 [1][2]: met",
+        "versus the 14-17% guided in Q2, beating it [1][2]",
     )
 
-    assert like_for_like(content)["comparison_like_for_like"].passed is True
+    assert comparison_checks(reworded)["results_vs_guidance"].passed is True
 
 
 def test_citation_periods_and_max_quarters_catch_a_wrong_quarter() -> None:
@@ -776,40 +761,6 @@ def test_a_guardrail_refusal_records_no_tools_from_the_previous_case() -> None:
         mcp_server.set_tool_deps(mcp_server.default_tool_deps)
 
     assert record.status == "refused" and record.tool_calls == []
-
-
-# Answers from the 2026-10-08 run that the like-for-like check wrongly failed:
-# the verdict at the end of the item, and a rule and a bold "Key insight"
-# paragraph after the last heading read as bullets.
-@pytest.mark.parametrize(
-    "results",
-    [
-        "* **Q2 FY2027 revenue**: Reported revenue of $96 billion [2] beat the "
-        "guidance of $91 billion, plus or minus 2% ($89.18 billion to $92.82 "
-        "billion) provided in the Q1 call [10].\n\n***\n\n**Key insight**: While "
-        "AI demand and revenue continue to outpace prior expectations [3][12].",
-        "* **Q2 FY2026 total revenue:** Revenue grew 17% year-over-year to $111.2 "
-        "billion [6], exceeding the 13% to 16% growth guided in Q1 FY2026 [7][8]: "
-        "beat.\n* **Q2 FY2026 operating expenses:** Operating expenses were $18.9 "
-        "billion [6][9], slightly above the guided range of $18.4 billion to $18.7 "
-        "billion given in Q1 FY2026 due to a one-time SG&A expense [7][9]: missed.",
-        "* **Q3 FY2026 reported revenue**: In Q2 FY2026, Apple guided June quarter "
-        "(Q3 FY2026) revenue growth of 14% to 17% year-over-year [3]. Apple "
-        "reported Q3 FY2026 revenue of $109.4 billion, representing 16% "
-        "year-over-year growth: **met** [5][6].",
-        "- Q2 FY2027 total revenue was $96 billion, exceeding the Q1 FY2027 "
-        "guidance of $91 billion, plus or minus 2%: beat [1][9].",
-    ],
-)
-def test_results_vs_guidance_verdicts_as_the_model_writes_them(results: str) -> None:
-    content = (
-        "### Lowered / worse\n- Guidance fell from 14-17% [2] to 9-11% [1].\n\n"
-        f"### Results vs guidance\n{results}\n\n"
-        "New, Raised / improved, No longer mentioned, Unchanged: nothing found in "
-        "the retrieved passages."
-    )
-
-    assert like_for_like(content)["comparison_like_for_like"].passed is True
 
 
 def test_only_list_items_count_as_comparison_items() -> None:

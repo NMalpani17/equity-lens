@@ -9,10 +9,11 @@
   passages or market data (years, dates, quarter labels and bare counts up to
   12 are not figures)
 - changes_cite_both_quarters: "What changed" cites both compared quarters
-- comparison_sections / comparison_closing / comparison_like_for_like: the
-  comparison rules' headings and closing line, and guidance compared only with
-  guidance (a result vs its guidance is met / beat / missed, under Results vs
-  guidance)
+- comparison_sections / comparison_closing: the comparison rules' headings and
+  closing line
+- results_vs_guidance: every Results vs guidance item cites both compared
+  quarters; the section is optional (structure only; the judge decides
+  whether each comparison is like for like and each verdict right)
 - no_fundamentals: no valuation figures in Stock performance (there is no
   fundamentals tool)
 - disclaimer_and_dates: the not-advice note and the "as of" dates
@@ -30,8 +31,8 @@ from app.services.report.dates import ISO_DATE_RE, READABLE_DATE_RE
 
 from .checks import (
     comparison_closing_line,
-    comparison_like_for_like,
     comparison_structure,
+    results_vs_guidance,
 )
 from .models import CheckResult
 
@@ -217,7 +218,8 @@ def run_report_checks(report: ResearchReportContent) -> list[CheckResult]:
         )
         results.append(comparison_structure(changes))
         results.append(comparison_closing_line(changes))
-        results.append(comparison_like_for_like(changes))
+        quarter_of = {c.id: (c.fiscal_year, c.fiscal_quarter) for c in report.citations}
+        results.append(results_vs_guidance(changes, quarter_of, wanted))
 
     fundamentals = _FUNDAMENTALS_RE.findall(sections.get("stock", ""))
     results.append(

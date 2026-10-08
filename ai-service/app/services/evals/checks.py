@@ -25,25 +25,10 @@ COMPARISON_HEADINGS = (
     "results vs guidance",
 )
 _CHANGE_COUNT = len(CHANGE_HEADINGS)
-# Like-for-like: a Raised / Lowered item mustn't measure a result against
-# guidance. These say "results vs guidance" ...
-_VS_GUIDANCE_RE = re.compile(
-    r"\b(?:met|beat|beats|missed|exceeded|exceeding|exceeds|topped|"
-    r"fell short of|within|above|"
-    r"below|ahead of|in line with)\b(?:\W+\S+){0,5}?\W+"
-    r"(?:guidance|outlook|forecast|range)\b",
-    re.IGNORECASE,
-)
-# A Results vs guidance item states its verdict, often at the end (": met").
-_VERDICT_RE = re.compile(r"\b(?:met|beat|beats|missed)\b", re.IGNORECASE)
-# A list item: "- x", "* x", "• x", "1. x" (not "***" or "**Bold**").
+RESULTS_VS_GUIDANCE = COMPARISON_HEADINGS[-1]
+# A list item: "- x", "* x", "\u2022 x", "1. x" (not "***" or "**Bold**").
 _BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+\S")
-# ... and these mark one side as guidance and the other as an actual result.
-_GUIDANCE_RE = re.compile(r"\bguid(?:ance|ed|ing)\b|\boutlook\b", re.IGNORECASE)
-_ACTUAL_RE = re.compile(
-    r"\bactual(?:s|ly)?\b|\breported\b|\bcame in\b|\bdelivered\b|\bposted\b",
-    re.IGNORECASE,
-)
+_PERIOD_LABEL_RE = re.compile(r"^FY(\d{4})Q([1-4])$")
 # "Lowered / worse, No longer mentioned: nothing found in the retrieved passages."
 _CLOSING_RE = re.compile(
     rf"^(?P<categories>[A-Za-z /,]+?):\s*{NOTHING_FOUND}\.?$", re.IGNORECASE
@@ -79,7 +64,7 @@ def run_checks(case: EvalCase, turn: TurnRecord) -> list[CheckResult]:
     if expect.citations:
         results.extend(_citation_expectations(case, turn))
     if expect.comparison_sections:
-        results.extend(_check_comparison_sections(turn))
+        results.extend(_check_comparison_sections(case, turn))
     if expect.refusal:
         results.append(_result("refusal", is_refusal(turn), "answered instead"))
     if expect.clarify:
@@ -174,11 +159,23 @@ def comparison_headings(content: str) -> list[str]:
     return headings
 
 
-def _check_comparison_sections(turn: TurnRecord) -> list[CheckResult]:
+def _check_comparison_sections(case: EvalCase, turn: TurnRecord) -> list[CheckResult]:
+    quarter_of = {
+        int(c.get("id", -1)): (
+            int(c.get("fiscal_year", 0)),
+            int(c.get("fiscal_quarter", 0)),
+        )
+        for c in turn.citations
+    }
+    compared = {
+        (int(m.group(1)), int(m.group(2)))
+        for label in case.expect.citation_periods
+        if (m := _PERIOD_LABEL_RE.match(label))
+    }
     return [
         comparison_structure(turn.content),
         comparison_closing_line(turn.content),
-        comparison_like_for_like(turn.content),
+        results_vs_guidance(turn.content, quarter_of, compared),
     ]
 
 
@@ -247,29 +244,27 @@ def comparison_items(content: str) -> dict[str, list[str]]:
     return items
 
 
-def comparison_like_for_like(content: str) -> CheckResult:
-    """Raised / Lowered compare like with like: no item measures a result
-    against guidance (met / beat / missed, or a guided value set against an
-    actual one); those belong under Results vs guidance, worded that way."""
-    items = comparison_items(content)
-    offenders = [
-        f"{heading}: {item[:80]}"
-        for heading in ("raised", "lowered")
-        for item in items.get(heading, [])
-        if _VS_GUIDANCE_RE.search(item)
-        or (_GUIDANCE_RE.search(item) and _ACTUAL_RE.search(item))
-    ]
-    unworded = [
-        item[:80]
-        for item in items.get("results vs guidance", [])
-        if not _VERDICT_RE.search(item) and not _VS_GUIDANCE_RE.search(item)
-    ]
-    detail = (
-        f"mixed guidance and results: {offenders[:3]}"
-        if offenders
-        else (f"results vs guidance not worded met/beat/missed: {unworded[:3]}")
-    )
-    return _result("comparison_like_for_like", not offenders and not unworded, detail)
+Quarter = tuple[int, int]
+
+
+def results_vs_guidance(
+    content: str, quarter_of: dict[int, Quarter], compared: set[Quarter]
+) -> CheckResult:
+    """Structure only: every "Results vs guidance" item cites a passage from
+    both compared quarters (the guidance from the earlier call, the result
+    from the newer one). The section is optional, since some companies give
+    no guidance; whether each verdict is right is left to the LLM judge."""
+    name = "results_vs_guidance"
+    items = comparison_items(content).get(RESULTS_VS_GUIDANCE, [])
+    one_sided = []
+    for item in items:
+        cited = {
+            quarter_of[int(n)] for n in _MARKER_RE.findall(item) if int(n) in quarter_of
+        }
+        both = compared <= cited if len(compared) == 2 else len(cited) >= 2
+        if not both:
+            one_sided.append(item[:80])
+    return _result(name, not one_sided, f"not citing both quarters: {one_sided[:3]}")
 
 
 def is_refusal(turn: TurnRecord) -> bool:

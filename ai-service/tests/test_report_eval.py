@@ -106,7 +106,7 @@ def test_a_good_report_passes_every_check() -> None:
         "changes_cite_both_quarters",
         "comparison_sections",
         "comparison_closing",
-        "comparison_like_for_like",
+        "results_vs_guidance",
         "no_fundamentals",
         "disclaimer_and_dates",
         "readable_dates",
@@ -142,16 +142,16 @@ def test_figures_skip_years_dates_labels_markers_and_small_counts() -> None:
             "need [(2027, 1), (2027, 2)]",
         ),
         (
-            # A result measured against guidance is not a raise.
+            # A result whose guidance (from the earlier call) isn't cited.
             {
                 "changes": "### Raised / improved\n"
-                "- Q2 revenue of $96 billion beat the $91 billion guidance "
-                "[2] [1].\n\n"
-                "New, Lowered / worse, No longer mentioned, Unchanged: nothing "
-                "found in the retrieved passages."
+                "- Guidance rose from $91 billion [2] to $108 billion [1].\n\n"
+                "### Results vs guidance\n- Q2 revenue of $96 billion [1]: beat."
+                "\n\nNew, Lowered / worse, No longer mentioned, Unchanged: "
+                "nothing found in the retrieved passages."
             },
-            "comparison_like_for_like",
-            "mixed guidance and results",
+            "results_vs_guidance",
+            "not citing both quarters",
         ),
         (
             {"stock": "- Up 19.96% through 2026-10-06 [D2]."},
@@ -170,6 +170,24 @@ def test_each_check_catches_its_failure(sections, check, detail) -> None:
 
     assert check in problems
     assert detail in problems[check]
+
+
+def test_results_vs_guidance_is_optional_and_its_items_cite_both_quarters() -> None:
+    with_section = report(
+        changes="### Raised / improved\n"
+        "- Guidance rose from $91 billion [2] to $108 billion [1].\n\n"
+        "### Results vs guidance\n"
+        "- Q2 FY2027 revenue of $96 billion [1] against the $91 billion guided "
+        "in Q1 FY2027 [2]: beat.\n\n"
+        "New, Lowered / worse, No longer mentioned, Unchanged: nothing found in "
+        "the retrieved passages."
+    )
+    # The default fixture has no Results vs guidance section (no guidance).
+    without_section = report()
+
+    for content in (with_section, without_section):
+        checks = {r.name: r for r in run_report_checks(content)}
+        assert checks["results_vs_guidance"].passed is True
 
 
 def test_a_figure_from_another_sections_citation_doesnt_count() -> None:
