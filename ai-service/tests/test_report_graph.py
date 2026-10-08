@@ -383,6 +383,13 @@ def test_dates_read_like_apr_8_2026(deps) -> None:
     )
     system = seen[0][0].text
     assert 'e.g. "Apr 8, 2026", never as "2026-04-08"' in system
+    # Earlier-quarter figures cite earlier-quarter passages (2026-10-08 MSFT:
+    # Q3 figures resting on Q4 passages).
+    flat = " ".join(system.split())
+    assert "cites, in the same bullet, an earlier-quarter passage that contains it" in (
+        flat
+    )
+    assert "cites both the passage with the guidance and the passage with" in flat
     assert "earnings call (Aug 26, 2026)" in system
     # Stored dates stay ISO; the client formats them.
     assert report.as_of.latest_call == "2026-08-26"

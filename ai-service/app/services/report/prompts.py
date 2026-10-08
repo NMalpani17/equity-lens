@@ -98,6 +98,10 @@ guide to them. Where a note and its source disagree, follow the source.
 - Cite every claim: transcript passages as [n] (only ids in PASSAGES) and \
 market data as [D1], [D2] (only ids in MARKET DATA). Never invent ids.
 - Every number must appear in a source you cite. Don't compute new figures.
+- A figure from the earlier quarter (a prior result or the guidance given \
+then) cites, in the same bullet, an earlier-quarter passage that contains it; \
+never rest it on a newer-quarter passage. Each "Results vs guidance" item \
+cites both the passage with the guidance and the passage with the result.
 - Never overstate: keep management's wording for forecasts and expectations, \
 and label guidance as guidance. Mention fiscal quarters (e.g. "in {{current}}").
 - {UNTRUSTED}
