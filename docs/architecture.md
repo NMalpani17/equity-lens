@@ -239,7 +239,7 @@ START ──────┤                                       ├──▶ w
 
 | Agent                 | Model                   | Tools                                                                                  | Step limits (model / tool calls) | Output                                                                   |
 | --------------------- | ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------ |
-| Transcript researcher | `gemini-3.8-flash`      | `QuarterComparisonService` (no LLM step), then an agent loop with `search_transcripts` | 5 / 4                            | Notes on drivers, guidance, changes and risks, citing passage ids        |
+| Transcript researcher | `gemini-3.8-flash`      | `QuarterComparisonService` (no LLM step), then an agent loop with `search_transcripts` | 5 / 2                            | Notes on drivers, guidance, changes and risks, citing passage ids        |
 | Market-data analyst   | `gemini-3.5-flash-lite` | `get_quote`, `get_price_history`                                                       | 3 / 3                            | Price notes; each tool result becomes a `[Dn]` data source and the chart |
 | Writer                | `gemini-3.8-flash`      | none (structured output: six sections)                                                 | 1 model call                     | Summary, drivers, guidance, what changed, stock performance, risks       |
 

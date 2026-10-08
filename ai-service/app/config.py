@@ -151,9 +151,12 @@ class Settings(BaseSettings):
     # Six sections plus thinking tokens.
     report_writer_max_output_tokens: int = 8192
     report_model_timeout_seconds: float = 90.0
-    # Step limits per agent run (model calls / tool calls).
+    # Step limits per agent run (model calls / tool calls). The comparison
+    # already supplies both quarters' passages, so the transcript researcher
+    # gets two focused searches (on Flash it used all four it was allowed:
+    # ~70K input tokens and 30-60 s per report).
     report_transcript_max_model_calls: int = 5
-    report_transcript_max_tool_calls: int = 4
+    report_transcript_max_tool_calls: int = 2
     report_market_max_model_calls: int = 3
     report_market_max_tool_calls: int = 3
     # Transcript passages the writer sees at most (the ones the notes cite).

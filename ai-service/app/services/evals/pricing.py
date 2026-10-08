@@ -70,17 +70,18 @@ def estimate(
 
 
 # --- Research reports ------------------------------------------------------------
-# Per report, by agent: (input, output) tokens. "Typical" is a little above
-# the most measured in the 2026-10-07/08 eval runs (transcript researcher
-# 9.6K-22.5K in / 0.7K-1.4K out over 1-2 calls, market analyst ~5K / 0.4K,
-# writer 5.5K-7.8K / 1.1K-1.9K), with room for Flash's thinking. "Most"
-# assumes every agent uses its full step limit and output cap, plus the
-# comparison guards: the transcript researcher's corrective turn reruns its
-# agent, and the writer may write twice.
+# Per report, by agent: (input, output) tokens. "Typical" comes from the
+# 2026-10-08 eval run: the Flash transcript researcher used all 5 calls and 4
+# searches (70K-73K in / 2.3K-3.4K out); with 2 searches it makes about 3
+# calls of a growing ~12K-18K context, hence ~45K in. Market analyst ~5K /
+# 0.4K; writer 10.8K-14.2K / 2.4K-2.6K. "Most" assumes every agent uses its
+# full step limit and output cap, plus the comparison guards: the transcript
+# researcher's corrective turn reruns its agent, and the writer may write
+# twice.
 EST_REPORT_TOKENS: dict[str, tuple[int, int]] = {
-    "transcripts": (25_000, 2_000),
+    "transcripts": (45_000, 3_500),
     "market": (6_000, 600),
-    "writer": (13_000, 3_000),
+    "writer": (15_000, 3_000),
 }
 # Largest context per model call, for the upper bound.
 MAX_REPORT_CONTEXT = {"transcripts": 22_000, "market": 8_000, "writer": 16_000}
@@ -89,7 +90,7 @@ MAX_REPORT_CONTEXT = {"transcripts": 22_000, "market": 8_000, "writer": 16_000}
 MAX_REPORT_RUNS = {"transcripts": 2, "market": 1, "writer": 2}
 # Rerank calls per report: two for the comparison plus one per search, in
 # each of the transcript researcher's runs.
-REPORT_RERANKS_MAX = 2 + 2 * 4
+COMPARISON_RERANKS = 2
 
 
 @dataclass(frozen=True)
@@ -144,5 +145,9 @@ def estimate_reports(settings: "Settings", reports: int) -> ReportEstimate:
         typical_usd=typical,
         most_usd=most,
         models={agent: model_id(spec) for agent, spec in models.items()},
-        reranks_max=reports * REPORT_RERANKS_MAX,
+        reranks_max=reports
+        * (
+            COMPARISON_RERANKS
+            + MAX_REPORT_RUNS["transcripts"] * settings.report_transcript_max_tool_calls
+        ),
     )
