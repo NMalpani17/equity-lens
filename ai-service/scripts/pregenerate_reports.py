@@ -126,10 +126,14 @@ def default_service():
 
 
 def shutdown() -> None:
-    from app.services.observability.tracing import shutdown_tracer
+    from app.services.observability.tracing import (
+        SCRIPT_SHUTDOWN_TIMEOUT_SECONDS,
+        shutdown_tracer,
+    )
     from app.services.rag.container import shutdown_rag_components
 
-    shutdown_tracer()
+    # Upload every span before exiting (it flushes, waiting up to 30 s).
+    shutdown_tracer(SCRIPT_SHUTDOWN_TIMEOUT_SECONDS)
     shutdown_rag_components()
 
 

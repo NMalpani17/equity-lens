@@ -687,7 +687,8 @@ rebuild `rag_tickers` from the vectors if the database was lost too.
 
    Reports under 7 days old are skipped unless `--force`; `--max-cost`
    (default $1.00) stops before the next report once actual spend reaches it.
-   The run is traced in Langfuse, tagged `pregenerate`.
+   The run is traced in Langfuse, tagged `pregenerate`. Before exiting, the
+   script (like the evals) waits up to 30 s for its traces to upload.
 
 ## Vercel (client)
 

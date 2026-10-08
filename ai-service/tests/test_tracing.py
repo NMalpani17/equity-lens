@@ -167,6 +167,22 @@ def test_sdk_errors_are_swallowed() -> None:
         assert tracer.start_turn(user_id="u", session_id=None).config == {}
 
 
+def test_shutdown_waits_for_a_slow_upload_within_its_timeout(caplog) -> None:
+    client = MagicMock()
+    client.shutdown.side_effect = lambda: time.sleep(0.2)  # flushes queued spans
+    tracer = LangfuseTracer(client, public_key="pk")
+
+    with caplog.at_level(logging.WARNING):
+        tracer.shutdown(timeout=5)
+
+    client.shutdown.assert_called_once()
+    assert "timed out" not in caplog.text
+
+    with caplog.at_level(logging.WARNING):
+        tracer.shutdown(timeout=0.01)
+    assert "tracing shutdown timed out; unsent spans dropped" in caplog.text
+
+
 def test_shutdown_tracer_does_not_build_one(monkeypatch) -> None:
     tracing.get_tracer.cache_clear()
     built = MagicMock()

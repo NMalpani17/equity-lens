@@ -148,3 +148,23 @@ def test_demo_tickers_match_the_demo_portfolio_minus_etfs() -> None:
     demo = set(re.findall(r'ticker: "([A-Z.]+)"', source))
 
     assert set(script.DEMO_TICKERS) == demo - {"VOO"}
+
+
+def test_exit_waits_for_the_trace_upload_before_closing_rag(monkeypatch) -> None:
+    from app.services.observability import tracing
+    from app.services.rag import container
+
+    calls: list[tuple[str, float | None]] = []
+    monkeypatch.setattr(
+        tracing,
+        "shutdown_tracer",
+        lambda timeout=3.0: calls.append(("tracer", timeout)),
+    )
+    monkeypatch.setattr(
+        container, "shutdown_rag_components", lambda: calls.append(("rag", None))
+    )
+
+    script.shutdown()
+
+    assert calls == [("tracer", tracing.SCRIPT_SHUTDOWN_TIMEOUT_SECONDS), ("rag", None)]
+    assert tracing.SCRIPT_SHUTDOWN_TIMEOUT_SECONDS == 30.0

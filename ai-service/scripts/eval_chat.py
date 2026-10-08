@@ -40,7 +40,11 @@ from app.services.evals.pricing import cost_usd, estimate, has_price, model_id
 from app.services.evals.report import category_table, markdown_table, summarize
 from app.services.evals.runner import EvalTracer, demo_portfolio, run_case
 from app.services.evals.scoring import score_cases
-from app.services.observability.tracing import Tracer, build_tracer
+from app.services.observability.tracing import (
+    SCRIPT_SHUTDOWN_TIMEOUT_SECONDS,
+    Tracer,
+    build_tracer,
+)
 from app.services.rag.container import build_components
 
 EVAL_DIR = Path(__file__).parent / "eval"
@@ -264,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
         log_scores(tracer, results)
     finally:
         rag.close()
-        tracer.shutdown()
+        tracer.shutdown(SCRIPT_SHUTDOWN_TIMEOUT_SECONDS)
 
     judge_cost = cost_usd(judge_model, *judge_tokens) if not args.no_judge else 0.0
     summaries = summarize(results)
