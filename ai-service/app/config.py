@@ -106,8 +106,9 @@ class Settings(BaseSettings):
     # --- Shutdown ---
     # Cloud Run sends SIGTERM ~10s before killing the instance. Uvicorn first
     # drains open requests (--timeout-graceful-shutdown 3 in the Dockerfile),
-    # then these budgets bound the lifespan shutdown: stop ingestion, then
-    # flush traces.
+    # then these budgets bound the lifespan shutdown: cancel running report
+    # generations (freeing their claims), stop ingestion, then flush traces.
+    shutdown_reports_timeout_seconds: float = 2.0
     shutdown_ingestion_timeout_seconds: float = 3.0
     shutdown_tracing_timeout_seconds: float = 2.0
 
@@ -136,18 +137,26 @@ class Settings(BaseSettings):
     chat_index_wait_seconds: float = 45.0
 
     # --- Research report (multi-agent) ---
-    # An orchestrated graph: two researchers in parallel, then a writer. The
-    # researchers use a cheaper model; the writer (no tools) the stronger one.
-    report_research_model: str = "google_genai:gemini-3.5-flash-lite"
+    # An orchestrated graph: two researchers in parallel, then a writer (no
+    # tools). The transcript researcher pairs figures across two quarters, so
+    # it runs on Flash (Flash-Lite missed most pairs); the market analyst only
+    # calls two tools and stays on Flash-Lite.
+    report_transcript_model: str = "google_genai:gemini-3.8-flash"
+    report_market_model: str = "google_genai:gemini-3.5-flash-lite"
     report_writer_model: str = "google_genai:gemini-3.8-flash"
     report_thinking_level: str = "low"
-    report_research_max_output_tokens: int = 2048
+    # Output caps include thinking tokens.
+    report_transcript_max_output_tokens: int = 4096
+    report_market_max_output_tokens: int = 2048
     # Six sections plus thinking tokens.
     report_writer_max_output_tokens: int = 8192
     report_model_timeout_seconds: float = 90.0
-    # Step limits per agent run (model calls / tool calls).
+    # Step limits per agent run (model calls / tool calls). The comparison
+    # already supplies both quarters' passages, so the transcript researcher
+    # gets two focused searches (on Flash it used all four it was allowed:
+    # ~70K input tokens and 30-60 s per report).
     report_transcript_max_model_calls: int = 5
-    report_transcript_max_tool_calls: int = 4
+    report_transcript_max_tool_calls: int = 2
     report_market_max_model_calls: int = 3
     report_market_max_tool_calls: int = 3
     # Transcript passages the writer sees at most (the ones the notes cite).

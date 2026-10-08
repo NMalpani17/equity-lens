@@ -71,6 +71,9 @@ def test_claim_lifecycle(repo) -> None:
 
     ticker = repo.get_ticker("AAPL")
     assert ticker.status == "indexed" and ticker.quarters == ["FY2025Q4"]
+    # Stored as written, read back under the proper name.
+    assert ticker.company_name == "Apple Inc."
+    assert repo.list_tickers()[0].company_name == "Apple Inc."
     assert repo.get_job(claim.job_id).status == "succeeded"
     again = repo.claim_ingestion(
         "AAPL", trigger="seed", daily_cap=None, stale_after=STALE

@@ -3,9 +3,11 @@
 claim the report row -> per-run MCP tools and turn context -> the agent graph
 (inside one Langfuse trace) -> assemble and validate -> save -> ``done``.
 
-The claim is released on any failure or cancellation (the client went away),
-so the next request can generate. The report holds nothing user-specific; the
-requesting user only appears (hashed) in the trace.
+A generation runs as a background task: the stream only relays its events,
+so a client that leaves doesn't stop it, and the report is saved either way.
+The claim is released as soon as a run fails or times out (or is cancelled at
+shutdown), so the next request can generate. The report holds nothing
+user-specific; the requesting user only appears (hashed) in the trace.
 """
 
 import asyncio
@@ -44,7 +46,7 @@ from .graph import (
     build_report_graph,
     run_report_graph,
 )
-from .llm import build_research_model, build_writer
+from .llm import build_market_model, build_transcript_model, build_writer
 from .repository import Claim, ClaimOutcome, ReportRepository
 
 with warnings.catch_warnings():
@@ -95,6 +97,8 @@ class ReportService:
         self._ticker_record = ticker_record
         self._tracer: Tracer = tracer or NoopTracer()
         self._today = today
+        # Running generations (kept so they aren't garbage collected).
+        self._background: set[asyncio.Task[None]] = set()
 
     async def stream(
         self, request: ReportRequest, *, trace_tags: tuple[str, ...] = ()
@@ -131,17 +135,56 @@ class ReportService:
             return
         assert claim.generation_id is not None
         run = _Run(claim.generation_id)
+        events: asyncio.Queue[ReportEvent | None] = asyncio.Queue()
+        task = asyncio.create_task(
+            self._run_detached(
+                request, record, Period(*latest), run, repo, trace_tags, events
+            ),
+            name=f"research-report:{ticker}",
+        )
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+        # Relay the run's events. If this stream closes (the client left), the
+        # run carries on in the background and still saves the report.
+        while (event := await events.get()) is not None:
+            yield event
+
+    async def _run_detached(
+        self,
+        request: ReportRequest,
+        record: TickerRecord,
+        latest: Period,
+        run: "_Run",
+        repo: ReportRepository,
+        trace_tags: tuple[str, ...],
+        events: "asyncio.Queue[ReportEvent | None]",
+    ) -> None:
+        """One generation, independent of whoever is listening."""
         try:
             async with contextlib.aclosing(
-                self._generate(request, record, Period(*latest), run, repo, trace_tags)
-            ) as events:
-                async for event in events:
-                    yield event
+                self._generate(request, record, latest, run, repo, trace_tags)
+            ) as stream:
+                async for event in stream:
+                    events.put_nowait(event)
         finally:
-            # Failed, timed out or cancelled (the client went away): free the
-            # report now, not after the stale window, so a retry can generate.
+            # Failed, timed out or cancelled at shutdown: free the report now,
+            # not after the stale window, so a retry can generate.
             if not run.saved and not run.released:
                 self._release(repo, run.generation_id)
+            events.put_nowait(None)
+
+    async def wait_for_background(self) -> None:
+        """Wait for every running generation to finish (tests, scripts)."""
+        while self._background:
+            await asyncio.gather(*list(self._background), return_exceptions=True)
+
+    async def shutdown(self, timeout: float = 3.0) -> None:
+        """Stop running generations (instance shutdown); their claims are freed."""
+        tasks = list(self._background)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.wait(tasks, timeout=timeout)
 
     async def _claim(
         self, repo: ReportRepository, ticker: str, latest: tuple[int, int], days: int
@@ -217,7 +260,8 @@ class ReportService:
             metadata={
                 "ticker": ticker,
                 "quarter": latest.label,
-                "research_model": settings.report_research_model,
+                "transcript_model": settings.report_transcript_model,
+                "market_model": settings.report_market_model,
                 "writer_model": settings.report_writer_model,
             },
         )
@@ -351,7 +395,8 @@ def _usage(content: ResearchReportContent) -> dict[str, Any]:
 def default_agents(settings: Settings) -> ReportAgents:
     return ReportAgents(
         settings=settings,
-        research_model=lambda: build_research_model(settings),
+        transcript_model=lambda: build_transcript_model(settings),
+        market_model=lambda: build_market_model(settings),
         writer=lambda: build_writer(settings),
         compare=lambda turn, ticker: tools.compare_quarters(
             mcp_server.tool_deps(), turn, ticker=ticker
@@ -379,3 +424,9 @@ def get_report_service() -> ReportService:
         ticker_record=lambda ticker: get_rag_components().repo.get_ticker(ticker),
         tracer=get_tracer(),
     )
+
+
+async def shutdown_report_service(timeout: float = 2.0) -> None:
+    """Cancel running generations at shutdown (only if the service was built)."""
+    if get_report_service.cache_info().currsize:
+        await get_report_service().shutdown(timeout)

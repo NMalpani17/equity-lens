@@ -16,7 +16,8 @@ const SSE_HEADERS = {
 export function sseSink(res: Response): EventSink {
   return {
     send(event, data) {
-      if (!res.writableEnded) {
+      // A client that has gone away gets nothing (a report run carries on).
+      if (!res.writableEnded && !res.destroyed) {
         res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       }
     },
@@ -37,7 +38,7 @@ export function startSse(res: Response): EventSink {
  */
 export function startKeepalive(res: Response, keepaliveMs = config.chat.keepaliveMs) {
   const timer = setInterval(() => {
-    if (!res.writableEnded) res.write(": keepalive\n\n");
+    if (!res.writableEnded && !res.destroyed) res.write(": keepalive\n\n");
   }, keepaliveMs);
   timer.unref();
   return () => clearInterval(timer);

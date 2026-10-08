@@ -2,8 +2,7 @@
 
 import re
 
-from app.services.chat.comparison_rules import COMPARISON_HEADINGS as RULE_HEADINGS
-from app.services.chat.comparison_rules import NOTHING_FOUND
+from app.services.chat.comparison_rules import CHANGE_HEADINGS, NOTHING_FOUND
 from app.services.chat.guardrails import INJECTION_REPLY, OFF_TOPIC_REPLY
 
 from .models import CheckResult, EvalCase, TurnRecord
@@ -16,14 +15,20 @@ _NUMBER_RE = re.compile(r"-?\$?\d[\d,]*(?:\.\d+)?")
 _HEADING_RE = re.compile(
     r"^\s*(?:#{1,6}\s+(?P<hash>.+?)|\*\*(?P<bold>[^*]+)\*\*:?)\s*$"
 )
-# The quarter-comparison headings, in their required order.
+# The quarter-comparison headings, in their required order (title prefixes).
 COMPARISON_HEADINGS = (
     "new",
     "raised",
     "lowered",
     "no longer mentioned",
     "unchanged",
+    "results vs guidance",
 )
+_CHANGE_COUNT = len(CHANGE_HEADINGS)
+RESULTS_VS_GUIDANCE = COMPARISON_HEADINGS[-1]
+# A list item: "- x", "* x", "\u2022 x", "1. x" (not "***" or "**Bold**").
+_BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+\S")
+_PERIOD_LABEL_RE = re.compile(r"^FY(\d{4})Q([1-4])$")
 # "Lowered / worse, No longer mentioned: nothing found in the retrieved passages."
 _CLOSING_RE = re.compile(
     rf"^(?P<categories>[A-Za-z /,]+?):\s*{NOTHING_FOUND}\.?$", re.IGNORECASE
@@ -59,7 +64,7 @@ def run_checks(case: EvalCase, turn: TurnRecord) -> list[CheckResult]:
     if expect.citations:
         results.extend(_citation_expectations(case, turn))
     if expect.comparison_sections:
-        results.extend(_check_comparison_sections(turn))
+        results.extend(_check_comparison_sections(case, turn))
     if expect.refusal:
         results.append(_result("refusal", is_refusal(turn), "answered instead"))
     if expect.clarify:
@@ -154,17 +159,30 @@ def comparison_headings(content: str) -> list[str]:
     return headings
 
 
-def _check_comparison_sections(turn: TurnRecord) -> list[CheckResult]:
+def _check_comparison_sections(case: EvalCase, turn: TurnRecord) -> list[CheckResult]:
+    quarter_of = {
+        int(c.get("id", -1)): (
+            int(c.get("fiscal_year", 0)),
+            int(c.get("fiscal_quarter", 0)),
+        )
+        for c in turn.citations
+    }
+    compared = {
+        (int(m.group(1)), int(m.group(2)))
+        for label in case.expect.citation_periods
+        if (m := _PERIOD_LABEL_RE.match(label))
+    }
     return [
         comparison_structure(turn.content),
         comparison_closing_line(turn.content),
+        results_vs_guidance(turn.content, quarter_of, compared),
     ]
 
 
 def comparison_structure(content: str) -> CheckResult:
-    """Every heading is one of the five comparison headings, in order, and
-    at least one change heading (New / Raised / Lowered / No longer
-    mentioned) is present."""
+    """Every heading is a comparison heading (the five change categories,
+    then Results vs guidance), in order, and at least one change heading
+    (New / Raised / Lowered / No longer mentioned) is present."""
     headings = comparison_headings(content)
     order = [
         next((i for i, h in enumerate(COMPARISON_HEADINGS) if title.startswith(h)), -1)
@@ -182,15 +200,16 @@ def comparison_structure(content: str) -> CheckResult:
 def comparison_closing_line(content: str) -> CheckResult:
     """The closing line names exactly the empty categories, category first:
     "Lowered / worse, No longer mentioned: nothing found in the retrieved
-    passages." It is left out when every category has content."""
+    passages." It is left out when every category has content. Results vs
+    guidance is not a change category and is never named in it."""
     name = "comparison_closing"
     present = {
         i
         for title in comparison_headings(content)
-        for i, h in enumerate(COMPARISON_HEADINGS)
+        for i, h in enumerate(COMPARISON_HEADINGS[:_CHANGE_COUNT])
         if title.startswith(h)
     }
-    empty = [h for i, h in enumerate(RULE_HEADINGS) if i not in present]
+    empty = [h for i, h in enumerate(CHANGE_HEADINGS) if i not in present]
     lines = [
         line.strip().strip("*_ ").strip()
         for line in content.splitlines()
@@ -206,6 +225,46 @@ def comparison_closing_line(content: str) -> CheckResult:
     listed = [c.strip() for c in match.group("categories").split(",")]
     same = [c.lower() for c in listed] == [c.lower() for c in empty]
     return _result(name, same, f"listed {listed}, empty {empty}")
+
+
+def comparison_items(content: str) -> dict[str, list[str]]:
+    """Each comparison heading's bullet lines (heading -> items), lower-cased keys."""
+    items: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in content.splitlines():
+        match = _HEADING_RE.match(line)
+        if match:
+            title = (match.group("hash") or match.group("bold")).strip(" *:").lower()
+            current = next(
+                (h for h in COMPARISON_HEADINGS if title.startswith(h)), None
+            )
+            continue
+        if current and _BULLET_RE.match(line):
+            items.setdefault(current, []).append(line.strip())
+    return items
+
+
+Quarter = tuple[int, int]
+
+
+def results_vs_guidance(
+    content: str, quarter_of: dict[int, Quarter], compared: set[Quarter]
+) -> CheckResult:
+    """Structure only: every "Results vs guidance" item cites a passage from
+    both compared quarters (the guidance from the earlier call, the result
+    from the newer one). The section is optional, since some companies give
+    no guidance; whether each verdict is right is left to the LLM judge."""
+    name = "results_vs_guidance"
+    items = comparison_items(content).get(RESULTS_VS_GUIDANCE, [])
+    one_sided = []
+    for item in items:
+        cited = {
+            quarter_of[int(n)] for n in _MARKER_RE.findall(item) if int(n) in quarter_of
+        }
+        both = compared <= cited if len(compared) == 2 else len(cited) >= 2
+        if not both:
+            one_sided.append(item[:80])
+    return _result(name, not one_sided, f"not citing both quarters: {one_sided[:3]}")
 
 
 def is_refusal(turn: TurnRecord) -> bool:

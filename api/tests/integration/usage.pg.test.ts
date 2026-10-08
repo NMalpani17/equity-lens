@@ -145,14 +145,20 @@ describe.skipIf(!enabled)("usage and reports on real Postgres", () => {
       code: "report_fresh",
     });
     const view = await reports.getReport("NVDA", user, false);
+    // Stored as "Nvidia Corp"; read back under the proper name.
+    expect(view.companyName).toBe("NVIDIA Corporation");
     expect(view.report).toMatchObject({
-      companyName: "Nvidia Corp",
+      companyName: "NVIDIA Corporation",
       quarter: { label: "Q2 FY2027" },
       generatedAt: generatedAt.toISOString(),
     });
     expect(view).toMatchObject({ canGenerate: false, blockedReason: "fresh" });
     const [item] = await reports.listReports();
-    expect(item).toMatchObject({ ticker: "NVDA", report: { outdated: false } });
+    expect(item).toMatchObject({
+      ticker: "NVDA",
+      companyName: "NVIDIA Corporation",
+      report: { outdated: false },
+    });
   });
 
   it("chat counts only its own turns per user, but every weight globally", async () => {

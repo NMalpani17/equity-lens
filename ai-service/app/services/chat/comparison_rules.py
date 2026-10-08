@@ -2,32 +2,59 @@
 
 One set of rules, so the chat answer to "what changed" and the report's
 "What changed vs last quarter" section classify changes the same way.
+
+Changes compare like with like: guidance with the earlier guidance for the
+same metric and kind of period, reported results with earlier results. How a
+result compares with the guidance given for it is not a change in either
+direction; it goes under its own heading, worded met / beat / missed.
 """
 
-COMPARISON_HEADINGS = (
+# The change categories (the closing line names the empty ones).
+CHANGE_HEADINGS = (
     "New",
     "Raised / improved",
     "Lowered / worse",
     "No longer mentioned",
     "Unchanged",
 )
+RESULTS_VS_GUIDANCE = "Results vs guidance"
+# Every heading a comparison may use, in order.
+COMPARISON_HEADINGS = (*CHANGE_HEADINGS, RESULTS_VS_GUIDANCE)
 # The closing line's status, after the categories with nothing to report.
 NOTHING_FOUND = "nothing found in the retrieved passages"
 
 COMPARISON_RULES = """\
 - Put the changes under these headings, in this order, using only the ones \
 that have content: "### New", "### Raised / improved", "### Lowered / worse", \
-"### No longer mentioned", "### Unchanged". Use no other headings.
+"### No longer mentioned", "### Unchanged", then "### Results vs guidance" \
+if there is anything for it. Use no other headings.
+- Compare like with like. Guidance is compared only with the earlier \
+quarter's guidance for the same metric and the same kind of period (e.g. \
+next-quarter revenue growth guided at 14-17% in the earlier call vs 9-11% in \
+the newer call is Lowered / worse). Each call's guidance for its own next \
+quarter is the same kind of period even though the quarters differ (Q4 \
+guidance given in the Q3 call vs Q1 guidance given in the Q4 call), and so is \
+each call's full-year guidance. A reported result is compared only with the \
+earlier quarter's reported result for the same metric (e.g. cloud revenue \
+growth of 40% in the earlier quarter and 43% in the newer one is Raised / \
+improved).
+- A reported result measured against the guidance given for it is not a \
+change: never put it under Raised / improved or Lowered / worse, and never \
+call it raised or lowered. It goes under "### Results vs guidance", worded as \
+met, beat or missed (e.g. "Q3 FY2026 revenue grew 16%, within the 14-17% \
+guidance given in Q2 FY2026: met").
 - Use "Raised / improved" or "Lowered / worse" only when the value or \
 position itself changed between the two quarters (e.g. revenue guidance went \
 from $45 billion to $54 billion). If it is the same in both quarters (e.g. a \
 16%-18% tax rate both times), it goes under "Unchanged", even when management \
 reaffirmed or repeated it.
-- End with one closing line that names the categories with nothing to report \
-first, then the status: "No longer mentioned: nothing found in the retrieved \
-passages." With several empty categories, list them in heading order: \
-"Lowered / worse, No longer mentioned: nothing found in the retrieved \
-passages." If every category has content, leave the line out.
+- End the change categories with one closing line that names the ones with \
+nothing to report first, then the status: "No longer mentioned: nothing found \
+in the retrieved passages." With several empty categories, list them in \
+heading order: "Lowered / worse, No longer mentioned: nothing found in the \
+retrieved passages." It covers only New, Raised / improved, Lowered / worse, \
+No longer mentioned and Unchanged. If every one of them has content, leave the \
+line out.
 - Cite every claim with a passage from the quarter it describes: the newer \
 position cites a newer-quarter passage, the earlier position an \
 earlier-quarter passage, and a change cites both.

@@ -9,11 +9,16 @@
   passages or market data (years, dates, quarter labels and bare counts up to
   12 are not figures)
 - changes_cite_both_quarters: "What changed" cites both compared quarters
-- comparison_sections / comparison_closing: the comparison rules' headings
-  and closing line
+- comparison_sections / comparison_closing: the comparison rules' headings and
+  closing line
+- results_vs_guidance: every Results vs guidance item cites both compared
+  quarters; the section is optional (structure only; the judge decides
+  whether each comparison is like for like and each verdict right)
 - no_fundamentals: no valuation figures in Stock performance (there is no
   fundamentals tool)
 - disclaimer_and_dates: the not-advice note and the "as of" dates
+- readable_dates: no ISO dates in the text ("Apr 8, 2026", not
+  "2026-04-08")
 """
 
 import json
@@ -22,27 +27,47 @@ from typing import Any
 
 from app.models.report import SECTIONS, ResearchReportContent
 from app.services.report.assemble import UNAVAILABLE_SECTIONS
+from app.services.report.dates import ISO_DATE_RE, READABLE_DATE_RE
 
-from .checks import comparison_closing_line, comparison_structure
+from .checks import (
+    comparison_closing_line,
+    comparison_structure,
+    results_vs_guidance,
+)
 from .models import CheckResult
 
 _PASSAGE_REF_RE = re.compile(r"\[(\d{1,3})\]")
 _DATA_REF_RE = re.compile(r"\[(D\d{1,2})\]")
-# Not figures: citation markers, ISO dates, fiscal labels, years.
+# Not figures: citation markers, dates, fiscal labels, years.
 _NOT_FIGURES_RE = re.compile(
     r"\[D?\d{1,3}\]"
-    r"|\b\d{4}-\d{2}-\d{2}\b"
+    rf"|{ISO_DATE_RE.pattern}|{READABLE_DATE_RE.pattern}"
     r"|\b\d{1,2}:\d{2}\b"  # clock times, e.g. a quote "as of 3:54 PM EDT"
+    r"|\b\d+-(?:week|day|month|year|quarter)s?\b"  # "52-week high"
     r"|\bQ[1-4]\b|\bFY\s?\d{2,4}\b"
     r"|\b(?:19|20)\d{2}\b"
 )
-# Transcripts spell some numbers as spoken: "16 and a half percent" = 16.5%.
+# Transcripts spell some numbers as spoken: "16 and a half percent" = 16.5%,
+# "one and a half billion" = 1.5 billion.
 _SPOKEN_FRACTIONS = {"a half": ".5", "a quarter": ".25", "three quarters": ".75"}
-_SPOKEN_RE = re.compile(r"\b(\d+) and (a half|a quarter|three quarters)\b")
+_NUMBER_WORDS = {
+    word: str(i)
+    for i, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve".split()
+    )
+}
+_SPOKEN_RE = re.compile(
+    rf"\b(\d+|{'|'.join(_NUMBER_WORDS)}) and (a half|a quarter|three quarters)\b",
+    re.IGNORECASE,
+)
 
 
 def _spoken_to_digits(text: str) -> str:
-    return _SPOKEN_RE.sub(lambda m: m.group(1) + _SPOKEN_FRACTIONS[m.group(2)], text)
+    def digits(match: re.Match[str]) -> str:
+        whole = _NUMBER_WORDS.get(match.group(1).lower(), match.group(1))
+        return whole + _SPOKEN_FRACTIONS[match.group(2).lower()]
+
+    return _SPOKEN_RE.sub(digits, text)
 
 
 # 1,234.5 / $96 / 75.0% / -3.2
@@ -193,6 +218,8 @@ def run_report_checks(report: ResearchReportContent) -> list[CheckResult]:
         )
         results.append(comparison_structure(changes))
         results.append(comparison_closing_line(changes))
+        quarter_of = {c.id: (c.fiscal_year, c.fiscal_quarter) for c in report.citations}
+        results.append(results_vs_guidance(changes, quarter_of, wanted))
 
     fundamentals = _FUNDAMENTALS_RE.findall(sections.get("stock", ""))
     results.append(
@@ -209,6 +236,9 @@ def run_report_checks(report: ResearchReportContent) -> list[CheckResult]:
     ):
         missing.append("market data dates")
     results.append(_result("disclaimer_and_dates", not missing, f"missing {missing}"))
+
+    iso = sorted({m.group(0) for m in ISO_DATE_RE.finditer(all_text)})
+    results.append(_result("readable_dates", not iso, f"ISO dates {iso[:4]}"))
     return results
 
 

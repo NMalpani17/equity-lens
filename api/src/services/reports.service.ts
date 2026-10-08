@@ -22,6 +22,7 @@ import {
   ReportLimitError,
 } from "../errors.js";
 import { logger } from "../logger.js";
+import { companyDisplayName } from "./companyNames.js";
 import {
   periodLabel,
   reportContentSchema,
@@ -141,7 +142,7 @@ function newestFirst<T extends ReportRow>(rows: T[]): T[] {
 }
 
 function companyName(ticker: RagTicker): string {
-  return ticker.companyName ?? ticker.ticker;
+  return companyDisplayName(ticker.ticker, ticker.companyName);
 }
 
 export async function getReportUsage(
@@ -358,8 +359,9 @@ export async function startGeneration(
 
 /**
  * Give back a usage event when the ai-service refused before generating
- * anything (another generation won the race, or the report became fresh).
- * Failed and cancelled generations are never refunded.
+ * anything (another generation won the race, or the report became fresh), or
+ * failed through no fault of the user's (it couldn't compare the quarters).
+ * Other failures and cancellations are never refunded.
  */
 export async function refundGeneration(usageEventId: string): Promise<void> {
   try {

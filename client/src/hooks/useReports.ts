@@ -14,10 +14,14 @@ import {
   type ReportView,
 } from "@/lib/reportsApi";
 
-export const AGENTS: { agent: ReportAgent; label: string }[] = [
-  { agent: "transcripts", label: "Researching transcripts…" },
-  { agent: "market", label: "Analyzing price data…" },
-  { agent: "writer", label: "Writing report…" },
+export const AGENTS: { agent: ReportAgent; label: string; doneLabel: string }[] = [
+  {
+    agent: "transcripts",
+    label: "Researching transcripts…",
+    doneLabel: "Researched transcripts",
+  },
+  { agent: "market", label: "Analyzing price data…", doneLabel: "Analyzed price data" },
+  { agent: "writer", label: "Writing report…", doneLabel: "Wrote report" },
 ];
 
 export interface AgentProgress {
@@ -27,19 +31,51 @@ export interface AgentProgress {
   summary?: string;
 }
 
-/** While another user's generation runs, check back this often. */
-export const GENERATING_POLL_MS = 15_000;
+/** While a report is generating (not by this page's own request), check back this often. */
+export const GENERATING_POLL_MS = 10_000;
 
 function pendingAgents(): AgentProgress[] {
   return AGENTS.map(({ agent, label }) => ({ agent, label, state: "pending" }));
+}
+
+/** The report /reports opens when no company is in the address. */
+export const DEFAULT_REPORT_TICKER = "NVDA";
+
+/** NVDA if its report is ready, else the first ready report, else the first company. */
+export function defaultTicker(tickers: ReportSummary[]): string | undefined {
+  const ready = (t: ReportSummary) => t.report !== null && !t.report.outdated;
+  const preferred = tickers.find((t) => t.ticker === DEFAULT_REPORT_TICKER);
+  if (preferred && ready(preferred)) return preferred.ticker;
+  return (tickers.find(ready) ?? tickers[0])?.ticker;
+}
+
+/**
+ * The label to show for an agent event. The ai-service sends past-tense labels
+ * for finished steps; an older one sent the running label ("Writing report…")
+ * for "done" too, which would read as still running.
+ */
+export function agentLabel(event: {
+  agent: ReportAgent;
+  state: string;
+  label: string;
+}) {
+  if (event.state !== "done" || !event.label.endsWith("…")) return event.label;
+  return AGENTS.find((a) => a.agent === event.agent)?.doneLabel ?? event.label;
 }
 
 function message(error: unknown, fallback: string): string {
   return error instanceof ApiError || error instanceof Error ? error.message : fallback;
 }
 
-export function useReports(ticker: string | undefined) {
+/**
+ * ``requested`` is the company in the address. Without one, the default
+ * company opens (picked once the list loads, then kept while the list
+ * refreshes); the address stays /reports.
+ */
+export function useReports(requested: string | undefined) {
   const [tickers, setTickers] = useState<ReportSummary[] | null>(null);
+  const [fallback, setFallback] = useState<string | undefined>(undefined);
+  const ticker = requested ?? fallback;
   const [usage, setUsage] = useState<ReportUsage | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [view, setView] = useState<ReportView | null>(null);
@@ -87,24 +123,50 @@ export function useReports(ticker: string | undefined) {
   }, [loadList]);
 
   useEffect(() => {
+    if (!requested && fallback === undefined && tickers) {
+      setFallback(defaultTicker(tickers));
+    }
+  }, [requested, fallback, tickers]);
+
+  useEffect(() => {
     setView(null);
     setGenerateError(null);
     setProgress(pendingAgents());
     if (ticker) void loadView(ticker);
   }, [ticker, loadView]);
 
-  // Someone else's generation is running: check back until it finishes.
-  const othersGenerating = Boolean(view?.generating) && !generating;
-  useEffect(() => {
-    if (!othersGenerating || !ticker) return;
-    const timer = window.setTimeout(
-      () => void loadView(ticker, { quiet: true }),
-      GENERATING_POLL_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [othersGenerating, ticker, view, loadView]);
+  // Refresh the list and the open report together (no loading spinners).
+  const refresh = useCallback(() => {
+    void loadList();
+    if (tickerRef.current) void loadView(tickerRef.current, { quiet: true });
+  }, [loadList, loadView]);
 
-  // Leaving the page cancels a running generation.
+  // A report is generating somewhere (another tab, another user, or a run
+  // started before the user left): check back until none is.
+  const anyGenerating =
+    !generating &&
+    (Boolean(view?.generating) || Boolean(tickers?.some((t) => t.generating)));
+  useEffect(() => {
+    if (!anyGenerating) return;
+    const timer = window.setTimeout(refresh, GENERATING_POLL_MS);
+    return () => window.clearTimeout(timer);
+  }, [anyGenerating, tickers, view, refresh]);
+
+  // Coming back to the tab (or the window) shows the current state at once.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !generating) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [generating, refresh]);
+
+  // Leaving the page stops only this browser's request: the server finishes
+  // and saves the report, and it's there when the user comes back.
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const onEvent = useCallback((event: ReportStreamEvent) => {
@@ -116,7 +178,7 @@ export function useReports(ticker: string | undefined) {
               ? {
                   ...item,
                   state: event.state,
-                  label: event.label,
+                  label: agentLabel(event),
                   summary: event.summary,
                 }
               : item,
@@ -164,6 +226,7 @@ export function useReports(ticker: string | undefined) {
   }, [ticker, generating, onEvent, loadView, loadList]);
 
   return {
+    ticker,
     tickers,
     usage,
     listError,

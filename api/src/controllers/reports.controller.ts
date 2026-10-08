@@ -13,9 +13,15 @@ import { startKeepalive, startSse, watchClient } from "./sse.js";
 /**
  * The ai-service's refusals that mean nothing was generated, so the usage
  * event is refunded (as when the stream never opens). Failures after the
- * stream has started, and cancellations, still count.
+ * stream has started, and cancellations, still count, except for
+ * REFUNDED_FAILURES.
  */
 const REFUNDED_CODES = new Set(["report_in_progress", "report_fresh"]);
+/**
+ * Failures that are ours, not the user's, refunded even after the agents ran:
+ * a comparison was available but the report still compared nothing.
+ */
+const REFUNDED_FAILURES = new Set(["comparison_failed"]);
 
 const INCOMPLETE = {
   code: "incomplete_response",
@@ -58,12 +64,16 @@ function streamOpenError(error: unknown) {
  * Rule violations (demo, not indexed, in progress, fresh, caps) are JSON
  * errors before streaming starts. Then: `start` {ticker, quarter}, `agent`
  * {agent, state, label, summary?} as each agent runs, and finally `done`
- * {report} or `error` {code, message, retryable}. Closing the connection
- * cancels the generation (it still counts toward the daily cap); if the
+ * {report} or `error` {code, message, retryable}.
+ *
+ * A generation always finishes once started: if the client leaves, the api
+ * keeps reading the ai-service's stream until the report is saved (and the
+ * ai-service finishes on its own even if this connection drops). If the
  * ai-service can't be reached, nothing is generated and it doesn't count.
  */
 export async function generateReport(req: Request, res: Response): Promise<void> {
-  const abort = watchClient(res);
+  // Only for the log: the client leaving no longer stops the generation.
+  const client = watchClient(res);
   const userId = getUserId(req);
   const ticker = reportTickerSchema.parse(req.params.ticker);
   const start = await reportsService.startGeneration(
@@ -76,9 +86,9 @@ export async function generateReport(req: Request, res: Response): Promise<void>
   const sink = startSse(res);
   sink.send("start", { ticker, quarter: start.latestQuarter });
   const stopKeepalive = startKeepalive(res);
-  let outcome = "interrupted";
+  let outcome = "incomplete";
   try {
-    outcome = await relayReport(sink, abort.signal, { userId, ticker, start });
+    outcome = await relayReport(sink, { userId, ticker, start });
   } finally {
     stopKeepalive();
     if (!res.writableEnded) res.end();
@@ -88,6 +98,7 @@ export async function generateReport(req: Request, res: Response): Promise<void>
         ticker,
         quarter: start.latestQuarter.label,
         outcome,
+        clientLeft: client.signal.aborted,
         totalMs: Math.round(performance.now() - started),
       },
       "research report",
@@ -97,7 +108,6 @@ export async function generateReport(req: Request, res: Response): Promise<void>
 
 async function relayReport(
   sink: EventSink,
-  signal: AbortSignal,
   ctx: { userId: string; ticker: string; start: reportsService.GenerationStart },
 ): Promise<string> {
   let events;
@@ -108,12 +118,10 @@ async function relayReport(
         ticker: ctx.ticker,
         regenerateAfterDays: ctx.start.regenerateAfterDays,
       },
-      signal,
+      // Never aborted by the client: the report finishes either way.
+      new AbortController().signal,
     );
   } catch (error) {
-    // The client left while connecting: the ai-service may already have
-    // started, so this counts like any cancelled generation.
-    if (signal.aborted) return "interrupted";
     // The stream never opened (unreachable, refused, not configured): nothing
     // was generated, so the usage event is given back.
     await reportsService.refundGeneration(ctx.start.usageEventId);
@@ -123,8 +131,9 @@ async function relayReport(
 
   let generating = false;
   try {
+    // Read to the end even after the client has gone; events it can no longer
+    // receive are dropped by the sink.
     for await (const event of events) {
-      if (signal.aborted) return "interrupted";
       switch (event.type) {
         case "agent":
           generating = true;
@@ -139,7 +148,10 @@ async function relayReport(
           sink.send("done", { report: event.report });
           return "done";
         case "error":
-          if (!generating && REFUNDED_CODES.has(event.code)) {
+          if (
+            (!generating && REFUNDED_CODES.has(event.code)) ||
+            REFUNDED_FAILURES.has(event.code)
+          ) {
             await reportsService.refundGeneration(ctx.start.usageEventId);
           }
           sink.send("error", {
@@ -151,10 +163,8 @@ async function relayReport(
       }
     }
   } catch (error) {
-    if (signal.aborted) return "interrupted";
     logger.warn({ err: error }, "report stream failed mid-generation");
   }
-  if (signal.aborted) return "interrupted";
   sink.send("error", INCOMPLETE);
   return "incomplete";
 }

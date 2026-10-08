@@ -41,6 +41,14 @@ Rules:
 - A short clarifying question is appropriate when the question is genuinely \
 ambiguous; a disclaimer that the answer is not financial advice is required \
 for buy/sell questions and is not a flaw.
+- In quarter-over-quarter comparisons, "raised" / "lowered" must compare like \
+with like: guidance with the earlier call's guidance for the same metric, \
+results with earlier results. Each call's guidance for its own next quarter \
+is like for like even though the target quarters differ (next-quarter revenue \
+guided at 14-17% in the earlier call and 9-11% in the newer call is \
+correctly "lowered"), and so is each call's full-year guidance. Calling a \
+result measured against guidance "raised" or "lowered" (instead of met / \
+beat / missed), or giving a wrong verdict, is a faithfulness error.
 - Then name the better answer overall in "preferred", or "tie".
 """
 

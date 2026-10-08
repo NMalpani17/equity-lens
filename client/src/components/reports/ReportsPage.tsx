@@ -48,9 +48,8 @@ export function ReportsPage() {
   const { isDemo } = useAuth();
   const { ticker: param } = useParams();
   const navigate = useNavigate();
-  const ticker = param?.toUpperCase();
-  const reports = useReports(ticker);
-  const { view } = reports;
+  const reports = useReports(param?.toUpperCase());
+  const { ticker, view } = reports;
 
   const select = (next: string) => navigate(`/reports/${encodeURIComponent(next)}`);
 
@@ -87,11 +86,11 @@ export function ReportsPage() {
           />
         )}
 
-        {!ticker && reports.tickers && (
+        {reports.tickers?.length === 0 && (
           <Card>
             <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground sm:p-6">
               <FileText aria-hidden="true" className="size-5 shrink-0" />
-              Choose a company to read its report.
+              No companies are indexed yet.
             </CardContent>
           </Card>
         )}

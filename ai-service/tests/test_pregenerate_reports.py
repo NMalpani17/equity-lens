@@ -73,15 +73,29 @@ def test_report_estimate_matches_the_documented_prices() -> None:
 
     # Flash-Lite $0.30/$2.50, Flash $0.75/$3.75 per 1M tokens.
     assert estimate.models == {
-        "transcripts": "gemini-3.5-flash-lite",
+        "transcripts": "gemini-3.8-flash",
         "market": "gemini-3.5-flash-lite",
         "writer": "gemini-3.8-flash",
     }
-    assert estimate.typical_usd["writer"] == pytest.approx(
-        (13_000 * 0.75 + 3_000 * 3.75) / 1e6
+    assert estimate.typical_usd["transcripts"] == pytest.approx(
+        (45_000 * 0.75 + 3_500 * 3.75) / 1e6
     )
-    assert estimate.typical_total == pytest.approx(0.2122, abs=1e-4)
-    assert estimate.most_total == pytest.approx(0.4955, abs=1e-4)
+    assert estimate.typical_usd["writer"] == pytest.approx(
+        (15_000 * 0.75 + 3_000 * 3.75) / 1e6
+    )
+    assert estimate.typical_total == pytest.approx(0.2907, abs=1e-4)
+    # At most: the researcher's corrective turn reruns its agent (2 x 5 calls
+    # of 22K in / 4,096 out), the market analyst 3 calls of 8K / 2,048, and
+    # the writer writes twice (16K / 8,192 each).
+    assert estimate.most_usd["transcripts"] == pytest.approx(
+        (10 * 22_000 * 0.75 + 10 * 4_096 * 3.75) / 1e6
+    )
+    assert estimate.most_usd["writer"] == pytest.approx(
+        (2 * 16_000 * 0.75 + 2 * 8_192 * 3.75) / 1e6
+    )
+    assert estimate.most_total == pytest.approx(1.7064, abs=1e-4)
+    # Two comparison reranks plus 2 searches in each of the researcher's runs.
+    assert estimate.reranks_max == 4 * (2 + 2 * 2)
 
 
 def test_yes_generates_each_ticker_and_reports_actual_spend(capsys) -> None:
@@ -148,3 +162,23 @@ def test_demo_tickers_match_the_demo_portfolio_minus_etfs() -> None:
     demo = set(re.findall(r'ticker: "([A-Z.]+)"', source))
 
     assert set(script.DEMO_TICKERS) == demo - {"VOO"}
+
+
+def test_exit_waits_for_the_trace_upload_before_closing_rag(monkeypatch) -> None:
+    from app.services.observability import tracing
+    from app.services.rag import container
+
+    calls: list[tuple[str, float | None]] = []
+    monkeypatch.setattr(
+        tracing,
+        "shutdown_tracer",
+        lambda timeout=3.0: calls.append(("tracer", timeout)),
+    )
+    monkeypatch.setattr(
+        container, "shutdown_rag_components", lambda: calls.append(("rag", None))
+    )
+
+    script.shutdown()
+
+    assert calls == [("tracer", tracing.SCRIPT_SHUTDOWN_TIMEOUT_SECONDS), ("rag", None)]
+    assert tracing.SCRIPT_SHUTDOWN_TIMEOUT_SECONDS == 30.0

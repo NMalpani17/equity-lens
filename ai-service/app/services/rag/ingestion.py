@@ -22,6 +22,7 @@ from app.models.transcript import (
 )
 
 from .chunking import Chunk, chunk_id_prefix, chunk_transcript
+from .company_names import company_display_name
 from .embeddings import DenseEmbedder, SparseEncoder
 from .equibles import EquiblesClient
 from .errors import (
@@ -142,16 +143,18 @@ def _with_consistent_company(
     """Use one company name for every quarter of a ticker.
 
     Event titles vary (e.g. "2026 Q2 Earnings Call" has no company), so take the
-    first title that yields a name and apply it to all transcripts.
+    first title that yields a name and apply it to all transcripts, as the
+    company's proper name.
     """
-    company = next(
+    found = next(
         (
             name
             for t in transcripts
             if (name := company_from_event_title(t.event_title)) is not None
         ),
-        ticker,
+        None,
     )
+    company = company_display_name(ticker, found)
     return [t.model_copy(update={"company_name": company}) for t in transcripts]
 
 
@@ -282,8 +285,9 @@ class IngestionPipeline:
         if not transcripts:
             raise NoTranscriptsError(f"no newer transcripts available for {ticker}")
         if company_name:
+            company = company_display_name(ticker, company_name)
             transcripts = [
-                t.model_copy(update={"company_name": company_name}) for t in transcripts
+                t.model_copy(update={"company_name": company}) for t in transcripts
             ]
         else:
             transcripts = _with_consistent_company(ticker, transcripts)

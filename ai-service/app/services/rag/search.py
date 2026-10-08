@@ -24,6 +24,7 @@ from app.models.rag import (
 )
 
 from .cache import TTLCache
+from .company_names import company_display_name
 from .embeddings import DenseEmbedder, SparseEncoder, SparseVector
 from .errors import RerankUnavailableError, SearchUpstreamError
 from .freshness import FreshnessRefresher
@@ -439,14 +440,15 @@ def _rerank_text(hit: SearchHit, *, with_header: bool) -> str:
 
 def _to_result(hit: SearchHit, rerank_score: float | None) -> RagSearchResult:
     m = hit.metadata
+    ticker = str(m.get("ticker", ""))
     return RagSearchResult(
         id=hit.id,
         text=str(m.get("text", "")),
         score=rerank_score if rerank_score is not None else hit.score,
         retrieval_score=hit.score,
         rerank_score=rerank_score,
-        ticker=str(m.get("ticker", "")),
-        company_name=str(m.get("company_name", "")),
+        ticker=ticker,
+        company_name=company_display_name(ticker, str(m.get("company_name", ""))),
         fiscal_year=int(m.get("fiscal_year", 0)),
         fiscal_quarter=int(m.get("fiscal_quarter", 0)),
         call_date=m.get("call_date") or None,

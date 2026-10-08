@@ -83,7 +83,7 @@ call transcripts from Equibles and caches the raw JSON in Postgres
 (`rag_transcripts`), so re-chunking or re-embedding never spends Equibles quota
 again. Transcripts are split into ~400-token chunks with 60-token overlap,
 keeping speaker, role, section (prepared remarks or Q&A) and fiscal period. Each
-chunk is embedded with a **context header** prepended (`AAPL (Apple Inc) · Q3
+chunk is embedded with a **context header** prepended (`AAPL (Apple Inc.) · Q3
 FY2025 earnings call · 2025-07-31 · Q&A · Kevan Parekh, CFO`), which gives an
 isolated passage the company and period it belongs to. Dense vectors come from
 Gemini (`gemini-embedding-001`, 768-d) and sparse keyword vectors from
@@ -92,6 +92,17 @@ are stable (`TICKER#FY2025Q3#0042`), so re-runs are idempotent. Embedding calls
 are throttled client-side (texts and estimated tokens per minute) and honor
 Gemini's `retryDelay`. All RAG state (tickers, jobs, daily usage, transcript
 cache) lives in Postgres because Cloud Run's filesystem is ephemeral.
+
+**Company names.** Equibles titles carry SEC-style names ("Nvidia Corp",
+"Amazon Com Inc"). A curated table
+(`ai-service/app/services/rag/company_names.py`) gives the indexed and demo
+companies their proper names ("NVIDIA Corporation", "Amazon.com, Inc."); any
+other name only gets the period on a trailing Inc / Corp / Co / Ltd. Names are
+cleaned at ingestion and again on every read (ticker rows, search hits), and
+the api applies the same table (`api/src/services/companyNames.ts`, kept in
+sync) to the `rag_tickers` rows and stored reports it reads directly, so older
+rows and vectors display correctly without a data migration. Chat messages
+saved before the change keep the names they were stored with.
 
 **Freshness refresh.** Companies report every quarter, so an indexed ticker
 slowly goes stale. When a search (the chat tool or `/rag/search`) hits a ticker
@@ -190,13 +201,19 @@ wait-for-indexing, turn citation ids and the model-facing text.
   welcome ranked below the kept passages).
 - **Answer rules.** The system prompt routes "what changed" questions to the
   tool and asks for the headings New, Raised / improved, Lowered / worse, No
-  longer mentioned and Unchanged, in that order, using only those with
-  content. Raised / improved and Lowered / worse are only for a value that
-  itself changed between the quarters; a value that is the same in both (a
-  reaffirmed tax rate) goes under Unchanged. A closing line names the empty
+  longer mentioned and Unchanged, then Results vs guidance, in that order,
+  using only those with content. Changes compare like with like: guidance
+  with the earlier guidance for the same metric and period (next-quarter
+  growth guided 14–17%, then 9–11%, is Lowered / worse; each call's guidance
+  for its own next quarter counts as the same period), results with earlier
+  results (cloud growth 40%, then 43%, is Raised / improved). A result measured against its guidance is never Raised or Lowered;
+  it goes under Results vs guidance, worded met, beat or missed. Raised /
+  improved and Lowered / worse are only for a value that itself changed
+  between the quarters; a value that is the same in both (a reaffirmed tax
+  rate) goes under Unchanged. A closing line names the empty change
   categories first, then the status ("Lowered / worse, No longer mentioned:
   nothing found in the retrieved passages."), and is left out when every
-  category has content. The rules live in one module
+  change category has content. The rules live in one module
   (`ai-service/app/services/chat/comparison_rules.py`) shared with the
   research report's writer. Every claim cites a
   passage from the quarter it describes (a change cites both). A theme with no
@@ -215,14 +232,14 @@ not a free-form supervisor: the edges never change and no model decides who
 runs next.
 
 ```
-            ┌─▶ transcript_researcher (Flash-Lite) ─┐
+            ┌─▶ transcript_researcher (Flash) ──────┐
 START ──────┤                                       ├──▶ writer (Flash, no tools) ──▶ END
             └─▶ market_analyst (Flash-Lite) ────────┘
 ```
 
 | Agent                 | Model                   | Tools                                                                                  | Step limits (model / tool calls) | Output                                                                   |
 | --------------------- | ----------------------- | -------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------ |
-| Transcript researcher | `gemini-3.5-flash-lite` | `QuarterComparisonService` (no LLM step), then an agent loop with `search_transcripts` | 5 / 4                            | Notes on drivers, guidance, changes and risks, citing passage ids        |
+| Transcript researcher | `gemini-3.8-flash`      | `QuarterComparisonService` (no LLM step), then an agent loop with `search_transcripts` | 5 / 2                            | Notes on drivers, guidance, changes and risks, citing passage ids        |
 | Market-data analyst   | `gemini-3.5-flash-lite` | `get_quote`, `get_price_history`                                                       | 3 / 3                            | Price notes; each tool result becomes a `[Dn]` data source and the chart |
 | Writer                | `gemini-3.8-flash`      | none (structured output: six sections)                                                 | 1 model call                     | Summary, drivers, guidance, what changed, stock performance, risks       |
 
@@ -240,14 +257,34 @@ when this report was generated." in Stock performance; if the latest call has
 no comparable earlier call, "What changed" says no comparable prior quarter is
 available. Transcript research with no citable passages fails the report.
 
+**"What changed" always compares.** When a comparison is available, the
+section must cite the earlier quarter, in four layers (`graph.py`): if the
+researcher's Changes notes cite no earlier-quarter passage, it gets one
+corrective turn listing those passages; if they still don't, the writer is
+shown up to 8 earlier-quarter passages anyway (within its 24-passage cap); if
+the writer's draft cites none, it writes once more, told what was missing; and
+if that draft still cites none, the report fails with `comparison_failed`
+(retryable, and refunded). If no earlier-quarter passage was retrieved at all,
+the report states that no comparable prior quarter is available instead.
+
+Dates in the text read like "Apr 8, 2026": the writer is told so, and any
+ISO date that slips through is rewritten when the report is assembled
+(`ai-service/app/services/report/dates.py`); the stored "as of" fields stay
+ISO and the client formats them.
+
 **One generation at a time.** `research_reports` has one row per ticker and
 fiscal quarter. The ai-service claims the row before generating
 (`generating_since`, `generation_id`), so two requests never run the same
 report, even on different instances; the claim also refuses a report newer
-than the 7-day regenerate window. It saves the content, or releases the claim
-as soon as a run fails, times out (240 s) or is cancelled, including a claim
-that lands after the client has left. A claim older than 10 minutes (a crashed
-instance) can be taken over, and the old run can no longer save over it.
+than the 7-day regenerate window. The generation then runs as a background
+task; the request's stream only relays its events, so a client that leaves
+doesn't stop it (the ai-service runs with CPU always allocated, so the work
+isn't throttled once the request ends). It saves the content, or releases the
+claim as soon as a run fails or times out (240 s), or is cancelled when the
+instance shuts down. A claim that lands after the client has already left
+(during the claim itself) is released at once. A claim older than 10 minutes
+(a crashed instance) can be taken over, and the old run can no longer save
+over it.
 
 **Caching and freshness.** A report is keyed by the newest indexed quarter
 (`rag_tickers.quarters[0]`). Viewing a cached report reads one row; nothing
@@ -259,18 +296,25 @@ in US market time.
 
 **Who may generate** (the api, `api/src/services/reports.service.ts`): signed-in
 users only (demo users view), not while a generation runs, not within 7 days
-of the current report, 2 per user per UTC day (failed and cancelled
-generations count), and 3 units of the global daily cap (a chat turn is 1).
+of the current report, 2 per user per UTC day (failed generations count),
+and 3 units of the global daily cap (a chat turn is 1).
 The caps are checked and the usage event written under one advisory lock. The
-event is refunded only when nothing was generated: the ai-service couldn't be
+event is refunded when nothing was generated (the ai-service couldn't be
 reached, or refused because another generation won the race or the report had
-just become fresh.
+just become fresh) and when the report failed because it couldn't compare the
+quarters (`comparison_failed`), which is no fault of the user's.
 
 **Streaming.** The browser POSTs to the api, which streams `start`, then
 `agent` events (`transcripts` / `market` / `writer`, each running then done or
 failed, with a summary such as "13 passages from Q2 FY2027 and Q1 FY2027"),
-then `done` with the report or `error`. Closing the page cancels the
-generation upstream.
+then `done` with the report or `error`. A generation always finishes: if
+the user leaves, the api keeps reading the ai-service's stream until the
+report is saved, and the page says the report will be ready when they return.
+When the tab becomes visible or regains focus the page refetches the list and
+the open report, and while any report is generating it checks again every
+10 s. `/reports` without a company opens NVDA's report if it is ready, else
+the first ready report, else the first company; the address stays
+`/reports`, and the choice is kept while the list refreshes.
 
 **Tracing.** Each report is one Langfuse trace (`research-report`, tagged
 `report` and the ticker) with a span per agent (`transcript_researcher`,
@@ -315,7 +359,10 @@ cells.
 When `get_price_history` or `get_portfolio` succeeds, the agent builds a typed
 chart from the tool's structured output, never from the model's text, so a chart
 can't show a number the model made up. Charts stream as `chart` events, are
-attached to `done`, validated by the api with Zod, and saved on the message. The
+attached to `done`, validated by the api with Zod, and saved on the message.
+`done` lists them in the order the model issued the tool calls, not the order
+parallel calls finished; a repeated chart (same ticker and period) keeps its
+first place and shows the latest-issued call's data. The
 client renders them below the answer once it has finished streaming (so the
 growing text never pushes a drawn chart down), with Recharts lazy-loaded in its
 own chunk and a "View data" table for each. Chart shapes are in [api.md](api.md#ai-analyst-chat).

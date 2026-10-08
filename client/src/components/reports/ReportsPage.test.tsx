@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -21,6 +21,7 @@ import type {
   ReportSummary,
   ReportView,
 } from "@/lib/reportsApi";
+import { agentLabel, GENERATING_POLL_MS } from "@/hooks/useReports";
 import { ReportsPage } from "./ReportsPage";
 
 const api = vi.mocked(reportsApi);
@@ -159,6 +160,20 @@ const summaries: ReportSummary[] = [
   },
 ];
 
+function summary(ticker: string, report: { outdated: boolean } | null): ReportSummary {
+  return {
+    ticker,
+    companyName: ticker,
+    latestQuarter: Q2,
+    report: report && {
+      generatedAt: "2026-10-07T12:00:00.000Z",
+      quarter: Q2,
+      ...report,
+    },
+    generating: false,
+  };
+}
+
 function renderAt(path: string, { isDemo = false } = {}) {
   vi.mocked(useAuth).mockReturnValue({
     isDemo,
@@ -187,27 +202,72 @@ beforeEach(() => {
 
 describe("ReportsPage", () => {
   it("lists companies with their report status and opens the chosen one", async () => {
-    renderAt("/reports");
+    api.getReport.mockImplementation(async (ticker) =>
+      ticker === "AAPL"
+        ? view({ ticker: "AAPL", companyName: "Apple Inc.", report: null })
+        : view(),
+    );
+    renderAt("/reports/nvda");
 
     const picker = await screen.findByLabelText("Company");
     const options = within(picker)
       .getAllByRole("option")
       .map((o) => o.textContent);
     expect(options).toEqual([
-      "Choose a company",
       "AAPL · Apple Inc. (no report yet)",
       "NVDA · Nvidia Corp (report ready)",
     ]);
-    expect(
-      screen.getByText("Choose a company to read its report."),
-    ).toBeInTheDocument();
 
-    fireEvent.change(picker, { target: { value: "NVDA" } });
+    fireEvent.change(picker, { target: { value: "AAPL" } });
+
+    expect(
+      await screen.findByText(/There's no report for Apple Inc\. \(Q2 FY2027\) yet\./),
+    ).toBeVisible();
+    expect(api.getReport).toHaveBeenLastCalledWith("AAPL");
+  });
+
+  it("opens NVDA's ready report when no company is chosen", async () => {
+    renderAt("/reports");
 
     expect(
       await screen.findByRole("heading", { name: "Nvidia Corp (NVDA)" }),
     ).toBeVisible();
+    expect(screen.getByLabelText("Company")).toHaveValue("NVDA");
+    expect(api.getReport).toHaveBeenCalledTimes(1);
     expect(api.getReport).toHaveBeenCalledWith("NVDA");
+  });
+
+  it.each([
+    // NVDA isn't ready: the first ready report instead.
+    [
+      [
+        summary("AAPL", null),
+        summary("MSFT", { outdated: false }),
+        summary("NVDA", { outdated: true }),
+      ],
+      "MSFT",
+    ],
+    // Nothing is ready: the first company.
+    [[summary("AAPL", null), summary("NVDA", null)], "AAPL"],
+  ])(
+    "falls back to the first ready report, then the first company",
+    async (tickers, expected) => {
+      api.listReports.mockResolvedValue({ tickers, usage: view().usage });
+
+      renderAt("/reports");
+
+      await waitFor(() => expect(api.getReport).toHaveBeenCalledWith(expected));
+      expect(api.getReport).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("says so when no company is indexed", async () => {
+    api.listReports.mockResolvedValue({ tickers: [], usage: view().usage });
+
+    renderAt("/reports");
+
+    expect(await screen.findByText("No companies are indexed yet.")).toBeVisible();
+    expect(api.getReport).not.toHaveBeenCalled();
   });
 
   it("shows the report with its dates, six sections and the disclaimer", async () => {
@@ -245,13 +305,14 @@ describe("ReportsPage", () => {
     const summary = await screen.findByText(/Demand led the quarter/);
     fireEvent.click(within(summary).getByRole("button", { name: /Source 1/ }));
     expect(await screen.findByText("Data center revenue was a record.")).toBeVisible();
+    expect(screen.getByText(/Q2 FY2027 earnings call · Aug 26, 2026/)).toBeVisible();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
 
     const stock = screen.getByText(/Up 20% over 6 months/);
     fireEvent.click(within(stock).getByRole("button", { name: /Market data D2/ }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/NVDA price history, 6mo/)).toBeVisible();
-    expect(within(dialog).getByText("20.00%")).toBeVisible();
+    expect(within(dialog).getByText("+20.00%")).toHaveClass("text-emerald-600");
     expect(within(dialog).getByText("Sep 30, 2026")).toBeVisible();
   });
 
@@ -309,7 +370,7 @@ describe("ReportsPage", () => {
       type: "agent",
       agent: "market",
       state: "done",
-      label: "Analyzing price data…",
+      label: "Analyzed price data",
       summary: "2 data sources",
     });
     await waitFor(() =>
@@ -319,11 +380,16 @@ describe("ReportsPage", () => {
           .map((li) => li.textContent),
       ).toEqual([
         "Researching transcripts… (running)",
-        "Analyzing price data… · 2 data sources (done)",
+        "Analyzed price data · 2 data sources (done)",
         "Writing report… (pending)",
       ]),
     );
     expect(screen.getByRole("button", { name: /Generating…/ })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Takes about a minute. You can leave this page; the report will be ready when you return.",
+      ),
+    ).toBeVisible();
     expect(screen.getByLabelText("Company")).toBeDisabled();
 
     emit({ type: "done", report: report() });
@@ -439,5 +505,76 @@ describe("ReportsPage", () => {
       await screen.findByText("Based on the Q2 FY2027 earnings call (Aug 26, 2026)."),
     ).toBeVisible();
     expect(screen.queryByText(/Quote as of/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ReportsPage status refresh", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("polls while a report is generating until it's ready", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const generating = summaries.map((s) =>
+      s.ticker === "NVDA" ? { ...s, report: null, generating: true } : s,
+    );
+    api.listReports.mockResolvedValueOnce({ tickers: generating, usage: view().usage });
+    api.getReport.mockResolvedValueOnce(view({ report: null, generating: true }));
+    renderAt("/reports/NVDA");
+
+    expect(
+      await screen.findByText("Nvidia Corp's report is being generated."),
+    ).toBeVisible();
+    const picker = screen.getByLabelText("Company");
+    expect(within(picker).getByRole("option", { name: /NVDA/ })).toHaveTextContent(
+      "(generating)",
+    );
+
+    // The run finishes (perhaps one the user started before leaving).
+    await vi.advanceTimersByTimeAsync(GENERATING_POLL_MS);
+
+    expect(
+      await screen.findByRole("heading", { name: "Nvidia Corp (NVDA)" }),
+    ).toBeVisible();
+    expect(within(picker).getByRole("option", { name: /NVDA/ })).toHaveTextContent(
+      "(report ready)",
+    );
+    // Nothing is generating any more: no further polling.
+    const calls = api.listReports.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(GENERATING_POLL_MS * 3);
+    expect(api.listReports).toHaveBeenCalledTimes(calls);
+  });
+
+  it("refetches when the user comes back to the tab", async () => {
+    renderAt("/reports/NVDA");
+    await screen.findByRole("heading", { name: "Nvidia Corp (NVDA)" });
+    expect(api.listReports).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await waitFor(() => expect(api.listReports).toHaveBeenCalledTimes(2));
+    expect(api.getReport).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("agentLabel", () => {
+  it("keeps the server's label, and reads a finished step in the past tense", () => {
+    expect(agentLabel({ agent: "writer", state: "done", label: "Wrote report" })).toBe(
+      "Wrote report",
+    );
+    // An older ai-service sent the running label for "done" too.
+    expect(
+      agentLabel({ agent: "writer", state: "done", label: "Writing report…" }),
+    ).toBe("Wrote report");
+    expect(
+      agentLabel({ agent: "writer", state: "running", label: "Writing report…" }),
+    ).toBe("Writing report…");
+    expect(
+      agentLabel({ agent: "market", state: "failed", label: "Analyzing price data…" }),
+    ).toBe("Analyzing price data…");
   });
 });

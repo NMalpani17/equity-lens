@@ -7,17 +7,25 @@ A fixed orchestration of specialized agents, not a supervisor: the edges
 never change and no model decides who runs next. Each agent has its own
 prompt, its own tools and its own step limits:
 
-- transcript_researcher (research model): calls the existing
+- transcript_researcher (transcript model, Flash): calls the existing
   QuarterComparisonService (through the compare_quarters tool logic, without
   an LLM step), then runs a tool-calling agent with search_transcripts only,
   and returns cited notes. If the latest call has no comparable earlier call,
   it researches the latest call alone and the report states that no
   comparison is available.
-- market_analyst (research model): a tool-calling agent with get_quote and
+- market_analyst (market model, Flash-Lite): a tool-calling agent with get_quote and
   get_price_history; its tool results become [Dn] data sources and the chart.
   If it fails, the report still ships with price data marked unavailable.
 - writer (writer model, no tools): turns both sets of notes, the passages the
   notes cite and the data sources into six sections (structured output).
+
+When a comparison is available, "What changed" must cite the earlier
+quarter. If the researcher's Changes notes cite none of its passages, it gets
+one corrective turn; if they still don't, the writer is shown the earlier
+quarter's passages anyway; if the writer's draft cites none, it writes once
+more; and if that draft still cites none, the report fails (retryable, and
+not counted against the user's allowance) rather than ship a comparison of
+nothing.
 
 Nodes report progress through LangGraph's custom stream ("agent" events),
 and each node is one span in the run's trace.
@@ -25,6 +33,7 @@ and each node is one span in the run's trace.
 
 import logging
 import operator
+import re
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
@@ -76,7 +85,19 @@ LABELS: dict[AgentName, str] = {
     "market": "Analyzing price data…",
     "writer": "Writing report…",
 }
+# The same steps once finished.
+DONE_LABELS: dict[AgentName, str] = {
+    "transcripts": "Researched transcripts",
+    "market": "Analyzed price data",
+    "writer": "Wrote report",
+}
 CHART_PERIOD = "6mo"
+# Earlier-quarter passages added to the writer's evidence (within its passage
+# cap) when the researcher's notes compare nothing.
+WRITER_PRIOR_PASSAGES = 8
+# The error when a comparison was available but the report still compares
+# nothing; the api refunds it.
+COMPARISON_FAILED = "comparison_failed"
 
 
 class ReportError(Exception):
@@ -150,7 +171,8 @@ class ReportAgents:
     """
 
     settings: Settings
-    research_model: Callable[[], BaseChatModel]
+    transcript_model: Callable[[], BaseChatModel]
+    market_model: Callable[[], BaseChatModel]
     writer: Callable[[], Runnable]
     compare: Callable[[TurnContext, str], SearchOutput]
 
@@ -190,6 +212,45 @@ def _pick_tools(tools: Sequence[BaseTool], names: Sequence[str]) -> list[BaseToo
     return [by_name[n] for n in names]
 
 
+_CHANGES_NOTES_RE = re.compile(
+    r"^##\s+Changes\s*$(?P<body>.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL
+)
+
+
+def changes_notes(notes: str) -> str:
+    """The researcher's "## Changes" section ('' if it has none)."""
+    match = _CHANGES_NOTES_RE.search(notes)
+    return match.group("body") if match else ""
+
+
+def quarter_ids(
+    turn: TurnContext, period: Period, ids: Sequence[int] | None = None
+) -> list[int]:
+    """The passage ids from ``period``: of ``ids``, or of every registered one."""
+    candidates = ids if ids is not None else range(1, len(turn.sources) + 1)
+    return [
+        i
+        for i in candidates
+        if (source := turn.sources.get(i)) is not None
+        and (source.fiscal_year, source.fiscal_quarter)
+        == (period.fiscal_year, period.fiscal_quarter)
+    ]
+
+
+def cites_quarter(
+    turn: TurnContext, text: str, period: Period, allowed: Sequence[int] | None = None
+) -> bool:
+    """Whether ``text`` cites a passage from ``period`` (one of ``allowed``)."""
+    ids = [i for i in cited_ids(text) if allowed is None or i in allowed]
+    return bool(quarter_ids(turn, period, ids))
+
+
+def with_prior_passages(ids: list[int], prior_ids: list[int], limit: int) -> list[int]:
+    """``ids`` plus some earlier-quarter ids, at most ``limit`` in all."""
+    extra = [i for i in prior_ids if i not in ids][:WRITER_PRIOR_PASSAGES]
+    return ids[: max(limit - len(extra), 0)] + extra
+
+
 def _tool_data(message: ToolMessage) -> dict[str, Any] | None:
     artifact = message.artifact if isinstance(message.artifact, dict) else {}
     data = artifact.get("structured_content")
@@ -215,7 +276,7 @@ class _Progress:
     def done(self, summary: str) -> AgentRun:
         self.run.status = "ok"
         self._finish()
-        self._send("done", LABELS[self.agent], summary)
+        self._send("done", DONE_LABELS[self.agent], summary)
         return self.run
 
     def failed(self, summary: str) -> AgentRun:
@@ -241,7 +302,7 @@ def build_report_graph(
     async def transcript_researcher(
         state: ReportState, config: RunnableConfig
     ) -> ReportState:
-        progress = _Progress("transcripts", settings.report_research_model)
+        progress = _Progress("transcripts", settings.report_transcript_model)
         try:
             comparison = await RunnableLambda(
                 lambda ticker: agents.compare(turn, ticker), name="compare_quarters"
@@ -263,7 +324,7 @@ def build_report_graph(
                     "not_indexed", f"{inputs.ticker} has no indexed earnings call."
                 )
             agent = create_agent(
-                agents.research_model(),
+                agents.transcript_model(),
                 transcript_tools,
                 system_prompt=prompts.transcript_system(
                     company=inputs.company_name,
@@ -279,15 +340,50 @@ def build_report_graph(
                 ),
                 name="transcript_researcher_agent",
             )
+            prior_ids = quarter_ids(turn, prior) if prior else []
+            if prior and not prior_ids:
+                # Nothing was retrieved for the earlier call: no comparison.
+                logger.warning(
+                    "no %s passages for %s; reporting without a comparison",
+                    prior.label,
+                    inputs.ticker,
+                )
+                prior = None
             result = await agent.ainvoke({"messages": [HumanMessage(task)]}, config)
-            record_usage(progress.run, result["messages"])
-            notes = final_text(result["messages"])
+            messages = result["messages"]
+            notes = final_text(messages)
+            if (
+                prior
+                and cites_quarter(turn, notes, current)
+                and not cites_quarter(turn, changes_notes(notes), prior)
+            ):
+                # Guard 1: one corrective turn when the Changes compare nothing
+                # (notes that cite nothing at all fail below instead).
+                logger.warning(
+                    "%s research notes cite no %s passage; asking again",
+                    inputs.ticker,
+                    prior.label,
+                )
+                correction = prompts.transcript_correction(
+                    current=current.label, prior=prior.label, prior_ids=prior_ids
+                )
+                retry = await agent.ainvoke(
+                    {"messages": [*messages, HumanMessage(correction)]}, config
+                )
+                messages = retry["messages"]
+                notes = final_text(messages) or notes
+            record_usage(progress.run, messages)
             ids = [i for i in cited_ids(notes) if turn.sources.get(i) is not None]
             if not notes or not ids:
                 raise ReportError(
                     "research_failed",
                     "The transcript research found no citable passages.",
                     retryable=True,
+                )
+            if prior and not cites_quarter(turn, changes_notes(notes), prior):
+                # Guard 2: the writer sees the earlier quarter's passages anyway.
+                ids = with_prior_passages(
+                    ids, prior_ids, settings.report_writer_max_passages
                 )
         except Exception as exc:
             progress.failed(getattr(exc, "message", "Transcript research failed"))
@@ -304,11 +400,11 @@ def build_report_graph(
         }
 
     async def market_analyst(state: ReportState, config: RunnableConfig) -> ReportState:
-        progress = _Progress("market", settings.report_research_model)
+        progress = _Progress("market", settings.report_market_model)
         research = MarketResearch()
         try:
             agent = create_agent(
-                agents.research_model(),
+                agents.market_model(),
                 market_tools,
                 system_prompt=prompts.market_system(
                     ticker=inputs.ticker, today=inputs.today
@@ -352,6 +448,22 @@ def build_report_graph(
         run = progress.done(f"{len(research.sources)} data sources: {'; '.join(kinds)}")
         return {"market": research, "runs": [run]}
 
+    async def write(
+        messages: list[BaseMessage], run: AgentRun, config: RunnableConfig
+    ) -> ReportDraft:
+        output = await agents.writer().ainvoke(messages, config)
+        raw = output.get("raw") if isinstance(output, dict) else None
+        if isinstance(raw, AIMessage):
+            record_usage(run, [raw])
+        draft = output.get("parsed") if isinstance(output, dict) else None
+        if not isinstance(draft, ReportDraft):
+            raise ReportError(
+                "writer_failed",
+                "The report couldn't be written. Please try again.",
+                retryable=True,
+            )
+        return draft
+
     async def writer(state: ReportState, config: RunnableConfig) -> ReportState:
         progress = _Progress("writer", settings.report_writer_model)
         try:
@@ -394,17 +506,31 @@ def build_report_graph(
                     )
                 ),
             ]
-            output = await agents.writer().ainvoke(messages, config)
-            raw = output.get("raw") if isinstance(output, dict) else None
-            if isinstance(raw, AIMessage):
-                record_usage(progress.run, [raw])
-            draft = output.get("parsed") if isinstance(output, dict) else None
-            if not isinstance(draft, ReportDraft):
-                raise ReportError(
-                    "writer_failed",
-                    "The report couldn't be written. Please try again.",
-                    retryable=True,
+            draft = await write(messages, progress.run, config)
+            prior = research.prior
+            shown = [p.id for p in passages]
+            if prior and not cites_quarter(turn, draft.changes, prior, shown):
+                # Guard 3: write once more, told what was missing.
+                logger.warning(
+                    "%s draft compares nothing with %s; writing again",
+                    inputs.ticker,
+                    prior.label,
                 )
+                correction = prompts.writer_correction(
+                    current=research.current.label,
+                    prior=prior.label,
+                    prior_ids=quarter_ids(turn, prior, shown),
+                )
+                draft = await write(
+                    [*messages, HumanMessage(correction)], progress.run, config
+                )
+                if not cites_quarter(turn, draft.changes, prior, shown):
+                    # Guard 4: never ship a comparison of nothing.
+                    raise ReportError(
+                        COMPARISON_FAILED,
+                        f"Couldn't compare with {prior.label}. Please try again.",
+                        retryable=True,
+                    )
         except Exception as exc:
             progress.failed(getattr(exc, "message", "Writing failed"))
             raise

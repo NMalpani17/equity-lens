@@ -360,6 +360,12 @@ def get_tracer() -> Tracer:
     return build_tracer(get_settings())
 
 
+# Command-line scripts (pre-generation, evals) exit right after their last
+# trace, with every span of a run still queued; the server's few seconds at
+# shutdown aren't enough for that upload.
+SCRIPT_SHUTDOWN_TIMEOUT_SECONDS = 30.0
+
+
 def shutdown_tracer(timeout: float = 3.0) -> None:
     """Flush pending spans at shutdown (only if a tracer was ever built)."""
     if get_tracer.cache_info().currsize:

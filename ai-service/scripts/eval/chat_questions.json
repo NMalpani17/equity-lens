@@ -129,6 +129,21 @@
     "reference": "Compares exactly Q2 FY2026 with Q1 FY2026 (not Apple's latest call), under the change headings, citing both quarters."
   },
   {
+    "id": "q04",
+    "category": "quarter_comparison",
+    "question": "How did Apple's revenue guidance change between its last two earnings calls?",
+    "expect": {
+      "tools": ["compare_quarters"],
+      "citations": true,
+      "min_citations": 2,
+      "citation_tickers": ["AAPL"],
+      "citation_periods": ["FY2026Q3", "FY2026Q2"],
+      "comparison_sections": true,
+      "mentions": ["guidance"]
+    },
+    "reference": "Compares like with like. Next-quarter revenue growth guidance went from 14-17% (given in Q2 FY2026) to 9-11% (given in Q3 FY2026): Lowered / worse. Q3 revenue growth of 16% was within the 14-17% guidance: that belongs under Results vs guidance as met, never as raised or lowered."
+  },
+  {
     "id": "p01",
     "category": "portfolio",
     "question": "How is my portfolio doing overall?",

@@ -337,7 +337,10 @@ def main(argv: list[str] | None = None) -> int:
         print("\nEstimate only: nothing was contacted. Re-run with --yes to run.")
         return 0
 
-    from app.services.observability.tracing import build_tracer
+    from app.services.observability.tracing import (
+        SCRIPT_SHUTDOWN_TIMEOUT_SECONDS,
+        build_tracer,
+    )
 
     configure_logging("WARNING")
     settings = eval_report_settings(base)
@@ -361,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         record_scores(tracer, results)
     finally:
         rag.close()
-        tracer.shutdown(timeout=5)
+        tracer.shutdown(timeout=SCRIPT_SHUTDOWN_TIMEOUT_SECONDS)
     print("\n" + results_table(results))
     path = args.json or RESULTS_DIR / f"report-{run_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)

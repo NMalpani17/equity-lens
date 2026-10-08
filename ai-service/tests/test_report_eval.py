@@ -31,7 +31,7 @@ TEXT = {
         "New, Lowered / worse, No longer mentioned, Unchanged: nothing found in "
         "the retrieved passages."
     ),
-    "stock": "- Up 19.96% over 6 months, last close $181.50 on 2026-10-06 [D2].",
+    "stock": "- Up 19.96% over 6 months, last close $181.50 on Oct 6, 2026 [D2].",
     "risks": "- Supply constraints persist in 2027 [1].",
 }
 
@@ -106,13 +106,18 @@ def test_a_good_report_passes_every_check() -> None:
         "changes_cite_both_quarters",
         "comparison_sections",
         "comparison_closing",
+        "results_vs_guidance",
         "no_fundamentals",
         "disclaimer_and_dates",
+        "readable_dates",
     ]
 
 
 def test_figures_skip_years_dates_labels_markers_and_small_counts() -> None:
-    text = "In Q2 FY2027 [3] on 2026-08-26, 6 months, 2 quarters: $5, 8%, 1.5 and 40."
+    text = (
+        "In Q2 FY2027 [3] on 2026-08-26, 6 months, 2 quarters: $5, 8%, 1.5 and 40, "
+        "as of Jul 30, 2026 and Sept. 30, 2026."
+    )
 
     assert figures(text) == [(5.0, 0), (8.0, 0), (1.5, 1), (40.0, 0)]
 
@@ -137,6 +142,23 @@ def test_figures_skip_years_dates_labels_markers_and_small_counts() -> None:
             "need [(2027, 1), (2027, 2)]",
         ),
         (
+            # A result whose guidance (from the earlier call) isn't cited.
+            {
+                "changes": "### Raised / improved\n"
+                "- Guidance rose from $91 billion [2] to $108 billion [1].\n\n"
+                "### Results vs guidance\n- Q2 revenue of $96 billion [1]: beat."
+                "\n\nNew, Lowered / worse, No longer mentioned, Unchanged: "
+                "nothing found in the retrieved passages."
+            },
+            "results_vs_guidance",
+            "not citing both quarters",
+        ),
+        (
+            {"stock": "- Up 19.96% through 2026-10-06 [D2]."},
+            "readable_dates",
+            "ISO dates ['2026-10-06']",
+        ),
+        (
             {"stock": "- Trades at a P/E of 40 [D2]."},
             "no_fundamentals",
             "mentions ['P/E']",
@@ -148,6 +170,24 @@ def test_each_check_catches_its_failure(sections, check, detail) -> None:
 
     assert check in problems
     assert detail in problems[check]
+
+
+def test_results_vs_guidance_is_optional_and_its_items_cite_both_quarters() -> None:
+    with_section = report(
+        changes="### Raised / improved\n"
+        "- Guidance rose from $91 billion [2] to $108 billion [1].\n\n"
+        "### Results vs guidance\n"
+        "- Q2 FY2027 revenue of $96 billion [1] against the $91 billion guided "
+        "in Q1 FY2027 [2]: beat.\n\n"
+        "New, Lowered / worse, No longer mentioned, Unchanged: nothing found in "
+        "the retrieved passages."
+    )
+    # The default fixture has no Results vs guidance section (no guidance).
+    without_section = report()
+
+    for content in (with_section, without_section):
+        checks = {r.name: r for r in run_report_checks(content)}
+        assert checks["results_vs_guidance"].passed is True
 
 
 def test_a_figure_from_another_sections_citation_doesnt_count() -> None:
@@ -262,7 +302,7 @@ def test_evaluate_checks_and_judges_each_report() -> None:
     assert request.user_id == "system:eval" and request.regenerate_after_days == 0
     assert tags == ("eval",)
     table = eval_report.results_table(results)
-    assert "| NVDA | Q2 FY2027 | 9/9 | — | 5 | 4 | 4 |" in table
+    assert "| NVDA | Q2 FY2027 | 11/11 | — | 5 | 4 | 4 |" in table
     assert "research_failed: m" in table
 
 
@@ -330,3 +370,33 @@ def test_figures_match_sources_within_half_a_shown_unit(shown, source, matches):
     problems = failed(run_report_checks(content))
 
     assert ("numbers_from_sources" not in problems) is matches
+
+
+def test_spoken_whole_numbers_in_transcripts_count_as_sources() -> None:
+    # AAPL, 2026-10-08 run: the transcript says "one and a half billion".
+    content = report(
+        drivers="- Paid subscriptions topping 1.5 billion [1]."
+    ).model_copy(
+        update={
+            "citations": [
+                citation(
+                    1,
+                    2,
+                    "we have now surpassed one and a half billion in paid "
+                    "subscriptions",
+                ),
+                citation(2, 1, "We expect Q2 revenue of $91 billion."),
+            ]
+        }
+    )
+
+    problems = failed(run_report_checks(content))
+
+    assert "drivers: 1.5" not in problems.get("numbers_from_sources", "")
+
+
+def test_period_lengths_are_not_figures() -> None:
+    # MSFT, 2026-10-08 run: "a 52-week peak of $537.65".
+    assert figures("with a 52-week peak of $537.65 and a 200-day average") == [
+        (537.65, 2)
+    ]

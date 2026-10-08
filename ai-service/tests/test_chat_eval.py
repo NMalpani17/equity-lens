@@ -18,8 +18,9 @@ from app.services.chat.agent import ChatService
 from app.services.chat.context import TurnContext, turn_registry
 from app.services.chat.guardrails import ADVICE_NOTE, OFF_TOPIC_REPLY
 from app.services.chat.tools import ToolDeps, calculate_position_tool
-from app.services.evals.checks import run_checks
+from app.services.evals.checks import comparison_items, run_checks
 from app.services.evals.judge import (
+    JUDGE_SYSTEM_PROMPT,
     MAX_EVIDENCE_CHARS,
     JudgedAnswer,
     JudgeVerdict,
@@ -287,6 +288,62 @@ def test_closing_line_is_left_out_when_every_category_has_content() -> None:
     assert "comparison_closing" in failed(
         run_checks(case(comparison_sections=True), with_line)
     )
+
+
+RESULTS_ANSWER = """\
+### Lowered / worse
+- Next-quarter revenue growth guidance fell from 14-17% [2] to 9-11% [1].
+
+### Results vs guidance
+- Q3 revenue grew 16%, within the 14-17% guidance given in Q2 [1][2]: met.
+
+New, Raised / improved, No longer mentioned, Unchanged: nothing found in the \
+retrieved passages.
+"""
+
+
+def comparison_checks(content: str, **expect: Any):
+    record = turn(content, citations=[citation(1), citation(2, quarter=1)])
+    results = run_checks(case(comparison_sections=True, **expect), record)
+    return {r.name: r for r in results}
+
+
+def test_results_vs_guidance_goes_under_its_own_heading() -> None:
+    results = comparison_checks(RESULTS_ANSWER)
+
+    assert [name for name, r in results.items() if not r.passed] == []
+    # Results vs guidance is never one of the closing line's categories.
+    assert results["comparison_closing"].passed is True
+
+
+@pytest.mark.parametrize("expect", [{}, {"citation_periods": ["FY2027Q2", "FY2027Q1"]}])
+def test_a_results_vs_guidance_item_cites_both_quarters(expect: dict) -> None:
+    one_sided = RESULTS_ANSWER.replace("Q2 [1][2]: met", "Q2 [1]: met")
+
+    result = comparison_checks(one_sided, **expect)["results_vs_guidance"]
+
+    assert result.passed is False
+    assert "not citing both quarters" in result.detail
+
+
+def test_results_vs_guidance_is_optional() -> None:
+    # Some companies give no guidance, so there is nothing to measure against.
+    without = RESULTS_ANSWER.split("### Results vs guidance")[0] + (
+        "New, Raised / improved, No longer mentioned, Unchanged: nothing found in "
+        "the retrieved passages."
+    )
+
+    assert comparison_checks(without)["results_vs_guidance"].passed is True
+
+
+def test_the_verdict_wording_is_left_to_the_judge() -> None:
+    # Structure only: no met / beat / missed word-matching.
+    reworded = RESULTS_ANSWER.replace(
+        "within the 14-17% guidance given in Q2 [1][2]: met",
+        "versus the 14-17% guided in Q2, beating it [1][2]",
+    )
+
+    assert comparison_checks(reworded)["results_vs_guidance"].passed is True
 
 
 def test_citation_periods_and_max_quarters_catch_a_wrong_quarter() -> None:
@@ -704,3 +761,26 @@ def test_a_guardrail_refusal_records_no_tools_from_the_previous_case() -> None:
         mcp_server.set_tool_deps(mcp_server.default_tool_deps)
 
     assert record.status == "refused" and record.tool_calls == []
+
+
+def test_only_list_items_count_as_comparison_items() -> None:
+    items = comparison_items(
+        "### Results vs guidance\n* one\n- two\n1. three\n***\n**Key insight**: x"
+    )
+
+    assert items == {"results vs guidance": ["* one", "- two", "1. three"]}
+
+
+def test_the_judge_counts_each_calls_next_quarter_guidance_as_like_for_like() -> None:
+    # The 2026-10-08 run: the judge scored correct NVDA and AAPL reports 2 for
+    # comparing Q3 guidance with Q2 guidance, reading "same metric" as "same
+    # target quarter".
+    rubric = " ".join(JUDGE_SYSTEM_PROMPT.split())
+
+    assert (
+        "Each call's guidance for its own next quarter is like for like even "
+        "though the target quarters differ" in rubric
+    )
+    assert '9-11% in the newer call is correctly "lowered"' in rubric
+    assert "and so is each call's full-year guidance" in rubric
+    assert "or giving a wrong verdict, is a faithfulness error" in rubric

@@ -117,7 +117,7 @@ calendar.
       "retrievalScore": 0.63,
       "rerankScore": 0.91,
       "ticker": "AAPL",
-      "companyName": "Apple Inc",
+      "companyName": "Apple Inc.",
       "fiscalYear": 2025,
       "fiscalQuarter": 3,
       "callDate": "2025-07-31",
@@ -258,7 +258,7 @@ A saved assistant message:
     {
       "id": 1,
       "ticker": "NVDA",
-      "companyName": "Nvidia Corp",
+      "companyName": "NVIDIA Corporation",
       "fiscalYear": 2027,
       "fiscalQuarter": 2,
       "callDate": "2026-08-26",
@@ -351,7 +351,7 @@ them but not generate them.
   "tickers": [
     {
       "ticker": "NVDA",
-      "companyName": "Nvidia Corp",
+      "companyName": "NVIDIA Corporation",
       "latestQuarter": {
         "fiscalYear": 2027,
         "fiscalQuarter": 2,
@@ -391,7 +391,7 @@ one with `outdated: true`, plus permissions:
 ```json
 {
   "ticker": "NVDA",
-  "companyName": "Nvidia Corp",
+  "companyName": "NVIDIA Corporation",
   "latestQuarter": {
     "fiscalYear": 2027,
     "fiscalQuarter": 2,
@@ -399,7 +399,7 @@ one with `outdated: true`, plus permissions:
   },
   "report": {
     "ticker": "NVDA",
-    "companyName": "Nvidia Corp",
+    "companyName": "NVIDIA Corporation",
     "quarter": {
       "fiscalYear": 2027,
       "fiscalQuarter": 2,
@@ -420,7 +420,7 @@ one with `outdated: true`, plus permissions:
       {
         "id": 1,
         "ticker": "NVDA",
-        "companyName": "Nvidia Corp",
+        "companyName": "NVIDIA Corporation",
         "fiscalYear": 2027,
         "fiscalQuarter": 2,
         "…": "…"
@@ -487,18 +487,23 @@ it). No body. Rule violations are JSON errors before streaming starts:
 
 Then the response is `text/event-stream` (with keepalive comments):
 
-| Event   | Data                                                                                                                           |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `start` | `{ ticker, quarter }`                                                                                                          |
-| `agent` | `{ agent, state, label, summary? }`: `agent` is `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. |
-| `done`  | `{ report }`, the saved report (same shape as above).                                                                          |
-| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.         |
+| Event   | Data                                                                                                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `start` | `{ ticker, quarter }`                                                                                                                                                                                                    |
+| `agent` | `{ agent, state, label, summary? }`: `agent` is `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. `label` is `"Writing report…"` while running and past tense once done (`"Wrote report"`). |
+| `done`  | `{ report }`, the saved report (same shape as above).                                                                                                                                                                    |
+| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `comparison_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.                                                                              |
 
-A generation counts toward the daily caps from the moment it starts, including
-one that fails or that the user cancels by closing the connection (which
-cancels it upstream). It doesn't count if nothing was generated: the
-ai-service couldn't be reached, or refused because another generation won the
-race (`report_in_progress`) or the report had just become fresh (`report_fresh`).
+A generation always finishes once it has started: if the client closes the
+connection, the api keeps reading the ai-service's stream until the report is
+saved (and the ai-service finishes it on its own even if that connection
+drops). It counts toward the daily caps from the moment it starts, including
+one that fails. It doesn't count if nothing was generated: the ai-service
+couldn't be reached, or refused because another generation won the race
+(`report_in_progress`) or the report had just become fresh (`report_fresh`).
+Nor does it count if the report failed with `comparison_failed`: a comparison
+was available but the report still cited nothing from the earlier quarter, so
+it wasn't saved.
 
 ## AI service (`http://localhost:8000`)
 
@@ -546,7 +551,7 @@ indexed call with the one before it. The structured result:
 {
   "status": "ok",
   "ticker": "NVDA",
-  "company_name": "Nvidia Corp",
+  "company_name": "NVIDIA Corporation",
   "current": { "fiscal_year": 2027, "fiscal_quarter": 2, "label": "FY2027Q2" },
   "prior": { "fiscal_year": 2027, "fiscal_quarter": 1, "label": "FY2027Q1" },
   "focus": "margins",

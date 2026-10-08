@@ -6,12 +6,13 @@ from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_core.messages import ToolMessage
 
 from app.config import Settings
 from app.models.chat import AllocationChart, ChatTurnRequest, PriceChart
 from app.models.price_history import PriceHistory, PricePoint
 from app.services.chat import mcp_server
-from app.services.chat.agent import ChatService
+from app.services.chat.agent import ChatService, _TurnState
 from app.services.chat.charts import (
     MAX_ALLOCATION_SLICES,
     OTHER_TICKER,
@@ -226,6 +227,51 @@ def test_repeated_charts_are_deduplicated_and_portfolio_is_charted(
             "weight_percent": 100.0,
         }
     ]
+
+
+def finished(call_id: str, name: str, data: dict) -> ToolMessage:
+    return ToolMessage(
+        content="",
+        tool_call_id=call_id,
+        name=name,
+        artifact={"structured_content": data},
+    )
+
+
+def test_charts_follow_the_order_the_calls_were_issued_not_finished() -> None:
+    # Parallel tool calls finish in any order; here the reverse of issue order.
+    service = ChatService(
+        Settings(_env_file=None, internal_token="t", gemini_api_key="k"),
+        MagicMock,
+        mcp_server.mcp,
+        turn_registry,
+    )
+    state = _TurnState()
+    service._on_ai_message(
+        ai(
+            tool_calls=[
+                price_call("h1"),
+                {"name": "get_portfolio", "id": "p1"},
+                price_call("h2", "AAPL", "1y"),
+                price_call("h3"),  # repeats h1's chart, issued later
+            ]
+        ),
+        state,
+    )
+    allocation = get_portfolio(turn(portfolio(position("NVDA", 10, 100, 150)))).data
+
+    for message in (
+        finished("h3", "get_price_history", history_result()),
+        finished("h2", "get_price_history", history_result(ticker="AAPL", period="1y")),
+        finished("p1", "get_portfolio", allocation),
+        # The earlier-issued repeat finishes last: its older data is dropped.
+        finished("h1", "get_price_history", history_result()),
+    ):
+        service._on_tool_message(message, state)
+
+    charts = service._done("x", "complete", state)["charts"]
+    # h1's position, h3's data (the latest issued of the two).
+    assert [c["id"] for c in charts] == ["chart-h3", "chart-p1", "chart-h2"]
 
 
 def test_failed_or_blocked_answers_keep_no_charts(history_service) -> None:
