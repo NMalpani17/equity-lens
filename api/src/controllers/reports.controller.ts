@@ -13,9 +13,15 @@ import { startKeepalive, startSse, watchClient } from "./sse.js";
 /**
  * The ai-service's refusals that mean nothing was generated, so the usage
  * event is refunded (as when the stream never opens). Failures after the
- * stream has started, and cancellations, still count.
+ * stream has started, and cancellations, still count, except for
+ * REFUNDED_FAILURES.
  */
 const REFUNDED_CODES = new Set(["report_in_progress", "report_fresh"]);
+/**
+ * Failures that are ours, not the user's, refunded even after the agents ran:
+ * a comparison was available but the report still compared nothing.
+ */
+const REFUNDED_FAILURES = new Set(["comparison_failed"]);
 
 const INCOMPLETE = {
   code: "incomplete_response",
@@ -142,7 +148,10 @@ async function relayReport(
           sink.send("done", { report: event.report });
           return "done";
         case "error":
-          if (!generating && REFUNDED_CODES.has(event.code)) {
+          if (
+            (!generating && REFUNDED_CODES.has(event.code)) ||
+            REFUNDED_FAILURES.has(event.code)
+          ) {
             await reportsService.refundGeneration(ctx.start.usageEventId);
           }
           sink.send("error", {

@@ -492,7 +492,7 @@ Then the response is `text/event-stream` (with keepalive comments):
 | `start` | `{ ticker, quarter }`                                                                                                                                                                                                    |
 | `agent` | `{ agent, state, label, summary? }`: `agent` is `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. `label` is `"Writing report…"` while running and past tense once done (`"Wrote report"`). |
 | `done`  | `{ report }`, the saved report (same shape as above).                                                                                                                                                                    |
-| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.                                                                                                   |
+| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `comparison_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.                                                                              |
 
 A generation always finishes once it has started: if the client closes the
 connection, the api keeps reading the ai-service's stream until the report is
@@ -501,6 +501,9 @@ drops). It counts toward the daily caps from the moment it starts, including
 one that fails. It doesn't count if nothing was generated: the ai-service
 couldn't be reached, or refused because another generation won the race
 (`report_in_progress`) or the report had just become fresh (`report_fresh`).
+Nor does it count if the report failed with `comparison_failed`: a comparison
+was available but the report still cited nothing from the earlier quarter, so
+it wasn't saved.
 
 ## AI service (`http://localhost:8000`)
 

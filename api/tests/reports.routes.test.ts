@@ -209,6 +209,35 @@ describe("POST /api/reports/:ticker", () => {
     expect(service.refundGeneration).not.toHaveBeenCalled();
   });
 
+  it("refunds a report that couldn't compare the quarters, after the agents ran", async () => {
+    openStream.mockResolvedValue(
+      stream(
+        agent("transcripts", "running"),
+        agent("transcripts", "done"),
+        agent("writer", "running"),
+        agent("writer", "failed"),
+        {
+          type: "error",
+          code: "comparison_failed",
+          message: "Couldn't compare with Q3 FY2026. Please try again.",
+          retryable: true,
+        },
+      ),
+    );
+
+    const events = parseSse((await post()).text);
+
+    expect(events.at(-1)).toEqual({
+      event: "error",
+      data: {
+        code: "comparison_failed",
+        message: "Couldn't compare with Q3 FY2026. Please try again.",
+        retryable: true,
+      },
+    });
+    expect(service.refundGeneration).toHaveBeenCalledWith("ev-1");
+  });
+
   it.each(["report_in_progress", "report_fresh"])(
     "refunds the usage event when the ai-service refuses with %s before generating",
     async (code) => {
