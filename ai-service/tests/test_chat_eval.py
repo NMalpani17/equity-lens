@@ -18,7 +18,7 @@ from app.services.chat.agent import ChatService
 from app.services.chat.context import TurnContext, turn_registry
 from app.services.chat.guardrails import ADVICE_NOTE, OFF_TOPIC_REPLY
 from app.services.chat.tools import ToolDeps, calculate_position_tool
-from app.services.evals.checks import run_checks
+from app.services.evals.checks import comparison_items, run_checks
 from app.services.evals.judge import (
     MAX_EVIDENCE_CHARS,
     JudgedAnswer,
@@ -775,3 +775,45 @@ def test_a_guardrail_refusal_records_no_tools_from_the_previous_case() -> None:
         mcp_server.set_tool_deps(mcp_server.default_tool_deps)
 
     assert record.status == "refused" and record.tool_calls == []
+
+
+# Answers from the 2026-10-08 run that the like-for-like check wrongly failed:
+# the verdict at the end of the item, and a rule and a bold "Key insight"
+# paragraph after the last heading read as bullets.
+@pytest.mark.parametrize(
+    "results",
+    [
+        "* **Q2 FY2027 revenue**: Reported revenue of $96 billion [2] beat the "
+        "guidance of $91 billion, plus or minus 2% ($89.18 billion to $92.82 "
+        "billion) provided in the Q1 call [10].\n\n***\n\n**Key insight**: While "
+        "AI demand and revenue continue to outpace prior expectations [3][12].",
+        "* **Q2 FY2026 total revenue:** Revenue grew 17% year-over-year to $111.2 "
+        "billion [6], exceeding the 13% to 16% growth guided in Q1 FY2026 [7][8]: "
+        "beat.\n* **Q2 FY2026 operating expenses:** Operating expenses were $18.9 "
+        "billion [6][9], slightly above the guided range of $18.4 billion to $18.7 "
+        "billion given in Q1 FY2026 due to a one-time SG&A expense [7][9]: missed.",
+        "* **Q3 FY2026 reported revenue**: In Q2 FY2026, Apple guided June quarter "
+        "(Q3 FY2026) revenue growth of 14% to 17% year-over-year [3]. Apple "
+        "reported Q3 FY2026 revenue of $109.4 billion, representing 16% "
+        "year-over-year growth: **met** [5][6].",
+        "- Q2 FY2027 total revenue was $96 billion, exceeding the Q1 FY2027 "
+        "guidance of $91 billion, plus or minus 2%: beat [1][9].",
+    ],
+)
+def test_results_vs_guidance_verdicts_as_the_model_writes_them(results: str) -> None:
+    content = (
+        "### Lowered / worse\n- Guidance fell from 14-17% [2] to 9-11% [1].\n\n"
+        f"### Results vs guidance\n{results}\n\n"
+        "New, Raised / improved, No longer mentioned, Unchanged: nothing found in "
+        "the retrieved passages."
+    )
+
+    assert like_for_like(content)["comparison_like_for_like"].passed is True
+
+
+def test_only_list_items_count_as_comparison_items() -> None:
+    items = comparison_items(
+        "### Results vs guidance\n* one\n- two\n1. three\n***\n**Key insight**: x"
+    )
+
+    assert items == {"results vs guidance": ["* one", "- two", "1. three"]}

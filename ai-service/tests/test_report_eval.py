@@ -352,3 +352,33 @@ def test_figures_match_sources_within_half_a_shown_unit(shown, source, matches):
     problems = failed(run_report_checks(content))
 
     assert ("numbers_from_sources" not in problems) is matches
+
+
+def test_spoken_whole_numbers_in_transcripts_count_as_sources() -> None:
+    # AAPL, 2026-10-08 run: the transcript says "one and a half billion".
+    content = report(
+        drivers="- Paid subscriptions topping 1.5 billion [1]."
+    ).model_copy(
+        update={
+            "citations": [
+                citation(
+                    1,
+                    2,
+                    "we have now surpassed one and a half billion in paid "
+                    "subscriptions",
+                ),
+                citation(2, 1, "We expect Q2 revenue of $91 billion."),
+            ]
+        }
+    )
+
+    problems = failed(run_report_checks(content))
+
+    assert "drivers: 1.5" not in problems.get("numbers_from_sources", "")
+
+
+def test_period_lengths_are_not_figures() -> None:
+    # MSFT, 2026-10-08 run: "a 52-week peak of $537.65".
+    assert figures("with a 52-week peak of $537.65 and a 200-day average") == [
+        (537.65, 2)
+    ]

@@ -42,16 +42,31 @@ _NOT_FIGURES_RE = re.compile(
     r"\[D?\d{1,3}\]"
     rf"|{ISO_DATE_RE.pattern}|{READABLE_DATE_RE.pattern}"
     r"|\b\d{1,2}:\d{2}\b"  # clock times, e.g. a quote "as of 3:54 PM EDT"
+    r"|\b\d+-(?:week|day|month|year|quarter)s?\b"  # "52-week high"
     r"|\bQ[1-4]\b|\bFY\s?\d{2,4}\b"
     r"|\b(?:19|20)\d{2}\b"
 )
-# Transcripts spell some numbers as spoken: "16 and a half percent" = 16.5%.
+# Transcripts spell some numbers as spoken: "16 and a half percent" = 16.5%,
+# "one and a half billion" = 1.5 billion.
 _SPOKEN_FRACTIONS = {"a half": ".5", "a quarter": ".25", "three quarters": ".75"}
-_SPOKEN_RE = re.compile(r"\b(\d+) and (a half|a quarter|three quarters)\b")
+_NUMBER_WORDS = {
+    word: str(i)
+    for i, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve".split()
+    )
+}
+_SPOKEN_RE = re.compile(
+    rf"\b(\d+|{'|'.join(_NUMBER_WORDS)}) and (a half|a quarter|three quarters)\b",
+    re.IGNORECASE,
+)
 
 
 def _spoken_to_digits(text: str) -> str:
-    return _SPOKEN_RE.sub(lambda m: m.group(1) + _SPOKEN_FRACTIONS[m.group(2)], text)
+    def digits(match: re.Match[str]) -> str:
+        whole = _NUMBER_WORDS.get(match.group(1).lower(), match.group(1))
+        return whole + _SPOKEN_FRACTIONS[match.group(2).lower()]
+
+    return _SPOKEN_RE.sub(digits, text)
 
 
 # 1,234.5 / $96 / 75.0% / -3.2

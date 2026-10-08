@@ -28,11 +28,16 @@ _CHANGE_COUNT = len(CHANGE_HEADINGS)
 # Like-for-like: a Raised / Lowered item mustn't measure a result against
 # guidance. These say "results vs guidance" ...
 _VS_GUIDANCE_RE = re.compile(
-    r"\b(?:met|beat|beats|missed|exceeded|topped|fell short of|within|above|"
+    r"\b(?:met|beat|beats|missed|exceeded|exceeding|exceeds|topped|"
+    r"fell short of|within|above|"
     r"below|ahead of|in line with)\b(?:\W+\S+){0,5}?\W+"
     r"(?:guidance|outlook|forecast|range)\b",
     re.IGNORECASE,
 )
+# A Results vs guidance item states its verdict, often at the end (": met").
+_VERDICT_RE = re.compile(r"\b(?:met|beat|beats|missed)\b", re.IGNORECASE)
+# A list item: "- x", "* x", "• x", "1. x" (not "***" or "**Bold**").
+_BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+\S")
 # ... and these mark one side as guidance and the other as an actual result.
 _GUIDANCE_RE = re.compile(r"\bguid(?:ance|ed|ing)\b|\boutlook\b", re.IGNORECASE)
 _ACTUAL_RE = re.compile(
@@ -237,7 +242,7 @@ def comparison_items(content: str) -> dict[str, list[str]]:
                 (h for h in COMPARISON_HEADINGS if title.startswith(h)), None
             )
             continue
-        if current and line.lstrip().startswith(("-", "*", "•")):
+        if current and _BULLET_RE.match(line):
             items.setdefault(current, []).append(line.strip())
     return items
 
@@ -257,7 +262,7 @@ def comparison_like_for_like(content: str) -> CheckResult:
     unworded = [
         item[:80]
         for item in items.get("results vs guidance", [])
-        if not _VS_GUIDANCE_RE.search(item)
+        if not _VERDICT_RE.search(item) and not _VS_GUIDANCE_RE.search(item)
     ]
     detail = (
         f"mixed guidance and results: {offenders[:3]}"
