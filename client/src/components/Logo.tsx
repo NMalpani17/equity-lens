@@ -31,12 +31,28 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
-/** Mark plus the "Equity Lens" wordmark. */
-export function Logo({ className }: { className?: string }) {
+/**
+ * Mark plus the "Equity Lens" wordmark. `compact` shows only the mark on
+ * phones (the name stays available to screen readers).
+ */
+export function Logo({
+  className,
+  compact = false,
+}: {
+  className?: string;
+  compact?: boolean;
+}) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <LogoMark />
-      <span className="text-lg font-bold tracking-tight text-primary">Equity Lens</span>
+      <span
+        className={cn(
+          "text-lg font-bold tracking-tight text-primary",
+          compact && "sr-only sm:not-sr-only",
+        )}
+      >
+        Equity Lens
+      </span>
     </span>
   );
 }

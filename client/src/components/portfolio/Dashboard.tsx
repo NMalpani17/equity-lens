@@ -34,11 +34,11 @@ export function Dashboard() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Portfolio</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Your holdings with live prices from the market data service.
           </p>
         </div>
@@ -108,7 +108,7 @@ export function Dashboard() {
       )}
 
       {data && data.positions.length > 0 && (
-        <Card>
+        <Card className="overflow-hidden">
           <CardContent className="p-0">
             <HoldingsTable
               positions={data.positions}

@@ -15,6 +15,9 @@ interface SummaryCardsProps {
   loading: boolean;
 }
 
+/** Key values: big, bold and with tabular figures so digits line up. */
+const VALUE = "text-2xl font-bold tracking-tight tabular-nums sm:text-3xl";
+
 /** Top-of-dashboard KPI cards: total value, gain/loss, today's change, count. */
 export function SummaryCards({ totals, holdingsCount, loading }: SummaryCardsProps) {
   // When no holding has a live price, the monetary totals are all $0.00 —
@@ -23,16 +26,14 @@ export function SummaryCards({ totals, holdingsCount, loading }: SummaryCardsPro
     totals !== null && totals.pricedCount === 0 && totals.unpricedCount > 0;
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
       <StatCard label="Total value" footnote={<PartialNote totals={totals} />}>
         {loading || !totals ? (
           <Skeleton />
         ) : noPrices ? (
           <Unavailable />
         ) : (
-          <span className="text-2xl font-semibold">
-            {formatCurrency(totals.marketValue)}
-          </span>
+          <span className={VALUE}>{formatCurrency(totals.marketValue)}</span>
         )}
       </StatCard>
 
@@ -42,9 +43,11 @@ export function SummaryCards({ totals, holdingsCount, loading }: SummaryCardsPro
         ) : noPrices ? (
           <Unavailable />
         ) : (
-          <span className={`text-2xl font-semibold ${changeColor(totals.gainLoss)}`}>
-            {formatSignedCurrency(totals.gainLoss)}{" "}
-            <span className="text-base font-normal">
+          <span
+            className={`${VALUE} flex flex-wrap items-baseline gap-x-1.5 ${changeColor(totals.gainLoss)}`}
+          >
+            {formatSignedCurrency(totals.gainLoss)}
+            <span className="text-base font-medium">
               ({formatSignedPercent(totals.gainLossPercent)})
             </span>
           </span>
@@ -57,18 +60,14 @@ export function SummaryCards({ totals, holdingsCount, loading }: SummaryCardsPro
         ) : noPrices ? (
           <Unavailable />
         ) : (
-          <span className={`text-2xl font-semibold ${changeColor(totals.dailyChange)}`}>
+          <span className={`${VALUE} ${changeColor(totals.dailyChange)}`}>
             {formatSignedCurrency(totals.dailyChange)}
           </span>
         )}
       </StatCard>
 
       <StatCard label="Holdings">
-        {loading ? (
-          <Skeleton />
-        ) : (
-          <span className="text-2xl font-semibold">{holdingsCount}</span>
-        )}
+        {loading ? <Skeleton /> : <span className={VALUE}>{holdingsCount}</span>}
       </StatCard>
     </div>
   );
@@ -76,7 +75,7 @@ export function SummaryCards({ totals, holdingsCount, loading }: SummaryCardsPro
 
 /** Muted placeholder shown when totals can't be computed from live prices. */
 function Unavailable() {
-  return <span className="text-2xl font-semibold text-muted-foreground">—</span>;
+  return <span className={`${VALUE} text-muted-foreground`}>—</span>;
 }
 
 /** Footnote flagging that totals cover only the holdings that could be priced. */
@@ -103,12 +102,12 @@ function StatCard({
 }) {
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+      <CardHeader className="p-4 pb-2 sm:p-6 sm:pb-2">
+        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-1">
+      <CardContent className="flex flex-col gap-1 p-4 pt-0 sm:p-6 sm:pt-0">
         {children}
         {footnote}
       </CardContent>
@@ -117,5 +116,5 @@ function StatCard({
 }
 
 function Skeleton() {
-  return <div className="h-8 w-24 animate-pulse rounded bg-muted" />;
+  return <div className="h-9 w-28 animate-pulse rounded bg-muted" />;
 }
