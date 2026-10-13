@@ -20,7 +20,7 @@ interface ChatMarkdownProps {
 }
 
 const REF_CLASS =
-  "ml-0.5 rounded-sm pl-0.5 align-super text-[0.7em] font-semibold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+  "ml-0.5 rounded-sm pl-0.5 align-super text-[0.7em] font-semibold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Markdown for model output. Raw HTML is never rendered (skipHtml), unsafe

@@ -71,7 +71,7 @@ export function ConversationSidebar({
   return (
     <aside
       aria-label="Conversations"
-      className={cn("flex w-full flex-col border-r md:w-64", className)}
+      className={cn("flex w-full flex-col border-r bg-card md:w-64", className)}
     >
       <div className="p-3">
         <Button
@@ -84,11 +84,14 @@ export function ConversationSidebar({
           New chat
         </Button>
       </div>
+      <h2 className="px-4 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Conversations
+      </h2>
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {conversations.length === 0 ? (
           <p className="px-2 text-sm text-muted-foreground">No conversations yet.</p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-0.5">
             {conversations.map((c) => (
               <li key={c.id} className="group flex items-center">
                 <button
@@ -97,8 +100,9 @@ export function ConversationSidebar({
                   disabled={disabled}
                   aria-current={c.id === activeId ? "page" : undefined}
                   className={cn(
-                    "flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60",
-                    c.id === activeId && "bg-accent font-medium",
+                    "flex-1 truncate rounded-md border-l-2 border-transparent px-2 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+                    c.id === activeId &&
+                      "border-brand bg-accent font-medium text-foreground",
                   )}
                 >
                   {c.title}
@@ -107,7 +111,7 @@ export function ConversationSidebar({
                   <DropdownMenuTrigger
                     aria-label={`Options for ${c.title}`}
                     disabled={disabled}
-                    className="rounded-md p-1 opacity-60 hover:bg-accent hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="rounded-md p-1 opacity-60 hover:bg-accent hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <MoreHorizontal aria-hidden="true" className="size-4" />
                   </DropdownMenuTrigger>

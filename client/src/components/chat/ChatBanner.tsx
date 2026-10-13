@@ -35,7 +35,7 @@ export function ChatBanner({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss message"
-        className="rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <X aria-hidden="true" className="size-4" />
       </button>
