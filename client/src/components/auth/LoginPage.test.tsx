@@ -95,6 +95,14 @@ describe("LoginPage: log in", () => {
     expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
   });
 
+  it("shows the tagline under the logo on log in and sign up", () => {
+    renderPage();
+    const tagline = "AI research on earnings calls and your portfolio.";
+    expect(screen.getByText(tagline)).toBeInTheDocument();
+    switchToSignup();
+    expect(screen.getByText(tagline)).toBeInTheDocument();
+  });
+
   it("uses the right input types and autocomplete", () => {
     renderPage();
     expect(emailInput()).toHaveAttribute("type", "email");

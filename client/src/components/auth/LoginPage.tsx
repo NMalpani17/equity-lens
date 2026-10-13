@@ -197,6 +197,7 @@ export function LoginPage() {
     <AuthCard
       title={copy.title}
       description={copy.description}
+      tagline="AI research on earnings calls and your portfolio."
       top={<ModeSwitch mode={mode} onChange={switchMode} disabled={busy} />}
     >
       {notice && (
