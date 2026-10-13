@@ -9,10 +9,10 @@ Browser ──▶ client (Vercel, static) ──▶ api (Cloud Run) ──▶ ai
 ```
 
 - **client** — static Vite build on Vercel.
-- **api** — Docker image on Cloud Run, **request-based billing**, startup CPU
-  boost.
+- **api** — Docker image on Cloud Run, **request-based billing**,
+  min instances 1 ([for now](#min-instances)), startup CPU boost.
 - **ai-service** — Docker image on Cloud Run, **instance-based billing**,
-  min instances 0, startup CPU boost.
+  min instances 1 ([for now](#min-instances)), startup CPU boost.
 - **Database** — the existing Supabase project; tables are owned by the api's
   Prisma migrations.
 
@@ -168,7 +168,7 @@ region.
 | Billing               | **Request-based** (CPU only during requests)                                           | **Instance-based** (CPU always allocated while an instance runs)                                                                                                                                                                     |
 | Why                   | Pure request/response; idle costs nothing                                              | Background work after a response: on-demand ingestion, trace export                                                                                                                                                                  |
 | CPU / memory          | 1 vCPU / 512 MiB                                                                       | 1 vCPU / 1 GiB (measured ~200 MiB; headroom for ingestion and bursts)                                                                                                                                                                |
-| Min instances         | 0                                                                                      | 0 (a cold start is ~5–15 s; the client warms it once a user is signed in, never for anonymous page views)                                                                                                                            |
+| Min instances         | 1 while GCP credits last, then 0 ([Min instances](#min-instances))                     | 1 while GCP credits last, then 0 (a cold start is ~5–15 s; the client warms it once a user is signed in, never for anonymous page views)                                                                                              |
 | Max instances         | 2 (cost cap)                                                                           | 1 (cost cap; one instance handles this traffic)                                                                                                                                                                                      |
 | Concurrency           | 80                                                                                     | 20 (one async worker; chat turns are I/O-bound)                                                                                                                                                                                      |
 | Request timeout       | 600 s (chat streams are one long request)                                              | 600 s                                                                                                                                                                                                                                |
@@ -186,7 +186,8 @@ It's for the client's status dot in the top bar.
 
 With instance-based billing and min instances 0, the ai-service bills for each
 instance from start until Cloud Run scales it in after it has been idle (up to
-about 15 minutes). The max-instances cap of 1 bounds the cost.
+about 15 minutes). The max-instances cap of 1 bounds the cost. With min
+instances 1 it bills around the clock.
 
 Only the api can start it: Cloud Run rejects any request without a valid ID
 token for the api's service account before an instance is started. The api
@@ -209,6 +210,24 @@ stops accepting connections and exits within 8 s. The ai-service drains open
 requests for 3 s (`--timeout-graceful-shutdown 3`), stops background ingestion
 (3 s), and flushes traces (2 s). An interrupted ingestion job is left as
 `indexing` and is reclaimed after 30 minutes (`AI_SERVICE_RAG_STALE_JOB_MINUTES`).
+
+### Min instances
+
+**Min instances is 1 for both services while the GCP credits last (until
+December).** One instance of each stays warm, so no request waits for a cold
+start. The ai-service is billed around the clock (instance-based billing); the
+idle api instance is billed at Cloud Run's lower idle rate. Startup CPU boost
+stays on for both.
+
+CD sets both on every deploy (`MIN_INSTANCES` in `.github/workflows/deploy.yml`,
+applied by `.github/scripts/deploy-service.sh` with `--min-instances` and
+`--cpu-boost`). A change to either file redeploys both services.
+
+**To set it back to 0** (when the credits run out): change `MIN_INSTANCES: 1`
+to `MIN_INSTANCES: 0` in `.github/workflows/deploy.yml` and merge it into
+`main`. CD redeploys both services with min instances 0 and they scale to zero
+again; the warm-up and cold-start handling ([below](#cold-starts-and-warm-up))
+already cover that.
 
 ### First deployment, step by step
 
@@ -417,9 +436,10 @@ service account key exists anywhere.
 - **What gets deployed**: each service is compared with the commit it is
   running (its image tag is the commit SHA). A service deploys only if its
   folder (`api/` or `ai-service/`) changed since then, so commits whose CI run
-  was cancelled or whose deploy failed are picked up by the next run. A run
-  for a commit older than the one deployed does nothing, so production never
-  goes backwards. Docs-only changes deploy nothing.
+  was cancelled or whose deploy failed are picked up by the next run. A change
+  to `.github/workflows/deploy.yml` or `.github/scripts/deploy-service.sh`
+  redeploys both. A run for a commit older than the one deployed does nothing,
+  so production never goes backwards. Docs-only changes deploy nothing.
 - **Order**: backup → migrations → ai-service → api → verify. A failed step
   stops everything after it.
 - **Backup first**: if `api/prisma/migrations/` changed, the
@@ -432,8 +452,9 @@ service account key exists anywhere.
   the job fails, nothing is deployed.
 - **Deploy**: `docker build --provenance=false --sbom=false`, tag
   `<service>:<full commit sha>`, push, then `gcloud run services update
-SERVICE --image …`. Only the image changes; every setting, env var, secret,
-  probe and IAM binding stays as it is. gcloud waits until the new revision
+SERVICE --image … --min-instances $MIN_INSTANCES --cpu-boost`. Only the image,
+  min instances and startup CPU boost are set; every other setting, env var,
+  secret, probe and IAM binding stays as it is. gcloud waits until the new revision
   passes its startup probe. If traffic was pinned to an older revision (a
   rollback), the workflow sends 100% to the new one and logs a warning.
 - **Verify**: `GET /api/live` must return `200` (with retries) or the run

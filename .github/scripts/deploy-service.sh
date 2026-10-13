@@ -2,10 +2,11 @@
 # Usage: deploy-service.sh <cloud run service> <image name> <build context>
 #
 # Builds and pushes <image name>:$SHA, then points the existing Cloud Run
-# service at it. Only the image changes: settings, env vars, secrets, probes
-# and IAM stay as they are. gcloud waits until the new revision is ready.
+# service at it, with $MIN_INSTANCES min instances and startup CPU boost on.
+# Every other setting, env var, secret, probe and IAM binding stays as it is.
+# gcloud waits until the new revision is ready.
 set -euo pipefail
-: "${SHA:?}" "${REGION:?}" "${REGISTRY:?}"
+: "${SHA:?}" "${REGION:?}" "${REGISTRY:?}" "${MIN_INSTANCES:?}"
 
 service=$1
 image="${REGISTRY}/$2:${SHA}"
@@ -14,7 +15,8 @@ context=$3
 docker build --provenance=false --sbom=false -t "$image" "$context"
 docker push "$image"
 
-gcloud run services update "$service" --region "$REGION" --image "$image" --quiet
+gcloud run services update "$service" --region "$REGION" --image "$image" \
+  --min-instances "$MIN_INSTANCES" --cpu-boost --quiet
 
 # A rollback pins traffic to an old revision, so a new one would get none.
 if ! gcloud run services describe "$service" --region "$REGION" --format=json |

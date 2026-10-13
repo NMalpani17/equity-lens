@@ -158,7 +158,8 @@ api's service account can invoke.
   Postgres, every table has row level security, and committed Claude Code
   rules block destructive commands.
   [Backups and restore](docs/deployment.md#backups-and-restore).
-- **Cold-start handling.** The ai-service scales to zero. A rate-limited
+- **Cold-start handling.** The ai-service can scale to zero (both services
+  keep one warm instance while GCP credits last). A rate-limited
   warm-up fires after sign-in, chat streams start immediately with SSE
   keepalives and a connect timeout, and both services shut down within Cloud
   Run's 10-second grace period.

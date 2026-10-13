@@ -42,10 +42,13 @@ ai_service="" api="" migrations=""
 api_base=$(deployed_sha "$API_SERVICE")
 ai_base=$(deployed_sha "$AI_SERVICE")
 
+# A change to how services are deployed (e.g. MIN_INSTANCES) redeploys both.
+deploy_config=(.github/workflows/deploy.yml .github/scripts/deploy-service.sh)
+
 case "${MODE:-changed}" in
   changed)
-    changed ai_service "$ai_base" ai-service
-    changed api "$api_base" api
+    changed ai_service "$ai_base" ai-service "${deploy_config[@]}"
+    changed api "$api_base" api "${deploy_config[@]}"
     ;;
   ai-service) ai_service=true api=false ;;
   api) ai_service=false api=true ;;
