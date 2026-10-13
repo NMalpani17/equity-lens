@@ -33,6 +33,9 @@ env:
   API_SERVICE: equity-lens-api
   AI_SERVICE: equity-lens-ai-service
   MIGRATE_JOB: equity-lens-migrate
+  # Min instances for both services: 1 keeps them warm while GCP credits last,
+  # 0 lets them scale to zero. See docs/deployment.md#min-instances.
+  MIN_INSTANCES: 1
   # The commit CI tested (workflow_run), or main's head (manual run).
   SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 

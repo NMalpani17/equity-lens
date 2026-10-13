@@ -409,8 +409,9 @@ than sending it unmasked.
   a batch one failing ticker is reported per ticker without failing the rest.
   The reranker falls back to hybrid order. Dashboard prices time out after 8 s
   and show "price unavailable".
-- **Cold starts.** The ai-service scales to zero; the warm-up call, immediate
-  SSE start and connect timeout are described in
+- **Cold starts.** The ai-service can scale to zero (min instances is 1 for
+  now: [Min instances](deployment.md#min-instances)); the warm-up call,
+  immediate SSE start and connect timeout are described in
   [deployment.md](deployment.md#cold-starts-and-warm-up).
 
 ## Security
