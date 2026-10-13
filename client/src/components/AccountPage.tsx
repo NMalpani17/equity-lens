@@ -29,14 +29,14 @@ export function AccountPage() {
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-        <h1 className="text-2xl font-bold tracking-tight">Account settings</h1>
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+        <h1 className="text-2xl font-semibold tracking-tight">Account settings</h1>
 
         <Card>
           <CardHeader>
             <CardTitle>Profile</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
+          <CardContent className="flex flex-col divide-y text-sm [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Email</span>
               <span className="font-medium">{user?.email ?? "—"}</span>
@@ -69,7 +69,7 @@ export function AccountPage() {
 
         <Link
           to="/"
-          className="text-sm text-muted-foreground underline underline-offset-4"
+          className="self-start rounded-sm text-sm font-medium underline underline-offset-4 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Back to dashboard
         </Link>

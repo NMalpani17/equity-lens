@@ -21,7 +21,7 @@ function ErrorNote({
   return (
     <div
       role="alert"
-      className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+      className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
     >
       <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
       <p className="flex-1">{message}</p>
@@ -30,7 +30,7 @@ function ErrorNote({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss message"
-          className="rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X aria-hidden="true" className="size-4" />
         </button>
@@ -57,9 +57,9 @@ export function ReportsPage() {
     <div className="min-h-screen">
       {isDemo && <DemoBanner />}
       <Header />
-      <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 p-4 sm:p-6">
+      <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
         <header className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Research reports</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Research reports</h1>
           <p className="text-sm text-muted-foreground">
             What a company said on its latest earnings call, what changed since the
             quarter before, and how the stock has moved, written by three AI agents with

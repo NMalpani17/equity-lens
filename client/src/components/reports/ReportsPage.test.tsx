@@ -319,9 +319,7 @@ describe("ReportsPage", () => {
     renderAt("/reports/NVDA");
 
     const caption = await screen.findByText("NVDA · 6 months");
-    const section = screen
-      .getByRole("heading", { name: "Stock performance" })
-      .closest(".rounded-xl") as HTMLElement;
+    const section = screen.getByRole("region", { name: "Stock performance" });
     expect(section).toContainElement(caption);
   });
 

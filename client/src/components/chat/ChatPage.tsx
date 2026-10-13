@@ -159,7 +159,7 @@ export function ChatPage() {
           className="fixed inset-0 z-40 md:hidden"
         >
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-primary/40"
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           />
