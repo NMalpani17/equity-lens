@@ -6,14 +6,20 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 
+import { AuthFailure } from "@/lib/authErrors";
 import { supabase } from "@/lib/supabase";
 import { warmUp } from "@/lib/warmUp";
 import { AuthContext, type AuthContextValue } from "./auth-context";
 
-/** Normalize a Supabase auth error into a thrown Error the UI can display. */
-function throwOnError(error: { message: string } | null): void {
+/**
+ * Throw a Supabase auth error as an AuthFailure, keeping its code and status
+ * so the UI can pick a safe message (lib/authErrors.ts).
+ */
+function throwOnError(
+  error: { message: string; code?: string; status?: number } | null,
+): void {
   if (error) {
-    throw new Error(error.message);
+    throw new AuthFailure(error.message, error.code, error.status);
   }
 }
 
