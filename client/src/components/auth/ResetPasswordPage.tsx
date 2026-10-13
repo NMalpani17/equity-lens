@@ -2,14 +2,8 @@ import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
+import { AuthCard } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { ChangePasswordForm } from "./ChangePasswordForm";
 import { useAuth } from "@/context/auth-context";
 import { setAuthFlash } from "@/lib/authFlash";
@@ -43,42 +37,28 @@ export function ResetPasswordPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        <Loader2 className="animate-spin" />
+        <Loader2 aria-label="Loading" className="animate-spin" />
       </div>
     );
   }
 
   if (!isPasswordRecovery) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <Card className="w-full max-w-sm">
-          <CardHeader>
-            <CardTitle className="text-2xl">Reset link invalid</CardTitle>
-            <CardDescription>
-              This reset link is invalid or has expired.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full" onClick={() => navigate("/forgot-password")}>
-              Request a new link
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <AuthCard
+        title="Reset link invalid"
+        description="This reset link is invalid or has expired."
+      >
+        <Button onClick={() => navigate("/forgot-password")}>Request a new link</Button>
+      </AuthCard>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-2xl">Set a new password</CardTitle>
-          <CardDescription>Choose a new password for your account.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChangePasswordForm submitLabel="Update password" onSuccess={handleSuccess} />
-        </CardContent>
-      </Card>
-    </div>
+    <AuthCard
+      title="Set a new password"
+      description="Choose a new password for your account."
+    >
+      <ChangePasswordForm submitLabel="Update password" onSuccess={handleSuccess} />
+    </AuthCard>
   );
 }

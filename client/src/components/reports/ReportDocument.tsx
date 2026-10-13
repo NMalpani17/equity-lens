@@ -5,7 +5,7 @@ import { ChatCharts } from "@/components/chat/ChatCharts";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { CitationDialog } from "@/components/chat/CitationDialog";
 import { DataSourceDialog } from "@/components/reports/DataSourceDialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import type { Citation } from "@/lib/chatApi";
 import { formatDate, formatTimestampDate } from "@/lib/format";
 import type { DataSource, Report } from "@/lib/reportsApi";
@@ -39,32 +39,38 @@ export function ReportDocument({ report }: { report: Report }) {
 
   return (
     <article aria-label={`${report.companyName} research report`} className="space-y-4">
-      <header className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight">
-          {report.companyName} ({report.ticker})
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Based on the {quarter.label} earnings call{callDate}
-          {priorQuarter ? `, compared with ${priorQuarter.label}` : ""}.
-        </p>
-        <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">
-            Generated on {formatTimestampDate(report.generatedAt)}
-          </span>
-          {asOfParts(report).map((part) => (
-            <span key={part}> · {part}</span>
-          ))}
-        </p>
-      </header>
+      {/* One document card: a header, then each section under a thin divider. */}
+      <Card className="divide-y overflow-hidden">
+        <header className="space-y-2 p-4 sm:p-6">
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {report.companyName} ({report.ticker})
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Based on the {quarter.label} earnings call{callDate}
+            {priorQuarter ? `, compared with ${priorQuarter.label}` : ""}.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Generated on {formatTimestampDate(report.generatedAt)}
+            </span>
+            {asOfParts(report).map((part) => (
+              <span key={part}> · {part}</span>
+            ))}
+          </p>
+        </header>
 
-      {report.sections.map((section) => (
-        <Card key={section.key}>
-          <CardHeader className="p-4 pb-2 sm:p-6 sm:pb-3">
-            <CardTitle>
-              <h3 className="text-base font-semibold">{section.title}</h3>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+        {report.sections.map((section) => (
+          <section
+            key={section.key}
+            aria-labelledby={`report-${section.key}`}
+            className="p-4 sm:p-6"
+          >
+            <h3
+              id={`report-${section.key}`}
+              className="mb-3 text-lg font-semibold tracking-tight"
+            >
+              {section.title}
+            </h3>
             {section.key === "stock" && report.chart && (
               <div className="mb-3">
                 <ChatCharts charts={[report.chart]} />
@@ -77,9 +83,9 @@ export function ReportDocument({ report }: { report: Report }) {
               dataSources={report.dataSources}
               onDataSource={setSource}
             />
-          </CardContent>
-        </Card>
-      ))}
+          </section>
+        ))}
+      </Card>
 
       <p className="flex items-start gap-2 text-xs text-muted-foreground">
         <Info aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />

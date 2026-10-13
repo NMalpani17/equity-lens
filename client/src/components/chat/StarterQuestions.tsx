@@ -12,9 +12,11 @@ interface StarterQuestionsProps {
 export function StarterQuestions({ onPick, disabled = false }: StarterQuestionsProps) {
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-10 text-center">
-      <MessageSquareText aria-hidden="true" className="size-8 text-muted-foreground" />
-      <div>
-        <h2 className="text-lg font-semibold">Ask the AI analyst</h2>
+      <span className="flex size-12 items-center justify-center rounded-full bg-info text-primary">
+        <MessageSquareText aria-hidden="true" className="size-6" />
+      </span>
+      <div className="space-y-1">
+        <h2 className="text-xl font-semibold tracking-tight">Ask the AI analyst</h2>
         <p className="text-sm text-muted-foreground">
           Answers cite earnings call transcripts and use live market data and your
           portfolio.
@@ -28,7 +30,7 @@ export function StarterQuestions({ onPick, disabled = false }: StarterQuestionsP
             disabled={disabled}
             onClick={() => onPick(question)}
             className={cn(
-              "rounded-lg border bg-card p-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
+              "rounded-lg border bg-card p-3 text-left text-sm transition-colors hover:border-input hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
               // An odd last question spans both columns instead of leaving a gap.
               STARTER_QUESTIONS.length % 2 === 1 &&
                 i === STARTER_QUESTIONS.length - 1 &&

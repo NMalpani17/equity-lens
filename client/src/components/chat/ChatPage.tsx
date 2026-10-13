@@ -63,19 +63,19 @@ export function ChatPage() {
     <div className="flex h-dvh flex-col">
       {isDemo && <DemoBanner />}
       <Header />
-      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col md:flex-row">
+      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col md:flex-row md:border-x">
         {/* Desktop: a persistent sidebar. Mobile: a drawer behind the menu button. */}
         <div className="hidden md:flex">
           <ConversationSidebar {...sidebarProps} onSelect={selectConversation} />
         </div>
         <main className="relative flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b px-2 py-1.5 md:hidden">
+          <div className="flex items-center gap-2 border-b bg-card px-2 py-1.5 md:hidden">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open conversations"
               aria-expanded={drawerOpen}
-              className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Menu aria-hidden="true" className="size-5" />
             </button>
@@ -87,7 +87,7 @@ export function ChatPage() {
               onClick={() => selectConversation(null)}
               disabled={chat.streaming}
               aria-label="New chat"
-              className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <Plus aria-hidden="true" className="size-5" />
             </button>
@@ -100,7 +100,7 @@ export function ChatPage() {
             onScroll={scroll.onScroll}
             aria-label="Messages"
             aria-live="polite"
-            className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6"
           >
             {chat.messages.length === 0 && !chat.loading ? (
               <StarterQuestions
@@ -130,7 +130,7 @@ export function ChatPage() {
             <button
               type="button"
               onClick={scroll.scrollToBottom}
-              className="absolute bottom-28 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-xs font-medium shadow-md hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="absolute bottom-28 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border bg-card px-3 py-1.5 text-xs font-medium shadow-md hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ArrowDown aria-hidden="true" className="size-3.5" />
               Jump to latest
@@ -159,17 +159,17 @@ export function ChatPage() {
           className="fixed inset-0 z-40 md:hidden"
         >
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-primary/40"
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           />
-          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-background shadow-xl">
+          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-card shadow-xl">
             <div className="flex justify-end p-1">
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
                 aria-label="Close conversations"
-                className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="rounded-md p-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X aria-hidden="true" className="size-5" />
               </button>

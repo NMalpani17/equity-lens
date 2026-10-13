@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <style>
+    .lens { stroke: #0b1f3a; }
+    .line { stroke: #0284c7; }
+    @media (prefers-color-scheme: dark) {
+      .lens { stroke: #e2e8f0; }
+      .line { stroke: #38bdf8; }
+    }
+  </style>
+  <circle class="lens" cx="13.5" cy="13.5" r="9.5" stroke-width="3.5" />
+  <path class="lens" d="M20.5 20.5 27.5 27.5" stroke-width="4.5" stroke-linecap="round" />
+  <path
+    class="line"
+    d="M8.5 17 12 13.5 14.5 15.5 18.5 10"
+    stroke-width="2.75"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

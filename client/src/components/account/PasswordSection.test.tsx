@@ -59,6 +59,22 @@ describe("PasswordSection", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
+  it("applies the 8-64 character rule to the new password", () => {
+    render(<PasswordSection />);
+    openForm();
+    fill("oldpass", "short", "short");
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    expect(screen.getByText("Use at least 8 characters.")).toBeInTheDocument();
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("has a show/hide toggle on every password field", () => {
+    render(<PasswordSection />);
+    openForm();
+    expect(screen.getAllByRole("button", { name: "Show password" })).toHaveLength(3);
+  });
+
   it("collapses and clears fields on cancel", () => {
     render(<PasswordSection />);
     openForm();
@@ -78,9 +94,9 @@ describe("PasswordSection", () => {
     fill("samepass", "samepass", "samepass");
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "New password must be different from your current password.",
-    );
+    expect(
+      screen.getByText("New password must be different from your current password."),
+    ).toBeInTheDocument();
     expect(signIn).not.toHaveBeenCalled();
     expect(updatePassword).not.toHaveBeenCalled();
   });

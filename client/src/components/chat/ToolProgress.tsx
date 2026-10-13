@@ -16,7 +16,7 @@ export function ToolProgress({ items }: { items: ToolProgressItem[] }) {
             <Loader2 aria-hidden="true" className="size-3 animate-spin" />
           )}
           {item.state === "ok" && (
-            <Check aria-hidden="true" className="size-3 text-emerald-600" />
+            <Check aria-hidden="true" className="size-3 text-primary" />
           )}
           {item.state === "failed" && (
             <X aria-hidden="true" className="size-3 text-destructive" />

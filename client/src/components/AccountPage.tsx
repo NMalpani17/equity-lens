@@ -1,4 +1,5 @@
 import { Link, Navigate } from "react-router-dom";
+import type { User } from "@supabase/supabase-js";
 
 import { Header } from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +7,15 @@ import { PasswordSection } from "@/components/account/PasswordSection";
 import { DeleteAccountSection } from "@/components/account/DeleteAccountSection";
 import { useAuth } from "@/context/auth-context";
 import { formatTimestampDate } from "@/lib/format";
+
+/**
+ * Whether the user can sign in with a password. A Google-only account has no
+ * password to change; one that also signed up by email does.
+ */
+function hasPasswordSignIn(user: User | null): boolean {
+  const providers = user?.app_metadata?.providers as string[] | undefined;
+  return !providers || providers.includes("email");
+}
 
 /** Account settings: profile, password, and account deletion. Hidden for demo. */
 export function AccountPage() {
@@ -19,14 +29,14 @@ export function AccountPage() {
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-        <h1 className="text-2xl font-bold tracking-tight">Account settings</h1>
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+        <h1 className="text-2xl font-semibold tracking-tight">Account settings</h1>
 
         <Card>
           <CardHeader>
             <CardTitle>Profile</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
+          <CardContent className="flex flex-col divide-y text-sm [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Email</span>
               <span className="font-medium">{user?.email ?? "—"}</span>
@@ -45,7 +55,13 @@ export function AccountPage() {
             <CardTitle>Password</CardTitle>
           </CardHeader>
           <CardContent>
-            <PasswordSection />
+            {hasPasswordSignIn(user) ? (
+              <PasswordSection />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                You sign in with Google, so there&apos;s no password to change here.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -53,7 +69,7 @@ export function AccountPage() {
 
         <Link
           to="/"
-          className="text-sm text-muted-foreground underline underline-offset-4"
+          className="self-start rounded-sm text-sm font-medium underline underline-offset-4 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Back to dashboard
         </Link>

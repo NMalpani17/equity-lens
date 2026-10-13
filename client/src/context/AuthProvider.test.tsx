@@ -10,6 +10,7 @@ const authApi = vi.hoisted(() => ({
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
   signInAnonymously: vi.fn(),
+  signInWithOAuth: vi.fn(),
   signUp: vi.fn(),
   resetPasswordForEmail: vi.fn(),
   updateUser: vi.fn(),
@@ -27,6 +28,7 @@ import { useAuth } from "./auth-context";
 function Consumer() {
   const auth = useAuth();
   const [err, setErr] = useState("");
+  const [signup, setSignup] = useState("");
 
   async function run(fn: () => Promise<void>) {
     try {
@@ -43,10 +45,22 @@ function Consumer() {
       <span data-testid="demo">demo:{String(auth.isDemo)}</span>
       <span data-testid="recovery">recovery:{String(auth.isPasswordRecovery)}</span>
       <span data-testid="err">err:{err}</span>
+      <span data-testid="signup">signup:{signup}</span>
+      <button
+        onClick={() =>
+          run(async () => {
+            const { needsConfirmation } = await auth.signUp("a@b.com", "pw123456");
+            setSignup(needsConfirmation ? "confirm" : "signed-in");
+          })
+        }
+      >
+        signup
+      </button>
       <button onClick={() => run(() => auth.signIn("a@b.com", "pw123456"))}>
         signin
       </button>
       <button onClick={() => run(() => auth.signInWithDemo())}>demo</button>
+      <button onClick={() => run(() => auth.signInWithGoogle())}>google</button>
       <button onClick={() => run(() => auth.sendPasswordReset("a@b.com"))}>
         reset
       </button>
@@ -74,7 +88,8 @@ beforeEach(() => {
   });
   authApi.signInWithPassword.mockResolvedValue({ error: null });
   authApi.signInAnonymously.mockResolvedValue({ error: null });
-  authApi.signUp.mockResolvedValue({ error: null });
+  authApi.signInWithOAuth.mockResolvedValue({ data: {}, error: null });
+  authApi.signUp.mockResolvedValue({ data: { session: null }, error: null });
   authApi.resetPasswordForEmail.mockResolvedValue({ error: null });
   authApi.updateUser.mockResolvedValue({ error: null });
   authApi.signOut.mockResolvedValue({ error: null });
@@ -99,6 +114,53 @@ describe("AuthProvider", () => {
       expect(authApi.signInWithPassword).toHaveBeenCalledWith({
         email: "a@b.com",
         password: "pw123456",
+      }),
+    );
+  });
+
+  it("signs up with a confirmation link back to /login", async () => {
+    renderProvider();
+    fireClick("signup");
+
+    await waitFor(() =>
+      expect(authApi.signUp).toHaveBeenCalledWith({
+        email: "a@b.com",
+        password: "pw123456",
+        options: { emailRedirectTo: expect.stringMatching(/\/login$/) },
+      }),
+    );
+  });
+
+  it("reports that email confirmation is needed when no session is created", async () => {
+    renderProvider();
+    fireClick("signup");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("signup")).toHaveTextContent("signup:confirm"),
+    );
+  });
+
+  it("reports a signed-in sign-up when Supabase returns a session", async () => {
+    authApi.signUp.mockResolvedValue({
+      data: { session: { access_token: "t" } },
+      error: null,
+    });
+    renderProvider();
+    fireClick("signup");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("signup")).toHaveTextContent("signup:signed-in"),
+    );
+  });
+
+  it("signs in with Google and returns to /login", async () => {
+    renderProvider();
+    fireClick("google");
+
+    await waitFor(() =>
+      expect(authApi.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        options: { redirectTo: expect.stringMatching(/\/login$/) },
       }),
     );
   });

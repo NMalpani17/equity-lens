@@ -24,10 +24,10 @@ describe("DataSourceDialog", () => {
       />,
     );
 
-    expect(screen.getByText("+$3.04")).toHaveClass("text-emerald-600");
-    expect(screen.getByText("+1.70%")).toHaveClass("text-emerald-600");
+    expect(screen.getByText("+$3.04")).toHaveClass("text-gain");
+    expect(screen.getByText("+1.70%")).toHaveClass("text-gain");
     // Prices themselves stay unsigned and uncolored.
-    expect(screen.getByText("$181.50").className).not.toMatch(/emerald|destructive/);
+    expect(screen.getByText("$181.50").className).not.toMatch(/text-gain|text-loss/);
   });
 
   it("shows a fall with a minus sign, in red", () => {
@@ -38,7 +38,7 @@ describe("DataSourceDialog", () => {
       />,
     );
 
-    expect(screen.getByText("-$1.84")).toHaveClass("text-destructive");
-    expect(screen.getByText("-0.77%")).toHaveClass("text-destructive");
+    expect(screen.getByText("-$1.84")).toHaveClass("text-loss");
+    expect(screen.getByText("-0.77%")).toHaveClass("text-loss");
   });
 });

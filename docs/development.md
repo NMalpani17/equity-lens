@@ -83,9 +83,12 @@ reach real data.
 
 Authentication uses Supabase Auth. In the Supabase dashboard:
 
-1. **Authentication → Providers → Email:** enable it. For local dev, turn off
-   "Confirm email" so a sign-up logs in immediately (otherwise users must click
-   the email link before a session is issued).
+1. **Authentication → Providers → Email:** enable it and set **Minimum
+   password length** to **8** (the client asks for 8–64 characters with no
+   composition rules; leave the character requirements off). With "Confirm
+   email" on, a sign-up shows a "Check your email" screen and the link lands
+   on `/login`, which forwards to the dashboard; with it off, a sign-up logs
+   in immediately.
 2. **Authentication → Anonymous sign-ins:** enable it. The "Try demo" button
    uses anonymous sign-in, so each visitor gets their own temporary user. On
    that user's first dashboard load the API seeds a sample portfolio (from
@@ -93,11 +96,16 @@ Authentication uses Supabase Auth. In the Supabase dashboard:
 3. The API verifies access tokens against the project's **JWKS**, so the project
    must use asymmetric JWT signing keys (the default for new projects; legacy
    projects can migrate under **Project Settings → JWT Keys**).
-4. **Password reset:** under **Authentication → URL Configuration**, add the
-   reset page to the allowed **Redirect URLs** (e.g.
-   `http://localhost:5173/reset-password`, plus your deployed origin). The
-   "Forgot password?" link emails a link back to that page; a logged-in user can
-   also change their password from **Account** in the header (hidden in demo).
+4. **Redirect URLs:** under **Authentication → URL Configuration**, allow
+   `http://localhost:5173/reset-password` and `http://localhost:5173/login`
+   (plus the same paths on your deployed origin). The "Forgot password?" link
+   emails a link back to `/reset-password`; Google sign-in and the sign-up
+   confirmation link return to `/login`. A logged-in user can also change
+   their password from **Account** in the header (hidden in demo).
+5. **Google sign-in (optional):** enable the Google provider with an OAuth
+   client from Google Cloud; the exact redirect URI and consent-screen
+   settings are in [deployment.md](deployment.md#google-sign-in). Without it,
+   "Continue with Google" shows a generic error.
 
 ## Transcript search (RAG) setup
 
@@ -263,12 +271,12 @@ npm --prefix client run dev                                                     
 
 Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
 or click **Try demo**. After authenticating you reach the **portfolio dashboard**
-(positions, summary cards, and add/edit/delete). The **status dot** in the top
-bar, next to the avatar, calls `api → ai-service` and turns green (ok), amber
-(the ai-service is waking up; re-checked every 5 s) or red (the API can't be
-reached or reports another problem); hover or focus it for the status of each
-hop. In demo mode a slim banner invites you to sign up for your own account. For health and API
-details, see [api.md](./api.md).
+(positions, summary cards, and add/edit/delete). `/privacy` and `/terms` are
+public (linked from the login page footer); when what the app stores changes,
+update `client/src/components/legal/PrivacyPage.tsx` and its date. In demo mode a slim banner
+invites you to sign up for your own account. To check each hop
+(`api → ai-service`), call `GET /api/health` with a session token; see
+[api.md](./api.md).
 
 ## Tests, lint and scripts
 

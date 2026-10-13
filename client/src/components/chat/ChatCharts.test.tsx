@@ -77,7 +77,7 @@ describe("ChatCharts", () => {
 
     const chart = await figure("NVDA · 6 months");
     const caption = within(chart.querySelector("figcaption")!);
-    expect(caption.getByText(/-10\.00%/)).toHaveClass("text-destructive");
+    expect(caption.getByText(/-10\.00%/)).toHaveClass("text-loss");
     expect(caption.getByText("(down)", { exact: false })).toBeInTheDocument();
   });
 

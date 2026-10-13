@@ -1,22 +1,18 @@
 import { useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 
+import { FormField } from "@/components/auth/FormField";
+import { PasswordInput } from "@/components/auth/PasswordInput";
+import { PasswordRequirement } from "@/components/auth/PasswordRequirement";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/auth-context";
-
-/** Minimum password length enforced by Supabase's default policy. */
-const MIN_PASSWORD_LENGTH = 6;
-
-/** Map Supabase's "same password" error to a friendly, actionable message. */
-function friendlyUpdateError(error: unknown): string {
-  const message = error instanceof Error ? error.message : "";
-  if (/different from the old password|same[_ ]password/i.test(message)) {
-    return "New password must be different from your current password.";
-  }
-  return message || "Couldn't update the password.";
-}
+import { useFieldValidation } from "@/hooks/useFieldValidation";
+import { SAME_PASSWORD, authErrorMessage } from "@/lib/authErrors";
+import {
+  confirmPasswordError,
+  newPasswordError,
+  requiredPasswordError,
+} from "@/lib/validation";
 
 /**
  * Collapsed password control for the account page. Shows a "Password" row with a
@@ -34,10 +30,22 @@ export function PasswordSection() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const fields = useFieldValidation(
+    {
+      "current-password": () => requiredPasswordError(currentPassword),
+      "new-password": () =>
+        newPasswordError(newPassword) ??
+        (newPassword === currentPassword ? SAME_PASSWORD : null),
+      "confirm-password": () => confirmPasswordError(newPassword, confirm),
+    },
+    { live: { "confirm-password": true } },
+  );
+
   function resetFields() {
     setCurrentPassword("");
     setNewPassword("");
     setConfirm("");
+    fields.reset();
   }
 
   function open() {
@@ -61,20 +69,9 @@ export function PasswordSection() {
       setError("You must be signed in to change your password.");
       return;
     }
-    if (!currentPassword || !newPassword || !confirm) {
-      setError("All fields are required.");
-      return;
-    }
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
-      return;
-    }
-    if (newPassword !== confirm) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (newPassword === currentPassword) {
-      setError("New password must be different from your current password.");
+    const invalid = fields.validateAll();
+    if (invalid) {
+      document.getElementById(invalid)?.focus();
       return;
     }
 
@@ -95,7 +92,7 @@ export function PasswordSection() {
       setEditing(false);
       setUpdated(true);
     } catch (err) {
-      setError(friendlyUpdateError(err));
+      setError(authErrorMessage("update", err));
     } finally {
       setSubmitting(false);
     }
@@ -123,54 +120,73 @@ export function PasswordSection() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="current-password">Current password</Label>
-        <Input
-          id="current-password"
-          type="password"
-          autoComplete="current-password"
-          value={currentPassword}
-          onChange={(e) => setCurrentPassword(e.target.value)}
-          placeholder="••••••••"
-          disabled={submitting}
-        />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="new-password">New password</Label>
-        <Input
-          id="new-password"
-          type="password"
-          autoComplete="new-password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          placeholder="••••••••"
-          disabled={submitting}
-        />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="confirm-password">Confirm new password</Label>
-        <Input
-          id="confirm-password"
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          placeholder="••••••••"
-          disabled={submitting}
-        />
-      </div>
-
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
           {error}
         </p>
       )}
 
+      <FormField
+        id="current-password"
+        label="Current password"
+        error={fields.errorFor("current-password", !!currentPassword)}
+      >
+        {(control) => (
+          <PasswordInput
+            {...control}
+            name="current-password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            onBlur={() => fields.blur("current-password")}
+            disabled={submitting}
+          />
+        )}
+      </FormField>
+      <FormField
+        id="new-password"
+        label="New password"
+        error={fields.errorFor("new-password", !!newPassword)}
+        hint={<PasswordRequirement password={newPassword} />}
+      >
+        {(control) => (
+          <PasswordInput
+            {...control}
+            name="new-password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            onBlur={() => fields.blur("new-password")}
+            disabled={submitting}
+          />
+        )}
+      </FormField>
+      <FormField
+        id="confirm-password"
+        label="Confirm new password"
+        error={fields.errorFor("confirm-password", !!confirm)}
+      >
+        {(control) => (
+          <PasswordInput
+            {...control}
+            name="confirm-password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            onBlur={() => fields.blur("confirm-password")}
+            disabled={submitting}
+          />
+        )}
+      </FormField>
+
       <div className="flex gap-2">
-        <Button type="submit" disabled={submitting}>
-          {submitting && <Loader2 className="animate-spin" />}
-          Update password
+        <Button type="submit" disabled={submitting} aria-busy={submitting}>
+          {submitting && <Loader2 aria-hidden="true" className="animate-spin" />}
+          {submitting ? "Updating…" : "Update password"}
         </Button>
         <Button type="button" variant="outline" onClick={cancel} disabled={submitting}>
           Cancel

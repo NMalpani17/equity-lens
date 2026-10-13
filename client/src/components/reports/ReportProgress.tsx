@@ -22,7 +22,7 @@ export function ReportProgress({ items }: { items: AgentProgress[] }) {
               />
             )}
             {item.state === "done" && (
-              <Check aria-hidden="true" className="size-4 text-emerald-600" />
+              <Check aria-hidden="true" className="size-4 text-primary" />
             )}
             {item.state === "failed" && (
               <X aria-hidden="true" className="size-4 text-destructive" />

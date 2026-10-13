@@ -16,7 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HealthIndicator } from "@/components/HealthIndicator";
+import { Logo } from "@/components/Logo";
 import { useAuth } from "@/context/auth-context";
 
 const NAV_ITEMS = [
@@ -25,7 +25,7 @@ const NAV_ITEMS = [
   { to: "/reports", label: "Reports", end: false },
 ];
 
-/** App header: brand, main navigation, system status dot, and user menu. */
+/** App header: brand, main navigation, and user menu. */
 export function Header() {
   const { user, isDemo, signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
@@ -45,18 +45,20 @@ export function Header() {
   const initial = (isDemo ? "D" : (user?.email?.[0] ?? "?")).toUpperCase();
 
   return (
-    <header className="border-b">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:p-4">
+    <header className="border-b bg-card">
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-stretch justify-between gap-2 px-4 sm:gap-6 sm:px-6">
         <Link
           to="/"
-          className="whitespace-nowrap rounded-sm text-base font-bold tracking-tight sm:text-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="flex items-center whitespace-nowrap rounded-sm transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          Equity Lens
+          <Logo compact />
         </Link>
 
+        {/* Scrolls sideways on narrow screens with no visible scrollbar, and
+            never vertically: the links are exactly the header's height. */}
         <nav
           aria-label="Main"
-          className="mr-auto flex min-w-0 items-center gap-0.5 overflow-x-auto sm:gap-1"
+          className="no-scrollbar mr-auto flex min-w-0 items-stretch gap-1 overflow-x-auto overflow-y-hidden sm:gap-2"
         >
           {NAV_ITEMS.map((item) => (
             <NavLink
@@ -64,8 +66,10 @@ export function Header() {
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `whitespace-nowrap rounded-md px-2 py-1.5 text-sm transition-colors sm:px-3 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  isActive ? "bg-accent font-medium" : "text-muted-foreground"
+                `flex items-center whitespace-nowrap border-b-2 px-2 text-sm transition-colors sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                  isActive
+                    ? "border-brand font-semibold text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
                 }`
               }
             >
@@ -74,8 +78,7 @@ export function Header() {
           ))}
         </nav>
 
-        <div className="flex shrink-0 items-center gap-1">
-          <HealthIndicator />
+        <div className="flex shrink-0 items-center">
           <TooltipProvider>
             <Tooltip>
               <DropdownMenu>

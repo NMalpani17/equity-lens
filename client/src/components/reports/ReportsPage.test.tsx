@@ -2,8 +2,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-// The header's status dot polls /api/health; not under test here.
-vi.mock("@/components/HealthIndicator", () => ({ HealthIndicator: () => null }));
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
 vi.mock("@/lib/reportsApi", () => ({
   listReports: vi.fn(),
@@ -312,7 +310,7 @@ describe("ReportsPage", () => {
     fireEvent.click(within(stock).getByRole("button", { name: /Market data D2/ }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/NVDA price history, 6mo/)).toBeVisible();
-    expect(within(dialog).getByText("+20.00%")).toHaveClass("text-emerald-600");
+    expect(within(dialog).getByText("+20.00%")).toHaveClass("text-gain");
     expect(within(dialog).getByText("Sep 30, 2026")).toBeVisible();
   });
 
@@ -321,9 +319,7 @@ describe("ReportsPage", () => {
     renderAt("/reports/NVDA");
 
     const caption = await screen.findByText("NVDA · 6 months");
-    const section = screen
-      .getByRole("heading", { name: "Stock performance" })
-      .closest(".rounded-xl") as HTMLElement;
+    const section = screen.getByRole("region", { name: "Stock performance" });
     expect(section).toContainElement(caption);
   });
 

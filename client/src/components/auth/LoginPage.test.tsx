@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 // Control the auth context so the page can be tested in isolation.
@@ -11,6 +18,7 @@ const authValue = {
   isPasswordRecovery: false,
   signIn: vi.fn(),
   signUp: vi.fn(),
+  signInWithGoogle: vi.fn(),
   signInWithDemo: vi.fn(),
   signOut: vi.fn(),
 };
@@ -20,6 +28,7 @@ vi.mock("@/context/auth-context", () => ({
 }));
 
 import { LoginPage } from "./LoginPage";
+import { AuthFailure } from "@/lib/authErrors";
 import { clearSignupIntent, rememberSignupIntent } from "@/lib/authIntent";
 import { setAuthFlash } from "@/lib/authFlash";
 
@@ -31,9 +40,30 @@ function renderPage() {
   );
 }
 
+const emailInput = () => screen.getByLabelText("Email");
+const passwordInput = () => screen.getByLabelText("Password");
+const confirmInput = () => screen.getByLabelText("Confirm password");
+
+function type(input: HTMLElement, value: string) {
+  fireEvent.change(input, { target: { value } });
+}
+
 function fillCredentials(email = "user@example.com", password = "secret123") {
-  fireEvent.change(screen.getByLabelText("Email"), { target: { value: email } });
-  fireEvent.change(screen.getByLabelText("Password"), { target: { value: password } });
+  type(emailInput(), email);
+  type(passwordInput(), password);
+}
+
+function switchToSignup() {
+  fireEvent.click(screen.getByRole("tab", { name: "Sign up" }));
+}
+
+function fillSignup(
+  email = "new@example.com",
+  password = "pw123456",
+  confirm = password,
+) {
+  fillCredentials(email, password);
+  type(confirmInput(), confirm);
 }
 
 /** Render the login page inside routes so post-auth redirects are observable. */
@@ -55,15 +85,50 @@ beforeEach(() => {
   authValue.user = null;
   authValue.loading = false;
   authValue.signIn.mockResolvedValue(undefined);
-  authValue.signUp.mockResolvedValue(undefined);
+  authValue.signUp.mockResolvedValue({ needsConfirmation: false });
   authValue.signInWithDemo.mockResolvedValue(undefined);
+  authValue.signInWithGoogle.mockResolvedValue(undefined);
 });
 
-describe("LoginPage", () => {
+describe("LoginPage: log in", () => {
   it("shows the login form by default", () => {
     renderPage();
     expect(screen.getByText("Log in to view your portfolio.")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Log in" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
+  });
+
+  it("links to Privacy and Terms in the footer", () => {
+    renderPage();
+    const legal = screen.getByRole("navigation", { name: "Legal" });
+    expect(within(legal).getByRole("link", { name: "Privacy" })).toHaveAttribute(
+      "href",
+      "/privacy",
+    );
+    expect(within(legal).getByRole("link", { name: "Terms" })).toHaveAttribute(
+      "href",
+      "/terms",
+    );
+  });
+
+  it("shows the tagline under the logo on log in and sign up", () => {
+    renderPage();
+    const tagline = "AI research on earnings calls and your portfolio.";
+    expect(screen.getByText(tagline)).toBeInTheDocument();
+    switchToSignup();
+    expect(screen.getByText(tagline)).toBeInTheDocument();
+  });
+
+  it("uses the right input types and autocomplete", () => {
+    renderPage();
+    expect(emailInput()).toHaveAttribute("type", "email");
+    expect(emailInput()).toHaveAttribute("autocomplete", "email");
+    expect(passwordInput()).toHaveAttribute("type", "password");
+    expect(passwordInput()).toHaveAttribute("autocomplete", "current-password");
   });
 
   it("signs in with the entered credentials", async () => {
@@ -76,14 +141,77 @@ describe("LoginPage", () => {
     );
   });
 
-  it("requires both email and password", () => {
+  it("accepts an existing password shorter than the new-password rule", async () => {
+    renderPage();
+    fillCredentials("me@example.com", "short");
+    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+    await waitFor(() =>
+      expect(authValue.signIn).toHaveBeenCalledWith("me@example.com", "short"),
+    );
+  });
+
+  it("shows an error per field on submit and focuses the first one", () => {
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Log in" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Email and password are required.",
-    );
+    expect(screen.getByText("Enter your email address.")).toBeInTheDocument();
+    expect(screen.getByText("Enter your password.")).toBeInTheDocument();
+    expect(emailInput()).toHaveAttribute("aria-invalid", "true");
+    expect(emailInput()).toHaveFocus();
     expect(authValue.signIn).not.toHaveBeenCalled();
+  });
+
+  it("validates a field when the user leaves it, not before", () => {
+    renderPage();
+    type(emailInput(), "not-an-email");
+    expect(screen.queryByText("Enter a valid email address.")).not.toBeInTheDocument();
+
+    fireEvent.blur(emailInput());
+    expect(screen.getByText("Enter a valid email address.")).toBeInTheDocument();
+    expect(emailInput()).toHaveAccessibleDescription("Enter a valid email address.");
+  });
+
+  it("shows the forgot-password link under the password field", () => {
+    renderPage();
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
+  });
+
+  it("toggles password visibility", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(passwordInput()).toHaveAttribute("type", "text");
+  });
+
+  it("shows a loading state while logging in", async () => {
+    let finish: () => void = () => {};
+    authValue.signIn.mockReturnValue(new Promise<void>((r) => (finish = r)));
+    renderPage();
+    fillCredentials();
+    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+    const button = await screen.findByRole("button", { name: "Logging in…" });
+    expect(button).toBeDisabled();
+    finish();
+    expect(await screen.findByRole("button", { name: "Log in" })).toBeEnabled();
+  });
+
+  it("shows a generic error and keeps what was entered", async () => {
+    authValue.signIn.mockRejectedValue(
+      new AuthFailure("Email not confirmed", "email_not_confirmed", 400),
+    );
+    renderPage();
+    fillCredentials("me@example.com", "pw123456");
+    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /^Incorrect email or password/,
+    );
+    expect(emailInput()).toHaveValue("me@example.com");
+    expect(passwordInput()).toHaveValue("pw123456");
   });
 
   it("starts the demo session", async () => {
@@ -93,26 +221,117 @@ describe("LoginPage", () => {
     await waitFor(() => expect(authValue.signInWithDemo).toHaveBeenCalledOnce());
   });
 
-  it("switches to sign up and creates an account", async () => {
+  it("shows a one-shot flash message (e.g. after account deletion)", () => {
+    setAuthFlash("Your account has been deleted.");
     renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
 
-    // The submit action becomes "Create account" in sign-up mode.
-    fillCredentials("new@example.com", "pw123456");
+    expect(screen.getByText("Your account has been deleted.")).toBeInTheDocument();
+  });
+});
+
+describe("LoginPage: sign up", () => {
+  it("switches to sign up with password, confirm and the requirement", () => {
+    renderPage();
+    switchToSignup();
+
+    expect(
+      screen.getByText("Create an account to start tracking your holdings."),
+    ).toBeInTheDocument();
+    expect(passwordInput()).toHaveAttribute("autocomplete", "new-password");
+    expect(confirmInput()).toHaveAttribute("autocomplete", "new-password");
+    expect(screen.getByText(/8–64 characters/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Forgot password?" })).toBeNull();
+    // Every password field has its own toggle.
+    expect(screen.getAllByRole("button", { name: "Show password" })).toHaveLength(2);
+  });
+
+  it("supports arrow keys on the log in / sign up switch", () => {
+    renderPage();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Log in" }), {
+      key: "ArrowRight",
+    });
+
+    const signupTab = screen.getByRole("tab", { name: "Sign up" });
+    expect(signupTab).toHaveAttribute("aria-selected", "true");
+    expect(signupTab).toHaveFocus();
+  });
+
+  it("creates an account", async () => {
+    renderPage();
+    switchToSignup();
+    fillSignup("new@example.com", "pw123456");
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     await waitFor(() =>
       expect(authValue.signUp).toHaveBeenCalledWith("new@example.com", "pw123456"),
     );
-    expect(await screen.findByText(/Account created/)).toBeInTheDocument();
   });
 
-  it("shows a forgot-password link in login mode", () => {
+  it("updates the password requirement while typing", () => {
     renderPage();
-    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute(
-      "href",
-      "/forgot-password",
+    switchToSignup();
+
+    type(passwordInput(), "short");
+    expect(screen.getByText(/8–64 characters/)).toHaveTextContent("(not met yet)");
+    type(passwordInput(), "long enough");
+    expect(screen.getByText(/8–64 characters/)).toHaveTextContent("(met)");
+  });
+
+  it("says passwords don't match while typing the confirmation", () => {
+    renderPage();
+    switchToSignup();
+    type(passwordInput(), "pw123456");
+    type(confirmInput(), "pw12");
+
+    expect(screen.getByText("Passwords don't match.")).toBeInTheDocument();
+
+    type(confirmInput(), "pw123456");
+    expect(screen.queryByText("Passwords don't match.")).not.toBeInTheDocument();
+  });
+
+  it("rejects a password under 8 characters before calling Supabase", () => {
+    renderPage();
+    switchToSignup();
+    fillSignup("new@example.com", "pw123");
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(screen.getByText("Use at least 8 characters.")).toBeInTheDocument();
+    expect(passwordInput()).toHaveFocus();
+    expect(authValue.signUp).not.toHaveBeenCalled();
+  });
+
+  it("shows a check-your-email screen when confirmation is required", async () => {
+    authValue.signUp.mockResolvedValue({ needsConfirmation: true });
+    renderPage();
+    switchToSignup();
+    fillSignup("new@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Check your email" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("new@example.com")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to log in" }));
+    expect(screen.getByRole("tab", { name: "Log in" })).toHaveAttribute(
+      "aria-selected",
+      "true",
     );
+    expect(emailInput()).toHaveValue("new@example.com");
+  });
+
+  it("never says an email is already registered", async () => {
+    authValue.signUp.mockRejectedValue(
+      new AuthFailure("User already registered", "user_already_exists", 422),
+    );
+    renderPage();
+    switchToSignup();
+    fillSignup("taken@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/couldn't create an account/);
+    expect(alert).not.toHaveTextContent(/already registered/);
   });
 
   it("opens in sign-up mode when a signup intent is set (from the demo banner)", () => {
@@ -121,21 +340,78 @@ describe("LoginPage", () => {
 
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
   });
+});
 
-  it("shows a one-shot flash message (e.g. after account deletion)", () => {
-    setAuthFlash("Your account has been deleted.");
+describe("LoginPage: Google sign-in", () => {
+  it("offers Continue with Google on both log in and sign up", () => {
     renderPage();
-
-    expect(screen.getByText("Your account has been deleted.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+    switchToSignup();
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeVisible();
   });
 
-  it("surfaces an error when sign in fails", async () => {
-    authValue.signIn.mockRejectedValue(new Error("Invalid login credentials"));
+  it("starts the Google OAuth flow", async () => {
     renderPage();
-    fillCredentials();
-    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
 
-    expect(await screen.findByText("Invalid login credentials")).toBeInTheDocument();
+    await waitFor(() => expect(authValue.signInWithGoogle).toHaveBeenCalledOnce());
+  });
+
+  it("is usable again after Back from Google (page restored from the bfcache)", async () => {
+    renderPage();
+    const google = screen.getByRole("button", { name: "Continue with Google" });
+    fireEvent.click(google);
+
+    // signInWithGoogle resolved but the browser is navigating away: still busy.
+    await waitFor(() => expect(google).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Try demo" })).toBeDisabled();
+
+    // Coming back with Back fires pageshow with persisted = true.
+    const pageshow = new Event("pageshow");
+    Object.defineProperty(pageshow, "persisted", { value: true });
+    act(() => {
+      window.dispatchEvent(pageshow);
+    });
+
+    expect(google).toBeEnabled();
+    expect(google).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("button", { name: "Try demo" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Log in" })).toBeEnabled();
+  });
+
+  it("shows a generic error when Google can't be started", async () => {
+    authValue.signInWithGoogle.mockRejectedValue(
+      new AuthFailure(
+        "Unsupported provider: provider is not enabled",
+        "validation_failed",
+        400,
+      ),
+    );
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Sign-in didn't complete/);
+    expect(alert).not.toHaveTextContent(/provider/);
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+  });
+
+  it("shows a generic error when Google (or an email link) returns one", () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          "/login?error=access_denied&error_description=Email+not+found",
+        ]}
+      >
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/Sign-in didn't complete/);
+    expect(alert).not.toHaveTextContent(/not found/);
   });
 });
 
@@ -155,11 +431,12 @@ describe("LoginPage post-auth redirect", () => {
   it("sends a sign-up to the dashboard", async () => {
     authValue.signUp.mockImplementation(async () => {
       authValue.user = { email: "new@example.com" };
+      return { needsConfirmation: false };
     });
     renderWithRoutes();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
-    fillCredentials("new@example.com", "pw123456");
+    switchToSignup();
+    fillSignup("new@example.com", "pw123456");
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     expect(await screen.findByText("dashboard-home")).toBeInTheDocument();

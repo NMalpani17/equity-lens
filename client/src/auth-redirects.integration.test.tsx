@@ -60,7 +60,7 @@ const supa = vi.hoisted(() => {
       signUp: async ({ email }: { email: string }) => {
         session = { user: { ...loggedInUser, email } };
         emit();
-        return { error: null };
+        return { data: { session }, error: null };
       },
       signOut: async () => {
         session = null;
@@ -199,8 +199,11 @@ describe("auth redirects", () => {
     renderApp("/login");
     expect(await loginPage()).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign up" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Sign up" }));
     fillLogin("new@example.com", "pw123456");
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "pw123456" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     expect(await dashboard()).toBeInTheDocument();

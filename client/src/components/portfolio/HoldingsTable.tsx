@@ -88,7 +88,7 @@ export function HoldingsTable({
                       )}
                     </span>
                     <div>
-                      <div className="font-medium">
+                      <div className="font-semibold">
                         {position.ticker}
                         <span className="ml-2 text-xs font-normal text-muted-foreground">
                           {position.lots.length}{" "}

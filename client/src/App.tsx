@@ -4,6 +4,8 @@ import { LoginPage } from "@/components/auth/LoginPage";
 import { ForgotPasswordPage } from "@/components/auth/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PrivacyPage } from "@/components/legal/PrivacyPage";
+import { TermsPage } from "@/components/legal/TermsPage";
 import { DashboardPage } from "@/components/DashboardPage";
 import { AccountPage } from "@/components/AccountPage";
 import { ChatPage } from "@/components/chat/ChatPage";
@@ -15,6 +17,9 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      {/* Public: readable without signing in. */}
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route
         path="/"
         element={

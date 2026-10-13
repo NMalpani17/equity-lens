@@ -623,7 +623,8 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:3001/api/health
 ```
 
 If the AI service is down, a signed-in caller gets `503` with
-`status: "degraded"`, which the client's status dot shows as amber "waking up".
+`status: "degraded"`. The client doesn't call this endpoint; it's for checking
+both hops by hand.
 
 `GET /api/live` answers `200 {"status":"ok","service":"equity-lens-api"}` as
 long as the process is up and checks nothing else. It's the platform health

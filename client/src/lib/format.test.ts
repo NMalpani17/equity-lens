@@ -36,8 +36,8 @@ describe("format helpers", () => {
   });
 
   it("colors by sign", () => {
-    expect(changeColor(5)).toBe("text-emerald-600");
-    expect(changeColor(-5)).toBe("text-destructive");
+    expect(changeColor(5)).toBe("text-gain");
+    expect(changeColor(-5)).toBe("text-loss");
     expect(changeColor(0)).toBe("text-muted-foreground");
   });
 });

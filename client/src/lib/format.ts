@@ -63,8 +63,8 @@ export function formatTimestampDate(value: string | null | undefined): string {
 
 /** Tailwind text color reflecting gain (green), loss (red), or neutral. */
 export function changeColor(value: number): string {
-  if (value > 0) return "text-emerald-600";
-  if (value < 0) return "text-destructive";
+  if (value > 0) return "text-gain";
+  if (value < 0) return "text-loss";
   return "text-muted-foreground";
 }
 

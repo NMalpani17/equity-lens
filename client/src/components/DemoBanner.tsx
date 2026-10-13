@@ -28,7 +28,7 @@ export function DemoBanner() {
   return (
     <div
       role="status"
-      className="flex items-center justify-center gap-1.5 whitespace-nowrap bg-amber-500/15 px-4 py-1 text-center text-xs text-amber-900 dark:text-amber-200 md:flex-wrap md:gap-x-3 md:gap-y-1 md:whitespace-normal md:py-2 md:text-sm"
+      className="flex items-center justify-center gap-1.5 whitespace-nowrap border-b bg-info px-4 py-1 text-center text-xs text-info-foreground md:flex-wrap md:gap-x-3 md:gap-y-1 md:whitespace-normal md:py-2 md:text-sm"
     >
       {/* Phones: one slim line so the banner doesn't crowd the screen. */}
       <span className="md:hidden">Demo mode ·</span>
