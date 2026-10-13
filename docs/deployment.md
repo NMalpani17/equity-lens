@@ -766,9 +766,12 @@ to Supabase's callback, then back to `/login`.
 
 1. **Google Cloud Console → Google Auth Platform** (formerly APIs & Services
    → OAuth consent screen):
-   - **Branding:** app name and support email. Under **Authorized domains**,
-     add `<project-ref>.supabase.co` (and `equitylens-research.vercel.app` if
-     you set a home page or privacy policy link).
+   - **Branding:** app name and support email; home page
+     `https://equitylens-research.vercel.app`, privacy policy
+     `https://equitylens-research.vercel.app/privacy` and terms of service
+     `https://equitylens-research.vercel.app/terms` (public pages, no sign-in).
+     Under **Authorized domains**, add `<project-ref>.supabase.co` and
+     `equitylens-research.vercel.app`.
    - **Data access:** scopes `openid`, `.../auth/userinfo.email` and
      `.../auth/userinfo.profile` (no sensitive scopes, so no verification).
    - **Audience:** publishing status **In production**; while it's

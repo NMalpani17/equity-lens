@@ -68,7 +68,9 @@ Click **Try demo**; no sign-up needed.
 - **Accounts and instant demo.** Supabase Auth with email and password or
   Google, password reset and account deletion. Forms validate as you go, and
   errors never reveal whether an email is registered. "Try demo" gives each
-  visitor a private sample portfolio.
+  visitor a private sample portfolio. Plain-language
+  [Privacy](https://equitylens-research.vercel.app/privacy) and
+  [Terms](https://equitylens-research.vercel.app/terms) pages are public.
 - **Graceful degradation.** One failing ticker or service never breaks the
   page, and a cold AI service is woken as soon as a user signs in.
 

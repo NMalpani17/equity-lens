@@ -5,6 +5,7 @@ import { Loader2, MailCheck } from "lucide-react";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { FormField } from "@/components/auth/FormField";
 import { GoogleIcon } from "@/components/auth/GoogleIcon";
+import { LegalLinks } from "@/components/legal/LegalPage";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { PasswordRequirement } from "@/components/auth/PasswordRequirement";
 import { Button } from "@/components/ui/button";
@@ -198,6 +199,7 @@ export function LoginPage() {
       title={copy.title}
       description={copy.description}
       tagline="AI research on earnings calls and your portfolio."
+      footer={<LegalLinks />}
       top={<ModeSwitch mode={mode} onChange={switchMode} disabled={busy} />}
     >
       {notice && (

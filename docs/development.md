@@ -271,7 +271,9 @@ npm --prefix client run dev                                                     
 
 Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
 or click **Try demo**. After authenticating you reach the **portfolio dashboard**
-(positions, summary cards, and add/edit/delete). In demo mode a slim banner
+(positions, summary cards, and add/edit/delete). `/privacy` and `/terms` are
+public (linked from the login page footer); when what the app stores changes,
+update `client/src/components/legal/PrivacyPage.tsx` and its date. In demo mode a slim banner
 invites you to sign up for your own account. To check each hop
 (`api → ai-service`), call `GET /api/health` with a session token; see
 [api.md](./api.md).

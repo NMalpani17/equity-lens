@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 // Control the auth context so the page can be tested in isolation.
@@ -93,6 +93,19 @@ describe("LoginPage: log in", () => {
     );
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
+  });
+
+  it("links to Privacy and Terms in the footer", () => {
+    renderPage();
+    const legal = screen.getByRole("navigation", { name: "Legal" });
+    expect(within(legal).getByRole("link", { name: "Privacy" })).toHaveAttribute(
+      "href",
+      "/privacy",
+    );
+    expect(within(legal).getByRole("link", { name: "Terms" })).toHaveAttribute(
+      "href",
+      "/terms",
+    );
   });
 
   it("shows the tagline under the logo on log in and sign up", () => {

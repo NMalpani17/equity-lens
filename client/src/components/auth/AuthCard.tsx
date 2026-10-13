@@ -10,6 +10,8 @@ interface AuthCardProps {
   top?: ReactNode;
   /** One muted line under the logo (the login / sign-up page only). */
   tagline?: string;
+  /** Small print under the card (e.g. the Privacy and Terms links). */
+  footer?: ReactNode;
   children: ReactNode;
 }
 
@@ -19,6 +21,7 @@ export function AuthCard({
   description,
   top,
   tagline,
+  footer,
   children,
 }: AuthCardProps) {
   return (
@@ -37,6 +40,7 @@ export function AuthCard({
         </CardHeader>
         <CardContent className="flex flex-col gap-5">{children}</CardContent>
       </Card>
+      {footer}
     </div>
   );
 }
