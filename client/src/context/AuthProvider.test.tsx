@@ -10,6 +10,7 @@ const authApi = vi.hoisted(() => ({
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
   signInAnonymously: vi.fn(),
+  signInWithOAuth: vi.fn(),
   signUp: vi.fn(),
   resetPasswordForEmail: vi.fn(),
   updateUser: vi.fn(),
@@ -59,6 +60,7 @@ function Consumer() {
         signin
       </button>
       <button onClick={() => run(() => auth.signInWithDemo())}>demo</button>
+      <button onClick={() => run(() => auth.signInWithGoogle())}>google</button>
       <button onClick={() => run(() => auth.sendPasswordReset("a@b.com"))}>
         reset
       </button>
@@ -86,6 +88,7 @@ beforeEach(() => {
   });
   authApi.signInWithPassword.mockResolvedValue({ error: null });
   authApi.signInAnonymously.mockResolvedValue({ error: null });
+  authApi.signInWithOAuth.mockResolvedValue({ data: {}, error: null });
   authApi.signUp.mockResolvedValue({ data: { session: null }, error: null });
   authApi.resetPasswordForEmail.mockResolvedValue({ error: null });
   authApi.updateUser.mockResolvedValue({ error: null });
@@ -147,6 +150,18 @@ describe("AuthProvider", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("signup")).toHaveTextContent("signup:signed-in"),
+    );
+  });
+
+  it("signs in with Google and returns to /login", async () => {
+    renderProvider();
+    fireClick("google");
+
+    await waitFor(() =>
+      expect(authApi.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        options: { redirectTo: expect.stringMatching(/\/login$/) },
+      }),
     );
   });
 

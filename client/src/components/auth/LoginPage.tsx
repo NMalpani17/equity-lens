@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Loader2, MailCheck } from "lucide-react";
 
 import { AuthCard } from "@/components/auth/AuthCard";
 import { FormField } from "@/components/auth/FormField";
+import { GoogleIcon } from "@/components/auth/GoogleIcon";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { PasswordRequirement } from "@/components/auth/PasswordRequirement";
 import { Button } from "@/components/ui/button";
@@ -41,9 +42,22 @@ const COPY: Record<
   },
 };
 
-/** Email + password auth (log in or sign up) with an anonymous demo shortcut. */
+/** True when Supabase sent the user back here with an error (query or hash). */
+function hasRedirectError(search: string, hash: string): boolean {
+  return (
+    new URLSearchParams(search).has("error") ||
+    new URLSearchParams(hash.replace(/^#/, "")).has("error")
+  );
+}
+
+/**
+ * Email + password auth (log in or sign up), Google sign-in, and an anonymous
+ * demo shortcut.
+ */
 export function LoginPage() {
-  const { user, loading, signIn, signUp, signInWithDemo } = useAuth();
+  const { user, loading, signIn, signUp, signInWithGoogle, signInWithDemo } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Open in sign-up mode when arriving via the demo banner's "Sign up".
   const [mode, setMode] = useState<Mode>(() =>
@@ -55,6 +69,7 @@ export function LoginPage() {
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // The address a confirmation email was sent to (email confirmation on).
@@ -80,6 +95,18 @@ export function LoginPage() {
       setNotice(flash);
     }
   }, []);
+
+  useEffect(() => {
+    // A Google sign-in or email link that failed comes back with ?error= or
+    // #error=. Say so generically and clear it from the address bar.
+    if (hasRedirectError(location.search, location.hash)) {
+      setError(authErrorMessage("redirect", null));
+      navigate(
+        { pathname: location.pathname, search: "", hash: "" },
+        { replace: true },
+      );
+    }
+  }, [location.search, location.hash, location.pathname, navigate]);
 
   // After any successful auth (login, sign-up, demo) the user always lands on the
   // dashboard. A logged-in user who visits /login is sent there too.
@@ -124,6 +151,19 @@ export function LoginPage() {
     }
   }
 
+  async function handleGoogle() {
+    setError(null);
+    setNotice(null);
+    setGoogleLoading(true);
+    try {
+      // Navigates to Google on success; the page stays busy until it does.
+      await signInWithGoogle();
+    } catch (err) {
+      setError(authErrorMessage("redirect", err));
+      setGoogleLoading(false);
+    }
+  }
+
   async function handleDemo() {
     setError(null);
     setNotice(null);
@@ -150,7 +190,7 @@ export function LoginPage() {
     );
   }
 
-  const busy = submitting || demoLoading;
+  const busy = submitting || demoLoading || googleLoading;
   const copy = COPY[mode];
 
   return (
@@ -265,16 +305,32 @@ export function LoginPage() {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleDemo}
-        disabled={busy}
-        aria-busy={demoLoading}
-      >
-        {demoLoading && <Loader2 aria-hidden="true" className="animate-spin" />}
-        Try demo
-      </Button>
+      <div className="flex flex-col gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleGoogle}
+          disabled={busy}
+          aria-busy={googleLoading}
+        >
+          {googleLoading ? (
+            <Loader2 aria-hidden="true" className="animate-spin" />
+          ) : (
+            <GoogleIcon />
+          )}
+          Continue with Google
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleDemo}
+          disabled={busy}
+          aria-busy={demoLoading}
+        >
+          {demoLoading && <Loader2 aria-hidden="true" className="animate-spin" />}
+          Try demo
+        </Button>
+      </div>
     </AuthCard>
   );
 }

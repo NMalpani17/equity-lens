@@ -65,8 +65,10 @@ Click **Try demo**; no sign-up needed.
 - **Portfolio tracking.** Lots grouped into positions with average cost,
   gain/loss and today's change. Live quotes come from Finnhub, with a yfinance
   fallback.
-- **Accounts and instant demo.** Supabase Auth with password reset and account
-  deletion. "Try demo" gives each visitor a private sample portfolio.
+- **Accounts and instant demo.** Supabase Auth with email and password or
+  Google, password reset and account deletion. Forms validate as you go, and
+  errors never reveal whether an email is registered. "Try demo" gives each
+  visitor a private sample portfolio.
 - **Graceful degradation.** One failing ticker or service never breaks the
   page, and a cold AI service is woken as soon as a user signs in.
 

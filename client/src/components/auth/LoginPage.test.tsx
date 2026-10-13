@@ -11,6 +11,7 @@ const authValue = {
   isPasswordRecovery: false,
   signIn: vi.fn(),
   signUp: vi.fn(),
+  signInWithGoogle: vi.fn(),
   signInWithDemo: vi.fn(),
   signOut: vi.fn(),
 };
@@ -79,6 +80,7 @@ beforeEach(() => {
   authValue.signIn.mockResolvedValue(undefined);
   authValue.signUp.mockResolvedValue({ needsConfirmation: false });
   authValue.signInWithDemo.mockResolvedValue(undefined);
+  authValue.signInWithGoogle.mockResolvedValue(undefined);
 });
 
 describe("LoginPage: log in", () => {
@@ -309,6 +311,57 @@ describe("LoginPage: sign up", () => {
     renderPage();
 
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
+  });
+});
+
+describe("LoginPage: Google sign-in", () => {
+  it("offers Continue with Google on both log in and sign up", () => {
+    renderPage();
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+    switchToSignup();
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+  });
+
+  it("starts the Google OAuth flow", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+
+    await waitFor(() => expect(authValue.signInWithGoogle).toHaveBeenCalledOnce());
+  });
+
+  it("shows a generic error when Google can't be started", async () => {
+    authValue.signInWithGoogle.mockRejectedValue(
+      new AuthFailure(
+        "Unsupported provider: provider is not enabled",
+        "validation_failed",
+        400,
+      ),
+    );
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Sign-in didn't complete/);
+    expect(alert).not.toHaveTextContent(/provider/);
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+  });
+
+  it("shows a generic error when Google (or an email link) returns one", () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          "/login?error=access_denied&error_description=Email+not+found",
+        ]}
+      >
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/Sign-in didn't complete/);
+    expect(alert).not.toHaveTextContent(/not found/);
   });
 });
 

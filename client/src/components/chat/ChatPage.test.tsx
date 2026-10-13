@@ -85,6 +85,7 @@ function mockAuth(isDemo = false) {
     isPasswordRecovery: false,
     signIn: vi.fn(),
     signUp: vi.fn(),
+    signInWithGoogle: vi.fn(),
     signInWithDemo: vi.fn(),
     sendPasswordReset: vi.fn(),
     updatePassword: vi.fn(),

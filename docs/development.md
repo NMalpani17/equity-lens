@@ -96,11 +96,16 @@ Authentication uses Supabase Auth. In the Supabase dashboard:
 3. The API verifies access tokens against the project's **JWKS**, so the project
    must use asymmetric JWT signing keys (the default for new projects; legacy
    projects can migrate under **Project Settings → JWT Keys**).
-4. **Password reset:** under **Authentication → URL Configuration**, add the
-   reset page to the allowed **Redirect URLs** (e.g.
-   `http://localhost:5173/reset-password`, plus your deployed origin). The
-   "Forgot password?" link emails a link back to that page; a logged-in user can
-   also change their password from **Account** in the header (hidden in demo).
+4. **Redirect URLs:** under **Authentication → URL Configuration**, allow
+   `http://localhost:5173/reset-password` and `http://localhost:5173/login`
+   (plus the same paths on your deployed origin). The "Forgot password?" link
+   emails a link back to `/reset-password`; Google sign-in and the sign-up
+   confirmation link return to `/login`. A logged-in user can also change
+   their password from **Account** in the header (hidden in demo).
+5. **Google sign-in (optional):** enable the Google provider with an OAuth
+   client from Google Cloud; the exact redirect URI and consent-screen
+   settings are in [deployment.md](deployment.md#google-sign-in). Without it,
+   "Continue with Google" shows a generic error.
 
 ## Transcript search (RAG) setup
 

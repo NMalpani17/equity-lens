@@ -79,6 +79,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         throwOnError(error);
       },
+      signInWithGoogle: async () => {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: `${window.location.origin}/login` },
+        });
+        throwOnError(error);
+      },
       signInWithDemo: async () => {
         // Each visitor gets their own throwaway anonymous user; the API seeds it
         // with a sample portfolio on first load.

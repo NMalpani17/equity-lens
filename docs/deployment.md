@@ -749,11 +749,44 @@ Authentication → URL Configuration:
 | Setting       | Value                                                                                                                      |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Site URL      | `https://equitylens-research.vercel.app` (or your custom domain)                                                           |
-| Redirect URLs | `https://equitylens-research.vercel.app/reset-password`, plus `http://localhost:5173/reset-password` for local development |
+| Redirect URLs | `https://equitylens-research.vercel.app/reset-password` and `https://equitylens-research.vercel.app/login`, plus `http://localhost:5173/reset-password` and `http://localhost:5173/login` for local development |
 
-Also keep: Email provider enabled, **Anonymous sign-ins** enabled ("Try
-demo"), and asymmetric JWT signing keys (the api verifies tokens against the
-project's JWKS).
+`/login` is where Google sign-in and the sign-up confirmation link return;
+`/reset-password` is where the password-reset link lands. A redirect that
+isn't listed falls back to the Site URL.
+
+Also keep: Email provider enabled with **Minimum password length 8**,
+**Anonymous sign-ins** enabled ("Try demo"), and asymmetric JWT signing keys
+(the api verifies tokens against the project's JWKS).
+
+### Google sign-in
+
+"Continue with Google" uses Supabase OAuth: the browser goes to Google, then
+to Supabase's callback, then back to `/login`.
+
+1. **Google Cloud Console → Google Auth Platform** (formerly APIs & Services
+   → OAuth consent screen):
+   - **Branding:** app name and support email. Under **Authorized domains**,
+     add `<project-ref>.supabase.co` (and `equitylens-research.vercel.app` if
+     you set a home page or privacy policy link).
+   - **Data access:** scopes `openid`, `.../auth/userinfo.email` and
+     `.../auth/userinfo.profile` (no sensitive scopes, so no verification).
+   - **Audience:** publishing status **In production**; while it's
+     "Testing", only listed test users can sign in.
+2. **Clients → Create client → Web application**:
+   - **Authorized redirect URIs:** `https://<project-ref>.supabase.co/auth/v1/callback`
+     (copy it exactly from Supabase's Google provider page, "Callback URL").
+   - **Authorized JavaScript origins:** `https://equitylens-research.vercel.app`
+     and `http://localhost:5173`. The redirect flow doesn't need them, but
+     they're harmless and required if Google One Tap is ever added.
+3. **Supabase → Authentication → Sign In / Providers → Google:** enable it
+   and paste the client ID and client secret.
+4. **Supabase → Authentication → URL Configuration:** the two `/login`
+   redirect URLs above.
+
+A Google sign-in whose verified email matches an existing email account
+signs in to that account (Supabase links the identities). A Google-only
+account has no password, so Account settings hides "Change password".
 
 Every table in `public` has row level security enabled with no policies
 (migration `20261007000000_enable_row_level_security`), so the publishable key

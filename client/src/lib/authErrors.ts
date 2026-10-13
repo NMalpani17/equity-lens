@@ -17,7 +17,7 @@ export class AuthFailure extends Error {
   }
 }
 
-export type AuthAction = "login" | "signup" | "reset" | "update" | "oauth";
+export type AuthAction = "login" | "signup" | "reset" | "update" | "redirect";
 
 const GENERIC: Record<AuthAction, string> = {
   login:
@@ -26,7 +26,9 @@ const GENERIC: Record<AuthAction, string> = {
     "We couldn't create an account with those details. If you already have one, log in or reset your password.",
   reset: "We couldn't send the reset link right now. Try again in a moment.",
   update: "We couldn't update your password. Try again in a moment.",
-  oauth: "Google sign-in didn't complete. Try again, or use your email and password.",
+  // A Google sign-in or email link that came back with an error.
+  redirect:
+    "Sign-in didn't complete, or the link has expired. Try again, or log in another way.",
 };
 
 export const RATE_LIMITED = "Too many attempts. Wait a minute and try again.";

@@ -21,6 +21,7 @@ function mockAuth(overrides: Partial<ReturnType<typeof useAuth>>) {
     isPasswordRecovery: false,
     signIn: vi.fn(),
     signUp: vi.fn(),
+    signInWithGoogle: vi.fn(),
     signInWithDemo: vi.fn(),
     sendPasswordReset: vi.fn(),
     updatePassword: vi.fn(),
@@ -58,6 +59,33 @@ describe("AccountPage", () => {
     // Danger zone with the delete-account action.
     expect(screen.getByText("Danger zone")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete account" })).toBeInTheDocument();
+  });
+
+  it("offers no password change to a Google-only account", () => {
+    mockAuth({
+      user: {
+        email: "me@gmail.com",
+        created_at: "2024-02-12T10:30:00.000Z",
+        app_metadata: { provider: "google", providers: ["google"] },
+      } as never,
+    });
+    renderAt();
+
+    expect(screen.queryByRole("button", { name: "Change password" })).toBeNull();
+    expect(screen.getByText(/You sign in with Google/)).toBeInTheDocument();
+  });
+
+  it("keeps the password change for an email account that also linked Google", () => {
+    mockAuth({
+      user: {
+        email: "me@gmail.com",
+        created_at: "2024-02-12T10:30:00.000Z",
+        app_metadata: { provider: "email", providers: ["email", "google"] },
+      } as never,
+    });
+    renderAt();
+
+    expect(screen.getByRole("button", { name: "Change password" })).toBeInTheDocument();
   });
 
   it("redirects demo users away", () => {

@@ -28,6 +28,11 @@ export interface AuthContextValue {
   signUp: (email: string, password: string) => Promise<SignUpResult>;
   /** Sign in with email + password. Throws on failure. */
   signIn: (email: string, password: string) => Promise<void>;
+  /**
+   * Sign in (or sign up) with Google through Supabase OAuth. Redirects away;
+   * Google sends the user back to /login, which forwards to the dashboard.
+   */
+  signInWithGoogle: () => Promise<void>;
   /** Start an anonymous demo session (a fresh temporary user). */
   signInWithDemo: () => Promise<void>;
   /** Email a password-reset link that lands on the reset page. */

@@ -1,4 +1,5 @@
 import { Link, Navigate } from "react-router-dom";
+import type { User } from "@supabase/supabase-js";
 
 import { Header } from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +7,15 @@ import { PasswordSection } from "@/components/account/PasswordSection";
 import { DeleteAccountSection } from "@/components/account/DeleteAccountSection";
 import { useAuth } from "@/context/auth-context";
 import { formatTimestampDate } from "@/lib/format";
+
+/**
+ * Whether the user can sign in with a password. A Google-only account has no
+ * password to change; one that also signed up by email does.
+ */
+function hasPasswordSignIn(user: User | null): boolean {
+  const providers = user?.app_metadata?.providers as string[] | undefined;
+  return !providers || providers.includes("email");
+}
 
 /** Account settings: profile, password, and account deletion. Hidden for demo. */
 export function AccountPage() {
@@ -45,7 +55,13 @@ export function AccountPage() {
             <CardTitle>Password</CardTitle>
           </CardHeader>
           <CardContent>
-            <PasswordSection />
+            {hasPasswordSignIn(user) ? (
+              <PasswordSection />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                You sign in with Google, so there&apos;s no password to change here.
+              </p>
+            )}
           </CardContent>
         </Card>
 
