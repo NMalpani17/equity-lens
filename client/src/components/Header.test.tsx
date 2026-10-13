@@ -59,6 +59,14 @@ describe("Header", () => {
     );
   });
 
+  it("lets the nav scroll sideways only, with the scrollbar hidden", () => {
+    mockAuth({});
+    renderHeader();
+
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(nav).toHaveClass("overflow-x-auto", "overflow-y-hidden", "no-scrollbar");
+  });
+
   it("has no server status indicator", () => {
     mockAuth({});
     renderHeader();

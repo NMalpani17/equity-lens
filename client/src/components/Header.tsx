@@ -54,9 +54,11 @@ export function Header() {
           <Logo compact />
         </Link>
 
+        {/* Scrolls sideways on narrow screens with no visible scrollbar, and
+            never vertically: the links are exactly the header's height. */}
         <nav
           aria-label="Main"
-          className="mr-auto flex min-w-0 items-stretch gap-1 overflow-x-auto sm:gap-2"
+          className="no-scrollbar mr-auto flex min-w-0 items-stretch gap-1 overflow-x-auto overflow-y-hidden sm:gap-2"
         >
           {NAV_ITEMS.map((item) => (
             <NavLink
@@ -64,7 +66,7 @@ export function Header() {
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `-mb-px flex items-center whitespace-nowrap border-b-2 px-2 text-sm transition-colors sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                `flex items-center whitespace-nowrap border-b-2 px-2 text-sm transition-colors sm:px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                   isActive
                     ? "border-brand font-semibold text-foreground"
                     : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
