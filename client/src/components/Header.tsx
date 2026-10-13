@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { HealthIndicator } from "@/components/HealthIndicator";
+import { Logo } from "@/components/Logo";
 import { useAuth } from "@/context/auth-context";
 
 const NAV_ITEMS = [
@@ -51,7 +52,7 @@ export function Header() {
           to="/"
           className="whitespace-nowrap rounded-sm text-base font-bold tracking-tight sm:text-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          Equity Lens
+          <Logo />
         </Link>
 
         <nav
