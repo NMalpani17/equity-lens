@@ -31,37 +31,46 @@ beforeEach(() => {
 describe("ChangePasswordForm", () => {
   it("rejects a too-short password", () => {
     renderForm();
-    fill("123", "123");
+    fill("1234567", "1234567");
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("at least 6 characters");
+    expect(screen.getByText("Use at least 8 characters.")).toBeInTheDocument();
+    expect(screen.getByLabelText("New password")).toHaveFocus();
     expect(updatePassword).not.toHaveBeenCalled();
   });
 
-  it("rejects mismatched passwords", () => {
+  it("says passwords don't match while typing, and blocks submit", () => {
     renderForm();
-    fill("abcdef", "abcdeg");
-    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+    fill("abcdefgh", "abcdefgx");
+    expect(screen.getByText("Passwords don't match.")).toBeInTheDocument();
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Passwords do not match.");
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
     expect(updatePassword).not.toHaveBeenCalled();
+  });
+
+  it("shows the requirement and a toggle on both fields", () => {
+    renderForm();
+    expect(screen.getByText(/8–64 characters/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Show password" })).toHaveLength(2);
   });
 
   it("updates the password and calls onSuccess", async () => {
     renderForm();
-    fill("abcdef", "abcdef");
+    fill("abcdefgh", "abcdefgh");
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
-    await waitFor(() => expect(updatePassword).toHaveBeenCalledWith("abcdef"));
+    await waitFor(() => expect(updatePassword).toHaveBeenCalledWith("abcdefgh"));
     expect(onSuccess).toHaveBeenCalledOnce();
   });
 
   it("surfaces an error when the update fails", async () => {
     updatePassword.mockRejectedValue(new Error("session missing"));
     renderForm();
-    fill("abcdef", "abcdef");
+    fill("abcdefgh", "abcdefgh");
     fireEvent.click(screen.getByRole("button", { name: "Update password" }));
 
-    expect(await screen.findByText("session missing")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't update your password.",
+    );
   });
 });
