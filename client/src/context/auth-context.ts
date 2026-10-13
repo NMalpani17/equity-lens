@@ -2,6 +2,11 @@
 import { createContext, useContext } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 
+export interface SignUpResult {
+  /** True when the user must open the confirmation email before signing in. */
+  needsConfirmation: boolean;
+}
+
 export interface AuthContextValue {
   /** The current Supabase session, or null when signed out. */
   session: Session | null;
@@ -16,8 +21,11 @@ export interface AuthContextValue {
    * PASSWORD_RECOVERY event). Only then may the reset-password form be shown.
    */
   isPasswordRecovery: boolean;
-  /** Create an account with email + password. Throws on failure. */
-  signUp: (email: string, password: string) => Promise<void>;
+  /**
+   * Create an account with email + password. Throws on failure. With email
+   * confirmation on, Supabase creates no session yet: `needsConfirmation`.
+   */
+  signUp: (email: string, password: string) => Promise<SignUpResult>;
   /** Sign in with email + password. Throws on failure. */
   signIn: (email: string, password: string) => Promise<void>;
   /** Start an anonymous demo session (a fresh temporary user). */

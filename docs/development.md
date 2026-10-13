@@ -83,9 +83,12 @@ reach real data.
 
 Authentication uses Supabase Auth. In the Supabase dashboard:
 
-1. **Authentication → Providers → Email:** enable it. For local dev, turn off
-   "Confirm email" so a sign-up logs in immediately (otherwise users must click
-   the email link before a session is issued).
+1. **Authentication → Providers → Email:** enable it and set **Minimum
+   password length** to **8** (the client asks for 8–64 characters with no
+   composition rules; leave the character requirements off). With "Confirm
+   email" on, a sign-up shows a "Check your email" screen and the link lands
+   on `/login`, which forwards to the dashboard; with it off, a sign-up logs
+   in immediately.
 2. **Authentication → Anonymous sign-ins:** enable it. The "Try demo" button
    uses anonymous sign-in, so each visitor gets their own temporary user. On
    that user's first dashboard load the API seeds a sample portfolio (from

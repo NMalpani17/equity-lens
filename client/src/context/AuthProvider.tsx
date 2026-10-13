@@ -65,8 +65,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isDemo: session?.user?.is_anonymous ?? false,
       isPasswordRecovery,
       signUp: async (email, password) => {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          // The confirmation link lands on /login, which forwards a session
+          // to the dashboard.
+          options: { emailRedirectTo: `${window.location.origin}/login` },
+        });
         throwOnError(error);
+        return { needsConfirmation: !data.session };
       },
       signIn: async (email, password) => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
