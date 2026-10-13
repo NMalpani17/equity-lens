@@ -68,7 +68,7 @@ export function DeleteAccountSection() {
       <CardHeader>
         <CardTitle className="text-destructive">Danger zone</CardTitle>
         <CardDescription>
-          Permanently delete your account and all of your holdings. This cannot be
+          Permanently delete your account, holdings and chat history. This cannot be
           undone.
         </CardDescription>
       </CardHeader>

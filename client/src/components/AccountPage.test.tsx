@@ -58,6 +58,11 @@ describe("AccountPage", () => {
     expect(screen.getByRole("button", { name: "Change password" })).toBeInTheDocument();
     // Danger zone with the delete-account action.
     expect(screen.getByText("Danger zone")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Permanently delete your account, holdings and chat history. This cannot be undone.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete account" })).toBeInTheDocument();
   });
 
