@@ -1,6 +1,7 @@
 """Runs one research report generation and streams it as events.
 
-claim the report row -> per-run MCP tools and turn context -> the agent graph
+check for a newer earnings call (bounded wait) -> claim the report row for the
+newest quarter -> per-run MCP tools and turn context -> the agent graph
 (inside one Langfuse trace) -> assemble and validate -> save -> ``done``.
 
 A generation runs as a background task: the stream only relays its events,
@@ -69,10 +70,30 @@ class ReportEvent:
     data: dict[str, Any]
 
 
+FRESHNESS_RUNNING = "Checking for the latest earnings call…"
+FRESHNESS_DONE = "Checked for the latest earnings call"
+
+
 def _error(code: str, message: str, *, retryable: bool = False) -> ReportEvent:
     return ReportEvent(
         "error", {"code": code, "message": message, "retryable": retryable}
     )
+
+
+def _latest_period(record: TickerRecord | None) -> Period | None:
+    """The newest indexed quarter of a searchable ticker, else None."""
+    if record is None or not is_searchable(record) or not record.quarters:
+        return None
+    parsed = parse_period_label(record.quarters[0])
+    return Period(*parsed) if parsed else None
+
+
+def _freshness_summary(before: Period, after: Period, *, checked: bool) -> str:
+    if after != before:
+        return f"Found a newer call: {after.label}"
+    if not checked:
+        return f"Couldn't check for a newer call; using {after.label}"
+    return f"Latest call: {after.label}"
 
 
 class ReportService:
@@ -88,6 +109,7 @@ class ReportService:
         today: Callable[[], date] = lambda: datetime.now(
             ZoneInfo(MARKET_TIME_ZONE)
         ).date(),
+        ensure_fresh: Callable[[str], bool] = lambda _ticker: True,
     ) -> None:
         self._settings = settings
         self._agents = agents
@@ -95,6 +117,9 @@ class ReportService:
         self._registry = registry
         self._repo = repo
         self._ticker_record = ticker_record
+        # Blocking and bounded (FreshnessRefresher.ensure_fresh); False when
+        # the check failed or timed out.
+        self._ensure_fresh = ensure_fresh
         self._tracer: Tracer = tracer or NoopTracer()
         self._today = today
         # Running generations (kept so they aren't garbage collected).
@@ -108,15 +133,31 @@ class ReportService:
             yield _error("demo_not_allowed", "Demo accounts can view reports only.")
             return
         ticker = request.ticker
-        record = await asyncio.to_thread(self._ticker_record, ticker)
-        latest = (
-            parse_period_label(record.quarters[0])
-            if record and is_searchable(record) and record.quarters
-            else None
+        before = _latest_period(await asyncio.to_thread(self._ticker_record, ticker))
+        if before is None:
+            yield _error("not_indexed", f"{ticker} has no indexed earnings calls yet.")
+            return
+        # A report is saved per quarter: wait for the check for a newer call
+        # first, so it never covers a quarter that is already out of date.
+        yield ReportEvent(
+            "agent",
+            {"agent": "freshness", "state": "running", "label": FRESHNESS_RUNNING},
         )
+        checked = await asyncio.to_thread(self._ensure_fresh, ticker)
+        record = await asyncio.to_thread(self._ticker_record, ticker)
+        latest = _latest_period(record)
         if record is None or latest is None:
             yield _error("not_indexed", f"{ticker} has no indexed earnings calls yet.")
             return
+        yield ReportEvent(
+            "agent",
+            {
+                "agent": "freshness",
+                "state": "done",
+                "label": FRESHNESS_DONE,
+                "summary": _freshness_summary(before, latest, checked=checked),
+            },
+        )
         repo = self._repo()
         claim = await self._claim(repo, ticker, latest, request.regenerate_after_days)
         if claim.outcome is ClaimOutcome.IN_PROGRESS:
@@ -137,9 +178,7 @@ class ReportService:
         run = _Run(claim.generation_id)
         events: asyncio.Queue[ReportEvent | None] = asyncio.Queue()
         task = asyncio.create_task(
-            self._run_detached(
-                request, record, Period(*latest), run, repo, trace_tags, events
-            ),
+            self._run_detached(request, record, latest, run, repo, trace_tags, events),
             name=f"research-report:{ticker}",
         )
         self._background.add(task)
@@ -187,7 +226,7 @@ class ReportService:
             await asyncio.wait(tasks, timeout=timeout)
 
     async def _claim(
-        self, repo: ReportRepository, ticker: str, latest: tuple[int, int], days: int
+        self, repo: ReportRepository, ticker: str, latest: Period, days: int
     ) -> Claim:
         """Claim the report; if cancelled meanwhile, release once it lands.
 
@@ -200,7 +239,8 @@ class ReportService:
             asyncio.to_thread(
                 repo.claim,
                 ticker,
-                *latest,
+                latest.fiscal_year,
+                latest.fiscal_quarter,
                 regenerate_after=timedelta(days=days),
                 stale_after=timedelta(minutes=self._settings.report_lock_stale_minutes),
             )
@@ -423,6 +463,9 @@ def get_report_service() -> ReportService:
         repo=lambda: ReportRepository(get_rag_components().pool),
         ticker_record=lambda ticker: get_rag_components().repo.get_ticker(ticker),
         tracer=get_tracer(),
+        ensure_fresh=lambda ticker: get_rag_components().freshness.ensure_fresh(
+            ticker, timeout=settings.report_freshness_timeout_seconds
+        ),
     )
 
 

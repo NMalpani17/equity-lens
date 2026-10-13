@@ -122,6 +122,8 @@ new ones are written. The search that triggered the check never waits for it:
 a ticker that was indexed before is always searched from its existing vectors,
 also while it shows `indexing` during a refresh. A failed refresh leaves the
 ticker `indexed` (with `last_error`), and the next day's check tries again.
+Generating a research report is the one place that waits for the check
+(below).
 
 **Hybrid search and rerank.** A query is embedded both ways and combined as a
 convex mix (alpha 0.75 dense, 0.25 sparse): dense finds paraphrases, sparse
@@ -290,7 +292,24 @@ over it.
 (`rag_tickers.quarters[0]`). Viewing a cached report reads one row; nothing
 is generated. When a freshness refresh indexes a newer call, the key changes:
 the api shows the previous report marked as covering an older quarter, and the
-next generate request writes the new one. Reports are shared by every user, so
+next generate request writes the new one.
+
+**Newest call first.** Before choosing the quarter, a generation waits for the
+ticker's freshness check (`FreshnessRefresher.ensure_fresh`): it joins a check
+a search already started, or runs one now if it is due (same 90-day and
+once-per-day rules, so no extra Equibles calls), including the refresh job that
+adds a newer call. Only then does it read `quarters[0]` and claim the report.
+Without this, the transcript researcher's own search could trigger the check
+mid-generation, and a report finished moments ago would already be covering an
+older quarter. The wait is bounded by
+`AI_SERVICE_REPORT_FRESHNESS_TIMEOUT_SECONDS` (60); if the check times out or
+fails, the report uses the newest call already indexed and the check finishes
+in the background. The client shows the step first ("Checking for the latest
+earnings call…", then e.g. "Found a newer call: Q4 FY2026"). The check runs
+before the report is claimed, so the api still refunds a generation refused
+after it (`report_in_progress`, `report_fresh`).
+
+Reports are shared by every user, so
 the content holds nothing user-specific: no portfolio, no user id, and times
 in US market time.
 

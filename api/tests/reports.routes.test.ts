@@ -47,7 +47,7 @@ async function* stream(...events: AiReportEvent[]) {
 }
 
 const agent = (
-  name: "transcripts" | "market" | "writer",
+  name: "freshness" | "transcripts" | "market" | "writer",
   state: "running" | "done" | "failed",
 ): AiReportEvent => ({ type: "agent", agent: name, state, label: `${name}…` });
 
@@ -247,6 +247,30 @@ describe("POST /api/reports/:ticker", () => {
 
       const events = parseSse((await post()).text);
 
+      expect(events.at(-1)!.data.code).toBe(code);
+      expect(service.refundGeneration).toHaveBeenCalledWith("ev-1");
+    },
+  );
+
+  it.each(["report_in_progress", "report_fresh"])(
+    "still refunds %s when it comes after the check for a newer call",
+    async (code) => {
+      openStream.mockResolvedValue(
+        stream(agent("freshness", "running"), agent("freshness", "done"), {
+          type: "error",
+          code,
+          message: "Busy.",
+          retryable: true,
+        }),
+      );
+
+      const events = parseSse((await post()).text);
+
+      // The check is relayed to the client, but nothing was generated.
+      expect(events.slice(1, 3).map((e) => `${e.data.agent}:${e.data.state}`)).toEqual([
+        "freshness:running",
+        "freshness:done",
+      ]);
       expect(events.at(-1)!.data.code).toBe(code);
       expect(service.refundGeneration).toHaveBeenCalledWith("ev-1");
     },

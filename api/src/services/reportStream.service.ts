@@ -13,7 +13,8 @@ import { logger } from "../logger.js";
 import { openAiServiceSse } from "./aiServiceSse.js";
 import { reportContentSchema, toReportDto, type ReportDto } from "./reportContent.js";
 
-export type ReportAgent = "transcripts" | "market" | "writer";
+/** `freshness` is the check for a newer earnings call that runs first. */
+export type ReportAgent = "freshness" | "transcripts" | "market" | "writer";
 
 export type AiReportEvent =
   | {
@@ -34,7 +35,7 @@ export interface ReportStreamRequest {
 
 const eventSchemas = {
   agent: z.object({
-    agent: z.enum(["transcripts", "market", "writer"]),
+    agent: z.enum(["freshness", "transcripts", "market", "writer"]),
     state: z.enum(["running", "done", "failed"]),
     label: z.string(),
     summary: z.string().optional(),

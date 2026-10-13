@@ -5,7 +5,11 @@ When a search hits an indexed ticker whose newest indexed call is older than
 exists. That happens at most once per ticker per UTC day (recorded in
 Postgres). If there is one, a refresh job (with its own daily cap) indexes it
 and drops the quarter that falls out of the window. Nothing here runs in, or
-slows, the request that triggered it: searches keep using what is indexed.
+slows, the search that triggered it: searches keep using what is indexed.
+
+A report is different: it is saved per quarter, so before generating one the
+report service waits (bounded) for the ticker's check via ``ensure_fresh``,
+and the report covers the newest call.
 """
 
 import logging
@@ -91,6 +95,46 @@ class FreshnessRefresher:
         except Exception:
             logger.exception("could not queue freshness check for %s", record.ticker)
             return False
+
+    def ensure_fresh(self, ticker: str, *, timeout: float) -> bool:
+        """Bring ``ticker`` up to date before a report, waiting at most ``timeout`` s.
+
+        Joins a check already running for the ticker (e.g. queued by a
+        search), or runs one now if it is due, and waits for it, including the
+        refresh job that adds a newer call it finds. When no check is due
+        (the newest call is recent, or today's check already ran) it returns
+        at once without calling Equibles. Returns False if the check failed or
+        timed out, so the caller goes on with what is indexed. Never raises.
+        """
+        key = f"freshness:{ticker}"
+        try:
+            due = False
+            if self._daily_cap > 0:
+                record = self._repo.get_ticker(ticker)
+                due = record is not None and needs_check(
+                    record, now=self._clock(), stale_after=self._stale_after
+                )
+            future = self._coordinator.join_or_submit(
+                key, (lambda: self.check(ticker)) if due else None
+            )
+            if future is None:
+                return True
+            outcome = future.result(timeout=timeout)
+        except TimeoutError:
+            # The check carries on in the background; the next report gets it.
+            logger.warning(
+                "freshness check for %s still running after %.0f s; reporting on "
+                "what is indexed",
+                ticker,
+                timeout,
+            )
+            return False
+        except Exception:
+            logger.exception("freshness check before a report failed for %s", ticker)
+            return False
+        return isinstance(outcome, FreshnessOutcome) and (
+            outcome is not FreshnessOutcome.ERROR
+        )
 
     def check(self, ticker: str) -> FreshnessOutcome:
         """Check Equibles for a newer call and refresh the index if there is one.

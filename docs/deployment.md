@@ -131,9 +131,11 @@ replace the earlier shared `AI_SERVICE_REPORT_RESEARCH_MODEL`;
 `AI_SERVICE_REPORT_MARKET_MAX_OUTPUT_TOKENS` 2048,
 `AI_SERVICE_REPORT_WRITER_MAX_OUTPUT_TOKENS` 8192),
 `AI_SERVICE_REPORT_WRITER_MAX_PASSAGES` (24),
-`AI_SERVICE_REPORT_TIMEOUT_SECONDS` (240) and
+`AI_SERVICE_REPORT_TIMEOUT_SECONDS` (240),
 `AI_SERVICE_REPORT_LOCK_STALE_MINUTES` (10, keep equal to the api's
-`REPORT_STALE_GENERATION_MINUTES`). Reports use the same Gemini key; no new
+`REPORT_STALE_GENERATION_MINUTES`) and
+`AI_SERVICE_REPORT_FRESHNESS_TIMEOUT_SECONDS` (60, how long Generate waits for
+the check for a newer earnings call before using what is indexed). Reports use the same Gemini key; no new
 secret.
 
 Tuning settings are all optional. Every setting and its default is in

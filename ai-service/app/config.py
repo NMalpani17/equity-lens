@@ -163,6 +163,9 @@ class Settings(BaseSettings):
     report_writer_max_passages: int = 24
     # Bound on one whole generation.
     report_timeout_seconds: float = 240.0
+    # Before generating, wait at most this long for the check for a newer
+    # earnings call (and adding it). On timeout the report uses what we have.
+    report_freshness_timeout_seconds: float = 60.0
     # A generation lock older than this is assumed dead and may be re-claimed.
     report_lock_stale_minutes: int = 10
 

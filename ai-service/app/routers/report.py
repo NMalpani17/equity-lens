@@ -30,10 +30,12 @@ def format_sse(event: ReportEvent) -> str:
     },
 )
 async def stream_report(body: ReportRequest, service: ReportDep) -> StreamingResponse:
-    """Generate a ticker's report for its latest indexed quarter, as SSE.
+    """Generate a ticker's report for its latest earnings call, as SSE.
 
-    Events: ``agent`` {agent, state, label, summary?} as each agent runs
-    (transcripts and market in parallel, then writer); ``done`` {report,
+    Events: ``agent`` {agent, state, label, summary?}: first ``freshness``
+    (the check for a newer call, waited for so the report covers the newest
+    quarter), then each agent as it runs (transcripts and market in parallel,
+    then writer); ``done`` {report,
     fiscal_year, fiscal_quarter, generated_at, usage}; ``error`` {code,
     message, retryable}, e.g. ``report_in_progress``, ``report_fresh``,
     ``not_indexed``. The report is saved before ``done``. If the client

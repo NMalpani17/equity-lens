@@ -122,6 +122,8 @@ def service(
     record: TickerRecord | None = None,
     tracer: Any = None,
     registry: TurnRegistry | None = None,
+    ticker_record: Any = None,
+    ensure_fresh: Any = None,
 ) -> ReportService:
     return ReportService(
         agents.settings,
@@ -129,9 +131,11 @@ def service(
         mcp_server.mcp,
         registry or TurnRegistry(),
         repo=lambda: repo,
-        ticker_record=lambda _t: record if record is not None else nvda(),
+        ticker_record=ticker_record
+        or (lambda _t: record if record is not None else nvda()),
         tracer=tracer,
         today=lambda: datetime(2026, 10, 7).date(),
+        ensure_fresh=ensure_fresh or (lambda _t: True),
     )
 
 
@@ -146,6 +150,13 @@ def collect(svc: ReportService, req: ReportRequest) -> list[ReportEvent]:
     return asyncio.run(go())
 
 
+async def next_generation_event(stream) -> ReportEvent:
+    """The first event after the freshness step (the report is claimed by then)."""
+    while (event := await stream.__anext__()).data.get("agent") == "freshness":
+        pass
+    return event
+
+
 def happy_agents(deps, **cfg: Any):
     return make_agents(deps, ByPromptModel(scripts=research_script()), writer(), **cfg)
 
@@ -157,8 +168,23 @@ def test_a_report_streams_agent_progress_then_saves_and_returns_it(deps) -> None
     events = collect(svc, request())
 
     assert {e.type for e in events[:-1]} == {"agent"}
+    # First the check for a newer call, then the agents.
+    assert [e.data for e in events[:2]] == [
+        {
+            "agent": "freshness",
+            "state": "running",
+            "label": "Checking for the latest earnings call…",
+        },
+        {
+            "agent": "freshness",
+            "state": "done",
+            "label": "Checked for the latest earnings call",
+            "summary": "Latest call: Q2 FY2027",
+        },
+    ]
     finished = [e.data["agent"] for e in events if e.data.get("state") == "done"]
-    assert sorted(finished) == ["market", "transcripts", "writer"]
+    assert finished[0] == "freshness"
+    assert sorted(finished[1:]) == ["market", "transcripts", "writer"]
     assert finished[-1] == "writer"
     done = events[-1]
     assert done.type == "done"
@@ -200,8 +226,9 @@ def test_a_busy_or_fresh_report_is_refused_before_any_model_call(
     repo = FakeRepo(outcome)
     svc = service(make_agents(deps, model, writer()), repo)
 
-    (event,) = collect(svc, request())
+    *checked, event = collect(svc, request())
 
+    assert [e.data["agent"] for e in checked] == ["freshness", "freshness"]
     assert event.type == "error" and event.data["code"] == code
     assert event.data["retryable"] is retryable
     assert model.calls == {} and repo.saved == [] and repo.released == []
@@ -264,7 +291,7 @@ def test_a_generation_finishes_and_saves_after_the_client_leaves(deps) -> None:
 
     async def leave_then_wait() -> ReportEvent:
         stream = svc.stream(request())
-        event = await stream.__anext__()
+        event = await next_generation_event(stream)
         await stream.aclose()  # the client went away
         await svc.wait_for_background()
         return event
@@ -283,7 +310,7 @@ def test_a_shutdown_cancels_running_generations_and_frees_their_claims(deps) -> 
 
     async def start_then_shut_down() -> None:
         stream = svc.stream(request())
-        await stream.__anext__()
+        await next_generation_event(stream)
         await stream.aclose()
         await svc.shutdown(timeout=5)
 
@@ -356,8 +383,13 @@ def test_the_route_needs_the_internal_token_and_streams_sse(deps) -> None:
 
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("text/event-stream")
-    assert res.text.startswith("event: error\ndata: ")
-    assert json.loads(res.text.split("data: ", 1)[1])["code"] == "report_in_progress"
+    frames = [f for f in res.text.split("\n\n") if f]
+    assert [f.split("\n", 1)[0] for f in frames] == [
+        "event: agent",  # the check for a newer call runs first
+        "event: agent",
+        "event: error",
+    ]
+    assert json.loads(frames[-1].split("data: ", 1)[1])["code"] == "report_in_progress"
 
 
 # --- claims are released right away ------------------------------------------
@@ -443,3 +475,71 @@ def test_a_claim_that_lands_after_the_client_left_is_released(deps) -> None:
 
     assert repo.released == ["gen-1"] and repo.active is None
     assert repo.saved == []
+
+
+# --- the report covers the newest call -----------------------------------------
+
+
+def test_a_newer_call_found_by_the_check_is_the_one_reported_on(deps) -> None:
+    """The COST bug: the check must finish before the quarter is chosen."""
+    repo = FakeRepo()
+    calls: list[str] = []
+    current = {"record": nvda()}
+
+    def ensure_fresh(ticker: str) -> bool:
+        calls.append(f"ensure_fresh:{ticker}")
+        # The check finds and adds Q3 FY2027 while the report waits.
+        current["record"] = nvda(quarters=["FY2027Q3", "FY2027Q2"])
+        return True
+
+    def ticker_record(_t: str) -> TickerRecord:
+        calls.append("read")
+        return current["record"]
+
+    svc = service(
+        happy_agents(deps), repo, ticker_record=ticker_record, ensure_fresh=ensure_fresh
+    )
+
+    events = collect(svc, request())
+
+    assert calls == ["read", "ensure_fresh:NVDA", "read"]
+    assert events[1].data["summary"] == "Found a newer call: Q3 FY2027"
+    assert repo.claims[0][:3] == ("NVDA", 2027, 3)
+    done = events[-1]
+    assert (done.data["fiscal_year"], done.data["fiscal_quarter"]) == (2027, 3)
+
+
+def test_a_failed_or_slow_check_still_generates_with_the_newest_call_we_have(
+    deps,
+) -> None:
+    repo = FakeRepo()
+    svc = service(happy_agents(deps), repo, ensure_fresh=lambda _t: False)
+
+    events = collect(svc, request())
+
+    assert events[1].data["summary"] == (
+        "Couldn't check for a newer call; using Q2 FY2027"
+    )
+    assert repo.claims[0][:3] == ("NVDA", 2027, 2)
+    assert events[-1].type == "done"
+
+
+def test_demo_users_and_unindexed_tickers_never_trigger_a_check(deps) -> None:
+    checked: list[str] = []
+
+    def ensure_fresh(ticker: str) -> bool:
+        checked.append(ticker)
+        return True
+
+    svc = service(happy_agents(deps), FakeRepo(), ensure_fresh=ensure_fresh)
+    collect(svc, request(is_anonymous=True))
+    unindexed = service(
+        happy_agents(deps),
+        FakeRepo(),
+        record=nvda(status="failed", indexed_at=None),
+        ensure_fresh=ensure_fresh,
+    )
+    (event,) = collect(unindexed, request())
+
+    assert event.data["code"] == "not_indexed"
+    assert checked == []
