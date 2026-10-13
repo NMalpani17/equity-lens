@@ -103,6 +103,8 @@ api's service account can invoke.
 | Infrastructure | Vercel, Google Cloud Run, Artifact Registry, Secret Manager, Docker  |
 | Quality        | Vitest, Pytest, ESLint, Ruff, GitHub Actions CI, Langfuse            |
 
+Data sources: earnings call transcripts from [Equibles](https://equibles.com), live quotes and company search from [Finnhub](https://finnhub.io), and price history and fallback quotes from Yahoo Finance via yfinance.
+
 ## Engineering highlights
 
 - **Grounded answers.** Every company claim must cite a passage retrieved in the
