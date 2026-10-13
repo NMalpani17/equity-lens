@@ -367,6 +367,30 @@ client renders them below the answer once it has finished streaming (so the
 growing text never pushes a drawn chart down), with Recharts lazy-loaded in its
 own chunk and a "View data" table for each. Chart shapes are in [api.md](api.md#ai-analyst-chat).
 
+## Client design system
+
+- **Tokens.** Every color is a CSS variable in `client/src/index.css`: navy
+  for text and primary actions, sky blue (`--brand`) for the accent (logo line,
+  active-nav underline, focus ring), white and light-gray surfaces. Green
+  (`--gain`) and red (`--loss`) mean gain and loss only; red is also used for
+  errors and destructive actions (`--destructive`). Components use the tokens
+  (`text-gain`, `bg-info`, `border-brand`), never raw Tailwind colors.
+- **Contrast.** `client/src/theme.contrast.test.ts` reads `index.css` and fails
+  if a text pair drops below WCAG AA (4.5:1) or a non-text mark (input border,
+  focus ring, accent, chart line) below 3:1. Add a pair there when you add a
+  token.
+- **Type and spacing.** System font stack, tabular figures for numbers, key
+  values `text-3xl font-bold`, cards with a 1 px border and thin dividers on
+  Tailwind's 4 px spacing scale.
+- **Logo.** `client/src/components/Logo.tsx` (inline SVG) and
+  `client/public/favicon.svg`, a heavier-stroke version that reads at 16 px and
+  switches to light strokes on a dark browser UI.
+- **Auth forms.** Shared pieces in `client/src/components/auth/` and
+  `client/src/lib/validation.ts`: the 8–64 character password rule, a
+  show/hide password input, validation when a field loses focus, and generic
+  errors from `client/src/lib/authErrors.ts` that never reveal whether an email
+  is registered.
+
 ## Tracing and privacy
 
 With Langfuse keys set, each turn gets a Langfuse LangChain `CallbackHandler`,
