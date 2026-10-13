@@ -263,12 +263,10 @@ npm --prefix client run dev                                                     
 
 Open <http://localhost:5173>. You'll land on a **login page** — sign up, log in,
 or click **Try demo**. After authenticating you reach the **portfolio dashboard**
-(positions, summary cards, and add/edit/delete). The **status dot** in the top
-bar, next to the avatar, calls `api → ai-service` and turns green (ok), amber
-(the ai-service is waking up; re-checked every 5 s) or red (the API can't be
-reached or reports another problem); hover or focus it for the status of each
-hop. In demo mode a slim banner invites you to sign up for your own account. For health and API
-details, see [api.md](./api.md).
+(positions, summary cards, and add/edit/delete). In demo mode a slim banner
+invites you to sign up for your own account. To check each hop
+(`api → ai-service`), call `GET /api/health` with a session token; see
+[api.md](./api.md).
 
 ## Tests, lint and scripts
 

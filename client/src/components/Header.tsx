@@ -16,7 +16,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HealthIndicator } from "@/components/HealthIndicator";
 import { Logo } from "@/components/Logo";
 import { useAuth } from "@/context/auth-context";
 
@@ -26,7 +25,7 @@ const NAV_ITEMS = [
   { to: "/reports", label: "Reports", end: false },
 ];
 
-/** App header: brand, main navigation, system status dot, and user menu. */
+/** App header: brand, main navigation, and user menu. */
 export function Header() {
   const { user, isDemo, signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
@@ -76,7 +75,6 @@ export function Header() {
         </nav>
 
         <div className="flex shrink-0 items-center gap-1">
-          <HealthIndicator />
           <TooltipProvider>
             <Tooltip>
               <DropdownMenu>

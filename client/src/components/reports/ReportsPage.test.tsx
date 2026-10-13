@@ -2,8 +2,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-// The header's status dot polls /api/health; not under test here.
-vi.mock("@/components/HealthIndicator", () => ({ HealthIndicator: () => null }));
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
 vi.mock("@/lib/reportsApi", () => ({
   listReports: vi.fn(),

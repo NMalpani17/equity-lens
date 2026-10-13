@@ -67,8 +67,8 @@ Click **Try demo**; no sign-up needed.
   fallback.
 - **Accounts and instant demo.** Supabase Auth with password reset and account
   deletion. "Try demo" gives each visitor a private sample portfolio.
-- **Graceful degradation.** A status dot shows when the AI service is waking
-  from a cold start. One failing ticker or service never breaks the page.
+- **Graceful degradation.** One failing ticker or service never breaks the
+  page, and a cold AI service is woken as soon as a user signs in.
 
 ## Architecture
 
