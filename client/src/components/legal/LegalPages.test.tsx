@@ -28,6 +28,8 @@ describe("Privacy page", () => {
     expect(screen.getByText(/Only to run the app/)).toBeVisible();
     expect(screen.getByText(/never sell your data/i)).toBeVisible();
     expect(screen.getByText(/Account settings → Delete account/)).toBeVisible();
+    // Traces outlive account deletion; the page must say so.
+    expect(screen.getByText(/aren't deleted with your account/)).toBeVisible();
   });
 });
 

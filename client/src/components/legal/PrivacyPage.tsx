@@ -58,6 +58,11 @@ export function PrivacyPage() {
           deletes your holdings, chat history, usage counts and login. Copies in backups
           are deleted automatically within about three months.
         </p>
+        <p>
+          Diagnostic logs of AI answers (under a scrambled ID, without your email or
+          portfolio figures) aren&apos;t deleted with your account and may be kept for
+          as long as the tracing service stores them.
+        </p>
       </LegalSection>
     </LegalPage>
   );
