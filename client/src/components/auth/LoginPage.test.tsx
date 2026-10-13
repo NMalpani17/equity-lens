@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 // Control the auth context so the page can be tested in isolation.
@@ -348,6 +355,28 @@ describe("LoginPage: Google sign-in", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
 
     await waitFor(() => expect(authValue.signInWithGoogle).toHaveBeenCalledOnce());
+  });
+
+  it("is usable again after Back from Google (page restored from the bfcache)", async () => {
+    renderPage();
+    const google = screen.getByRole("button", { name: "Continue with Google" });
+    fireEvent.click(google);
+
+    // signInWithGoogle resolved but the browser is navigating away: still busy.
+    await waitFor(() => expect(google).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Try demo" })).toBeDisabled();
+
+    // Coming back with Back fires pageshow with persisted = true.
+    const pageshow = new Event("pageshow");
+    Object.defineProperty(pageshow, "persisted", { value: true });
+    act(() => {
+      window.dispatchEvent(pageshow);
+    });
+
+    expect(google).toBeEnabled();
+    expect(google).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("button", { name: "Try demo" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Log in" })).toBeEnabled();
   });
 
   it("shows a generic error when Google can't be started", async () => {

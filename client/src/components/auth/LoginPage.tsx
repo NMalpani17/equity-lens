@@ -109,6 +109,17 @@ export function LoginPage() {
     }
   }, [location.search, location.hash, location.pathname, navigate]);
 
+  useEffect(() => {
+    // Back from Google without signing in: the browser restores this page from
+    // the back-forward cache with the Google button still spinning. Make the
+    // form usable again.
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) setGoogleLoading(false);
+    }
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   // After any successful auth (login, sign-up, demo) the user always lands on the
   // dashboard. A logged-in user who visits /login is sent there too.
   if (!loading && user) {
