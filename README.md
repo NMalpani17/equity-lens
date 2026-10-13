@@ -9,8 +9,8 @@ companies, earnings calls and your holdings, with every claim cited.
 Click **Try demo**; no sign-up needed.
 
 <p align="center">
-  <img src="docs/images/dashboard.png" width="63%" alt="Portfolio dashboard in demo mode: total value, total gain/loss, today's change and holdings count above a table of AAPL, MSFT, TSLA and NVDA positions with expandable lots, average buy price, live price, market value and gains in green or red">
-  <img src="docs/images/chat-answer.png" width="34%" alt="AI analyst answer to how NVIDIA's stock did over six months and what management said about data center demand: price figures, bullet points with inline citation markers from the latest earnings call, and a six-month NVDA price chart">
+  <img src="docs/images/dashboard.png" width="63%" alt="Portfolio dashboard in demo mode: total value, total gain/loss, today's change and holdings count above a table of AAPL, MSFT, NVDA, VOO and TSLA positions with expandable lots, average buy price, current price, market value, gain/loss and today's change in green or red">
+  <img src="docs/images/chat-answer.png" width="34%" alt="AI analyst answer to how NVIDIA's stock did over six months and what management said about data center demand: a table of start, end, low and high prices, bullet points with inline citation markers from the latest earnings call, and a six-month NVDA price chart">
 </p>
 
 ## Features
@@ -23,8 +23,8 @@ Click **Try demo**; no sign-up needed.
   buy/sell advice.
 
   <p>
-    <img src="docs/images/citation-source.png" width="44%" alt="Citation popover over a chat answer showing source [1]: the Nvidia Q2 FY2027 earnings call, dated 2026-08-26, prepared remarks by CFO Colette Kress, with the full quoted transcript passage">
-    <img src="docs/images/guardrail.png" width="53%" alt="The analyst answering 'Should I sell my TSLA and buy more NVDA?' without a recommendation: a table of both positions, the concentration, realized-loss and reallocation figures, an allocation chart, and a not-financial-advice note">
+    <img src="docs/images/citation-source.png" width="44%" alt="Citation dialog over a chat answer showing source [1]: NVIDIA Corporation's Q2 FY2027 earnings call on Aug 26, 2026, prepared remarks by CFO Colette Kress, with the full quoted transcript passage">
+    <img src="docs/images/guardrail.png" width="53%" alt="The analyst answering 'Should I sell my TSLA and buy more NVDA?' without a recommendation: a table of both positions, the sale proceeds and taxable gain, cited fundamentals for both companies, a note on concentration, and a not-financial-advice line">
   </p>
 
 - **Earnings-call search (RAG).** Hybrid dense + keyword search over each
@@ -52,7 +52,7 @@ Click **Try demo**; no sign-up needed.
   (about $0.06 and 45–102 s each, measured), and demo users can view them.
   [How it works](docs/architecture.md#research-reports).
 
-  <img src="docs/images/report-progress.png" width="600" alt="A report generating for AMD: transcript research done (19 passages from Q2 FY2026 and Q1 FY2026), price data analyzed (3 data sources), and the writer still running">
+  <img src="docs/images/report-progress.png" width="600" alt="A report generating for Costco (COST): transcript research done (15 passages from Q3 FY2026 and Q2 FY2026), price data analyzed (3 data sources), and the writer still running">
 
   <img src="docs/images/report.png" width="600" alt="Research report for Microsoft Corporation (MSFT) based on the Q4 FY2026 earnings call, compared with Q3 FY2026: generation, call, quote and price dates, then a summary and demand and business drivers with inline citation markers">
 
@@ -60,7 +60,7 @@ Click **Try demo**; no sign-up needed.
   never from numbers the model wrote. They stream in with the answer and are
   saved with the conversation.
 
-  <img src="docs/images/portfolio-chat.png" width="600" alt="The analyst answering 'How is my portfolio allocated?' with a table of each holding's shares, market value, weight, gain/loss and return, a one-line insight, and a horizontal bar chart of portfolio weights">
+  <img src="docs/images/portfolio-chat.png" width="600" alt="The analyst answering 'How is my portfolio allocated?' with a table of each holding's shares, market value, weight, gain and return, a short insight on tech concentration, and a horizontal bar chart of portfolio weights">
 
 - **Portfolio tracking.** Lots grouped into positions with average cost,
   gain/loss and today's change. Live quotes come from Finnhub, with a yfinance
