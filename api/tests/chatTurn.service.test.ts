@@ -160,7 +160,7 @@ describe("tool progress", () => {
           label: "Searching SBUX transcripts…",
           args: {},
         },
-        { type: "tool_progress", id: "t1", label: "Indexing Starbucks transcripts…" },
+        { type: "tool_progress", id: "t1", label: "Getting Starbucks earnings calls…" },
         DONE,
       ),
       out,
@@ -169,7 +169,7 @@ describe("tool progress", () => {
 
     expect(out.sent[1]).toEqual({
       event: "tool_progress",
-      data: { id: "t1", label: "Indexing Starbucks transcripts…" },
+      data: { id: "t1", label: "Getting Starbucks earnings calls…" },
     });
   });
 });

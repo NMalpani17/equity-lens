@@ -173,7 +173,7 @@ def company_label(deps: SearchDeps, turn: TurnContext | None, ticker: str) -> st
 
 def wait_for_index(deps: SearchDeps, turn: TurnContext | None, ticker: str) -> str:
     """Wait for on-demand indexing. Returns the final ticker status or "timeout"."""
-    label = f"Indexing {company_label(deps, turn, ticker)} transcripts…"
+    label = f"Getting {company_label(deps, turn, ticker)} earnings calls…"
     if turn:
         turn.report_progress(label)
     deadline = deps.clock() + deps.index_wait_seconds

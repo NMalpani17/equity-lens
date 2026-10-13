@@ -200,7 +200,7 @@ def test_a_new_ticker_waits_for_indexing_then_compares() -> None:
 
     assert out.data["status"] == "ok"
     assert service.compare.call_count == 2
-    assert progress[0].startswith("Indexing")
+    assert progress[0] == "Getting AMD earnings calls…"
     assert clock[0] > 0
 
 

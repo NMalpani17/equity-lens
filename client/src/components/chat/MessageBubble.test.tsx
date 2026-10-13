@@ -72,3 +72,42 @@ describe("MessageBubble charts", () => {
     expect(screen.getByTestId("charts")).toHaveTextContent("chart-p1");
   });
 });
+
+describe("MessageBubble research steps", () => {
+  const step = (id: string, label: string) => ({
+    id,
+    name: "get_quote",
+    label,
+    args: {},
+  });
+
+  it("counts the steps behind a reply in plain words, listing them on hover", () => {
+    render(
+      <MessageBubble
+        message={reply({
+          charts: [],
+          toolCalls: [
+            step("t1", "Getting NVDA quote…"),
+            step("t2", "Reading your portfolio…"),
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("2 research steps")).toHaveAttribute(
+      "title",
+      "Getting NVDA quote…\nReading your portfolio…",
+    );
+    expect(screen.queryByText(/tool call/)).not.toBeInTheDocument();
+  });
+
+  it("uses the singular for one step", () => {
+    render(
+      <MessageBubble
+        message={reply({ charts: [], toolCalls: [step("t1", "Getting NVDA quote…")] })}
+      />,
+    );
+
+    expect(screen.getByText("1 research step")).toBeInTheDocument();
+  });
+});

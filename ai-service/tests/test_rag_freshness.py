@@ -569,5 +569,5 @@ def test_chat_tool_answers_from_existing_vectors_during_a_refresh(
     passages = [(p["fiscal_year"], p["fiscal_quarter"]) for p in out.data["passages"]]
     assert passages == [(2025, 4)]  # the existing FY2025Q4 vectors
     assert clock[0] == 0.0  # never slept waiting for indexing
-    assert not any(label.startswith("Indexing") for label in progress)
+    assert not any(label.endswith("earnings calls…") for label in progress)
     assert_no_new_ingestion(refreshing)

@@ -135,7 +135,9 @@ class ReportService:
         ticker = request.ticker
         before = _latest_period(await asyncio.to_thread(self._ticker_record, ticker))
         if before is None:
-            yield _error("not_indexed", f"{ticker} has no indexed earnings calls yet.")
+            yield _error(
+                "not_indexed", f"We don't have earnings calls for {ticker} yet."
+            )
             return
         # A report is saved per quarter: wait for the check for a newer call
         # first, so it never covers a quarter that is already out of date.
@@ -147,7 +149,9 @@ class ReportService:
         record = await asyncio.to_thread(self._ticker_record, ticker)
         latest = _latest_period(record)
         if record is None or latest is None:
-            yield _error("not_indexed", f"{ticker} has no indexed earnings calls yet.")
+            yield _error(
+                "not_indexed", f"We don't have earnings calls for {ticker} yet."
+            )
             return
         yield ReportEvent(
             "agent",

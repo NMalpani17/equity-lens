@@ -388,7 +388,7 @@ def test_indexing_progress_streams_as_tool_progress(tool_deps) -> None:
 
     progress = [e.data for e in events if e.type == "tool_progress"]
     assert progress == [
-        {"id": "s1", "label": "Indexing Starbucks transcripts…"},
+        {"id": "s1", "label": "Getting Starbucks earnings calls…"},
         {"id": "s1", "label": "Searching SBUX transcripts…"},
     ]
     types = [e.type for e in events]

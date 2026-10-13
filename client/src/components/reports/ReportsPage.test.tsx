@@ -259,12 +259,12 @@ describe("ReportsPage", () => {
     },
   );
 
-  it("says so when no company is indexed", async () => {
+  it("says so when no company is available", async () => {
     api.listReports.mockResolvedValue({ tickers: [], usage: view().usage });
 
     renderAt("/reports");
 
-    expect(await screen.findByText("No companies are indexed yet.")).toBeVisible();
+    expect(await screen.findByText("No companies are available yet.")).toBeVisible();
     expect(api.getReport).not.toHaveBeenCalled();
   });
 
@@ -495,7 +495,7 @@ describe("ReportsPage", () => {
     renderAt("/reports/NVDA");
 
     expect(await screen.findByRole("note")).toHaveTextContent(
-      "A newer earnings call (Q3 FY2027) is indexed. This report covers Q2 FY2027.",
+      "A newer earnings call (Q3 FY2027) is available. This report covers Q2 FY2027.",
     );
     expect(screen.getByRole("button", { name: /Generate report/ })).toBeEnabled();
   });

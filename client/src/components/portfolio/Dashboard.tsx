@@ -39,7 +39,7 @@ export function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your holdings with live prices from the market data service.
+            Your holdings with live prices.
           </p>
         </div>
         <div className="flex gap-2">

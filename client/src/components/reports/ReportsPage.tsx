@@ -90,7 +90,7 @@ export function ReportsPage() {
           <Card>
             <CardContent className="flex items-center gap-3 p-4 text-sm text-muted-foreground sm:p-6">
               <FileText aria-hidden="true" className="size-5 shrink-0" />
-              No companies are indexed yet.
+              No companies are available yet.
             </CardContent>
           </Card>
         )}
@@ -131,7 +131,7 @@ export function ReportsPage() {
                 role="note"
                 className="rounded-md border border-warning-border bg-warning px-3 py-2 text-sm text-warning-foreground"
               >
-                A newer earnings call ({view.latestQuarter.label}) is indexed. This
+                A newer earnings call ({view.latestQuarter.label}) is available. This
                 report covers {view.report.quarter.label}.
               </p>
             )}

@@ -227,7 +227,7 @@ saved failed reply. Events:
 | --------------- | ------------------------------------------------------------------------------------------- |
 | `turn`          | `{ conversation, userMessage, assistantMessageId }` (the saved user message).               |
 | `tool_start`    | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.                    |
-| `tool_progress` | `{ id, label }` — live status for a running tool, e.g. `"Indexing Starbucks transcripts…"`. |
+| `tool_progress` | `{ id, label }` — live status for a running tool, e.g. `"Getting Starbucks earnings calls…"`. |
 | `tool_end`      | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                                     |
 | `chart`         | `{ chart }` — an inline chart built from a tool result (see below), right after `tool_end`. |
 | `token`         | `{ text }` — answer text as it is generated (reset by the next `tool_start`).               |

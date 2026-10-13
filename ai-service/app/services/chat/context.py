@@ -39,7 +39,7 @@ class TurnContext:
     # worker threads.
     progress: Callable[[str], None] | None = None
     # Company names resolve_company found this turn (ticker -> name), so
-    # status labels say "Indexing Nike transcripts…" rather than a ticker.
+    # status labels say "Getting Nike earnings calls…" rather than a ticker.
     company_names: dict[str, str] = field(default_factory=dict)
 
     def report_progress(self, label: str) -> None:
