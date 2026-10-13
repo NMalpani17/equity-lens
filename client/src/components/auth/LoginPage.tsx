@@ -389,7 +389,7 @@ function ModeSwitch({
             className={cn(
               "h-9 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
               selected
-                ? "bg-card text-foreground shadow-sm"
+                ? "bg-card font-semibold text-foreground shadow-sm ring-1 ring-border"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
