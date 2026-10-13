@@ -1,51 +1,57 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
+/*
+ * Design tokens: Navy + Sky blue + White. Navy carries text and primary
+ * actions, sky blue is the accent (logo line, active nav, focus ring) and
+ * green/red mean gain/loss only. src/theme.contrast.test.ts checks every
+ * text pair meets WCAG AA (4.5:1) and every non-text pair 3:1.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  /* Inline chart series (validated against the card surface in each mode). */
-  --chart-1: #2a78d6;
-}
+  --radius: 0.75rem;
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: #3987e5;
+  --background: #f5f7fa;
+  --foreground: #0b1f3a;
+  --card: #ffffff;
+  --card-foreground: #0b1f3a;
+  --popover: #ffffff;
+  --popover-foreground: #0b1f3a;
+
+  /* Navy: primary buttons, avatar, headings. */
+  --primary: #0b1f3a;
+  --primary-hover: #163059;
+  --primary-foreground: #ffffff;
+
+  /* Light navy-gray surfaces: hover, selected rows, subtle fills. */
+  --secondary: #eef2f7;
+  --secondary-foreground: #0b1f3a;
+  --muted: #eef2f7;
+  --muted-foreground: #52627a;
+  --accent: #eef2f7;
+  --accent-foreground: #0b1f3a;
+
+  /* Sky blue: the brand accent (non-text marks) and its text-safe shade. */
+  --brand: #0284c7;
+  --brand-strong: #0369a1;
+
+  /* Gain / loss: the only greens and reds in the UI. */
+  --gain: #047857;
+  --loss: #b91c1c;
+  /* Errors and destructive actions. */
+  --destructive: #b91c1c;
+
+  /* Info strip (demo banner, confirmations) and limit warnings. */
+  --info: #eaf0f8;
+  --info-foreground: #0b1f3a;
+  --warning: #fffbeb;
+  --warning-foreground: #78350f;
+  --warning-border: #fcd34d;
+
+  --border: #d9dfe7;
+  --input: #7b8a9e;
+  --ring: #0284c7;
+
+  /* Chart series: mid navy, so green stays reserved for gains. */
+  --chart-1: #1d4e89;
 }
 
 @theme inline {
@@ -56,6 +62,7 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -63,15 +70,27 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-gain: var(--gain);
+  --color-loss: var(--loss);
   --color-destructive: var(--destructive);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-border: var(--warning-border);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: calc(var(--radius) - 2px);
+  --radius-xl: var(--radius);
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
 }
 
 @layer base {
@@ -81,5 +100,7 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
 }

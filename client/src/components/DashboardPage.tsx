@@ -26,7 +26,7 @@ export function DashboardPage() {
       {flash && (
         <div
           role="status"
-          className="flex items-center justify-center gap-3 bg-emerald-500/15 px-4 py-2 text-center text-sm text-emerald-900 dark:text-emerald-200"
+          className="flex items-center justify-center gap-3 border-b bg-info px-4 py-2 text-center text-sm text-info-foreground"
         >
           <span>{flash}</span>
           <button
