@@ -62,7 +62,9 @@ class IngestionCoordinator:
         self._executor = executor
         self._daily_cap = daily_cap
         self._stale_after = stale_after
-        self._inflight: set[str] = set()
+        # Key -> a future that resolves (to the task's return value, or None if
+        # it raised) when that task finishes, so callers can wait on it.
+        self._inflight: dict[str, Future] = {}
         self._futures: set[Future] = set()
         self._lock = threading.Lock()
         self._stopping = threading.Event()
@@ -144,17 +146,39 @@ class IngestionCoordinator:
 
         Returns False when skipped (a duplicate, or shutting down).
         """
+        return self._start(key, task) is not None
+
+    def join_or_submit(
+        self, key: str, task: Callable[[], object] | None = None
+    ) -> Future | None:
+        """A future for the task running under ``key``, starting ``task`` if none is.
+
+        With ``task`` None, only joins. Returns None when nothing runs (or
+        shutting down). The future resolves when the task finishes, to its
+        return value (None if it raised).
+        """
+        with self._lock:
+            running = self._inflight.get(key)
+        if running is not None:
+            return running
+        if task is None:
+            return None
+        # Lost a race to another caller starting the same key: join theirs.
+        return self._start(key, task) or self.join_or_submit(key)
+
+    def _start(self, key: str, task: Callable[[], object]) -> Future | None:
         if self._stopping.is_set():
-            return False
+            return None
+        finished: Future = Future()
         with self._lock:
             if key in self._inflight:
-                return False
-            self._inflight.add(key)
-        future = self._executor.submit(self._run_task, key, task)
+                return None
+            self._inflight[key] = finished
+        future = self._executor.submit(self._run_task, key, task, finished)
         with self._lock:
             self._futures.add(future)
         future.add_done_callback(self._forget)
-        return True
+        return finished
 
     def _run(
         self,
@@ -249,13 +273,15 @@ class IngestionCoordinator:
         with self._lock:
             self._futures.discard(future)
 
-    def _run_task(self, key: str, task: Callable[[], object]) -> None:
+    def _run_task(self, key: str, task: Callable[[], object], finished: Future) -> None:
+        result: object = None
         try:
-            task()
+            result = task()
         except Exception:
             # Jobs record pipeline failures themselves; this catches DB errors
             # that would otherwise vanish inside the executor.
             logger.exception("background task %s crashed", key)
         finally:
             with self._lock:
-                self._inflight.discard(key)
+                self._inflight.pop(key, None)
+            finished.set_result(result)

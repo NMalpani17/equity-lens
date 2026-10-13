@@ -63,7 +63,8 @@ function streamOpenError(error: unknown) {
  *
  * Rule violations (demo, not indexed, in progress, fresh, caps) are JSON
  * errors before streaming starts. Then: `start` {ticker, quarter}, `agent`
- * {agent, state, label, summary?} as each agent runs, and finally `done`
+ * {agent, state, label, summary?} for the check for a newer earnings call
+ * (`freshness`) and then each agent as it runs, and finally `done`
  * {report} or `error` {code, message, retryable}.
  *
  * A generation always finishes once started: if the client leaves, the api
@@ -136,7 +137,9 @@ async function relayReport(
     for await (const event of events) {
       switch (event.type) {
         case "agent":
-          generating = true;
+          // The check for a newer call runs before the report is claimed, so
+          // a refusal after it still means nothing was generated.
+          if (event.agent !== "freshness") generating = true;
           sink.send("agent", {
             agent: event.agent,
             state: event.state,

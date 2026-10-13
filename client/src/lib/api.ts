@@ -54,7 +54,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...auth, ...init?.headers },
     });
   } catch {
-    throw new ApiError(0, "Could not reach the API. Is it running?");
+    throw new ApiError(
+      0,
+      "We couldn't reach Equity Lens. Check your connection and try again.",
+    );
   }
 
   if (!response.ok) {
@@ -96,7 +99,10 @@ export async function postEventStream(
     });
   } catch (error) {
     if (signal?.aborted) throw error;
-    throw new ApiError(0, "Could not reach the API. Is it running?");
+    throw new ApiError(
+      0,
+      "We couldn't reach Equity Lens. Check your connection and try again.",
+    );
   }
   if (!response.ok || !response.body) {
     throw await apiErrorFrom(response);

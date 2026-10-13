@@ -6,6 +6,8 @@ before) is searched immediately from its existing vectors, on both the
 """
 
 import logging
+import threading
+import time
 from collections.abc import Iterator, Sequence
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
@@ -359,6 +361,106 @@ def test_equibles_error_is_logged_and_waits_for_tomorrow(
     assert env.refresher.check("AAPL") is FreshnessOutcome.ALREADY_CHECKED
 
 
+# --- before a report: ensure_fresh waits for the check -----------------------------
+
+
+def test_ensure_fresh_runs_a_due_check_and_adds_the_newer_call_before_returning() -> (
+    None
+):
+    env = make_env()
+    publish_newer_call(env)
+
+    assert env.refresher.ensure_fresh("AAPL", timeout=5) is True
+
+    assert env.repo.get_ticker("AAPL").quarters[0] == "FY2026Q1"
+    assert env.equibles.calls == ["list:AAPL", "get:AAPL:2026Q1"]
+
+
+def test_ensure_fresh_skips_equibles_when_no_check_is_due() -> None:
+    env = make_env()
+    env.clock[0] = datetime(2025, 6, 1)  # newest call (2025-04-15) is 47 days old
+
+    assert env.refresher.ensure_fresh("AAPL", timeout=5) is True
+    assert env.equibles.calls == []
+    assert env.executor.submitted == []
+
+
+def test_ensure_fresh_does_not_check_twice_in_a_day() -> None:
+    env = make_env()
+    env.refresher.check("AAPL")  # e.g. this morning's background check
+    env.equibles.calls.clear()
+
+    assert env.refresher.ensure_fresh("AAPL", timeout=5) is True
+    assert env.equibles.calls == []
+
+
+def test_ensure_fresh_joins_a_check_a_search_already_started() -> None:
+    env = make_env(run_tasks=False)
+    publish_newer_call(env)
+    assert env.refresher.maybe_check(env.repo.get_ticker("AAPL")) is True
+    result: list[bool] = []
+
+    waiter = threading.Thread(
+        target=lambda: result.append(env.refresher.ensure_fresh("AAPL", timeout=5))
+    )
+    waiter.start()
+    time.sleep(0.1)
+    assert result == []  # still waiting for the queued check
+    env.executor.run_pending()  # the search's check runs (and adds the call)
+    waiter.join(5)
+
+    assert result == [True]
+    assert len(env.executor.submitted) == 1  # joined it, didn't start another
+    assert env.equibles.calls.count("list:AAPL") == 1
+    assert env.repo.get_ticker("AAPL").quarters[0] == "FY2026Q1"
+
+
+def test_ensure_fresh_gives_up_after_the_timeout() -> None:
+    env = make_env(run_tasks=False)  # the check is queued but never runs
+
+    started = time.monotonic()
+    assert env.refresher.ensure_fresh("AAPL", timeout=0.1) is False
+    assert time.monotonic() - started < 2
+
+
+def test_ensure_fresh_reports_a_failed_check() -> None:
+    env = make_env()
+    env.equibles.list_earnings_calls = MagicMock(side_effect=RuntimeError("down"))
+
+    assert env.refresher.ensure_fresh("AAPL", timeout=5) is False
+    assert env.repo.get_ticker("AAPL").quarters[0] == "FY2025Q4"
+
+
+def test_ensure_fresh_never_raises() -> None:
+    env = make_env()
+    env.repo.get_ticker = MagicMock(side_effect=RuntimeError("db down"))
+
+    assert env.refresher.ensure_fresh("AAPL", timeout=5) is False
+
+
+def test_ensure_fresh_with_refresh_off_checks_nothing() -> None:
+    env = make_env(cap=0)
+
+    assert env.refresher.ensure_fresh("AAPL", timeout=5) is True
+    assert env.equibles.calls == []
+
+
+def test_join_or_submit_shares_one_running_task_per_key() -> None:
+    env = make_env(run_tasks=False)
+    ran: list[str] = []
+
+    first = env.coordinator.join_or_submit("k", lambda: ran.append("a") or "a")
+    second = env.coordinator.join_or_submit("k", lambda: ran.append("b") or "b")
+    joined = env.coordinator.join_or_submit("k")
+
+    assert first is not None and first is second is joined
+    env.executor.run_pending()
+    assert first.result(timeout=1) == "a"
+    assert ran == ["a"]
+    # Finished: nothing to join any more.
+    assert env.coordinator.join_or_submit("k") is None
+
+
 # --- a refresh in progress never delays a search -----------------------------------
 
 HIT = SearchHit(
@@ -467,5 +569,5 @@ def test_chat_tool_answers_from_existing_vectors_during_a_refresh(
     passages = [(p["fiscal_year"], p["fiscal_quarter"]) for p in out.data["passages"]]
     assert passages == [(2025, 4)]  # the existing FY2025Q4 vectors
     assert clock[0] == 0.0  # never slept waiting for indexing
-    assert not any(label.startswith("Indexing") for label in progress)
+    assert not any(label.endswith("earnings calls…") for label in progress)
     assert_no_new_ingestion(refreshing)

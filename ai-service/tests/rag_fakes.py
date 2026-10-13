@@ -240,6 +240,8 @@ class InlineExecutor:
     def __init__(self, run: bool = True) -> None:
         self.run = run
         self.submitted: list[tuple[Any, ...]] = []
+        # Work submitted with run=False, for run_pending().
+        self.pending: list[tuple[Any, tuple[Any, ...], Future]] = []
 
     def submit(self, fn, *args) -> Future:
         """Like Executor.submit: returns a Future (already done if it ran)."""
@@ -247,7 +249,15 @@ class InlineExecutor:
         future: Future = Future()
         if self.run:
             future.set_result(fn(*args))
+        else:
+            self.pending.append((fn, args, future))
         return future
+
+    def run_pending(self) -> None:
+        """Run the work held back by run=False, in submission order."""
+        while self.pending:
+            fn, args, future = self.pending.pop(0)
+            future.set_result(fn(*args))
 
     def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
         self.shut_down = True

@@ -227,7 +227,7 @@ saved failed reply. Events:
 | --------------- | ------------------------------------------------------------------------------------------- |
 | `turn`          | `{ conversation, userMessage, assistantMessageId }` (the saved user message).               |
 | `tool_start`    | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.                    |
-| `tool_progress` | `{ id, label }` — live status for a running tool, e.g. `"Indexing Starbucks transcripts…"`. |
+| `tool_progress` | `{ id, label }` — live status for a running tool, e.g. `"Getting Starbucks earnings calls…"`. |
 | `tool_end`      | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                                     |
 | `chart`         | `{ chart }` — an inline chart built from a tool result (see below), right after `tool_end`. |
 | `token`         | `{ text }` — answer text as it is generated (reset by the next `tool_start`).               |
@@ -490,7 +490,7 @@ Then the response is `text/event-stream` (with keepalive comments):
 | Event   | Data                                                                                                                                                                                                                     |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `start` | `{ ticker, quarter }`                                                                                                                                                                                                    |
-| `agent` | `{ agent, state, label, summary? }`: `agent` is `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. `label` is `"Writing report…"` while running and past tense once done (`"Wrote report"`). |
+| `agent` | `{ agent, state, label, summary? }`: `agent` is `freshness` (the check for a newer earnings call, always first; `summary` e.g. `"Found a newer call: Q4 FY2026"` or `"Latest call: Q3 FY2026"`), `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. `label` is `"Writing report…"` while running and past tense once done (`"Wrote report"`). |
 | `done`  | `{ report }`, the saved report (same shape as above).                                                                                                                                                                    |
 | `error` | `{ code, message, retryable }`, e.g. `research_failed`, `comparison_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.                                                                              |
 
@@ -533,7 +533,7 @@ Chat and MCP:
 | Method | Path              | Description                                                                                                                                                                                                                                                   |
 | ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST` | `/chat/stream`    | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, conversation_id, message, history, portfolio, time_zone}`.                                                                                                                          |
-| `POST` | `/reports/stream` | One research report generation as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, ticker, regenerate_after_days}`. Events: `agent`, `done` `{report, fiscal_year, fiscal_quarter, generated_at, usage}`, `error`. The report is saved before `done`. |
+| `POST` | `/reports/stream` | One research report generation as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, ticker, regenerate_after_days}`. Events: `agent` (first `freshness`, waited for so the report covers the newest call, then the three agents), `done` `{report, fiscal_year, fiscal_quarter, generated_at, usage}`, `error`. The report is saved before `done`. |
 | any    | `/mcp/`           | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                                                                                                                                                                      |
 
 The MCP server exposes the agent's read-only tools: `search_transcripts`,

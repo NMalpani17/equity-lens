@@ -16,6 +16,11 @@ import {
 
 export const AGENTS: { agent: ReportAgent; label: string; doneLabel: string }[] = [
   {
+    agent: "freshness",
+    label: "Checking for the latest earnings call…",
+    doneLabel: "Checked for the latest earnings call",
+  },
+  {
     agent: "transcripts",
     label: "Researching transcripts…",
     doneLabel: "Researched transcripts",

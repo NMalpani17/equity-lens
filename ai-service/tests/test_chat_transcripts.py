@@ -215,7 +215,7 @@ def test_waits_for_indexing_then_answers_in_the_same_call() -> None:
 
     assert out.data["status"] == "ok" and len(out.data["passages"]) == 1
     assert progress == [
-        "Indexing Starbucks transcripts…",
+        "Getting Starbucks earnings calls…",
         "Searching SBUX transcripts…",
     ]
     assert clock[0] == 6.0  # three 2-second polls, well under the 45 s budget
@@ -239,7 +239,7 @@ def test_indexing_label_uses_the_name_resolve_company_found() -> None:
     ctx = turn()
     ctx.company_names["NKE"] = "NIKE INC -CL B"
 
-    assert _indexing_label(deps, ctx) == "Indexing Nike transcripts…"
+    assert _indexing_label(deps, ctx) == "Getting Nike earnings calls…"
     resolver.resolve.assert_not_called()
 
 
@@ -252,7 +252,7 @@ def test_indexing_label_never_mangles_a_bare_ticker() -> None:
         search, records=lambda _: indexed("NKE", status="indexing"), resolver=resolver
     )
 
-    assert _indexing_label(deps, turn()) == "Indexing NKE transcripts…"
+    assert _indexing_label(deps, turn()) == "Getting NKE earnings calls…"
 
 
 def test_indexing_that_takes_too_long_falls_back_to_try_again() -> None:

@@ -169,7 +169,7 @@ async function indexedTicker(
   const row = await prisma.ragTicker.findUnique({ where: { ticker } });
   const latest = row ? latestIndexedQuarter(row) : null;
   if (!row || !latest) {
-    throw new NotFoundError(`${ticker} has no indexed earnings calls.`);
+    throw new NotFoundError(`We don't have earnings calls for ${ticker} yet.`);
   }
   return { row, latest };
 }

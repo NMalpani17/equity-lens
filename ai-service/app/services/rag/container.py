@@ -44,6 +44,7 @@ class RagComponents:
     coordinator: IngestionCoordinator
     search: RagSearchService
     comparison: QuarterComparisonService
+    freshness: FreshnessRefresher
 
     def close(self, timeout: float = 3.0) -> None:
         """Stop ingestion (bounded by ``timeout``) and close the pool."""
@@ -166,6 +167,7 @@ def build_components(settings: Settings) -> RagComponents:
         coordinator,
         search,
         QuarterComparisonService(repo, search),
+        freshness,
     )
 
 

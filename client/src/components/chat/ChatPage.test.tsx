@@ -259,10 +259,14 @@ describe("ChatPage", () => {
       args: {},
     });
     expect(await screen.findByText("Searching SBUX transcripts…")).toBeInTheDocument();
-    emit({ type: "tool_progress", id: "s1", label: "Indexing Starbucks transcripts…" });
+    emit({
+      type: "tool_progress",
+      id: "s1",
+      label: "Getting Starbucks earnings calls…",
+    });
 
     expect(
-      await screen.findByText("Indexing Starbucks transcripts…"),
+      await screen.findByText("Getting Starbucks earnings calls…"),
     ).toBeInTheDocument();
     expect(screen.queryByText("Searching SBUX transcripts…")).not.toBeInTheDocument();
   });
@@ -568,7 +572,10 @@ describe("ChatPage", () => {
     it("keeps a question the server never saved, and Retry sends it again", async () => {
       api.streamMessage
         .mockRejectedValueOnce(
-          new ApiError(0, "Could not reach the API. Is it running?"),
+          new ApiError(
+            0,
+            "We couldn't reach Equity Lens. Check your connection and try again.",
+          ),
         )
         .mockImplementation(async (_id, content, onEvent) => {
           onEvent({

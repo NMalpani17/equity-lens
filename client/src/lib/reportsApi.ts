@@ -80,7 +80,8 @@ export interface ReportView {
   usage: ReportUsage;
 }
 
-export type ReportAgent = "transcripts" | "market" | "writer";
+/** `freshness` is the check for a newer earnings call that runs first. */
+export type ReportAgent = "freshness" | "transcripts" | "market" | "writer";
 export type AgentState = "running" | "done" | "failed";
 
 export interface ReportErrorPayload {

@@ -51,6 +51,23 @@ describe("mapReportEvent", () => {
     ).toBeNull();
   });
 
+  it("accepts the check for a newer earnings call that runs first", () => {
+    expect(
+      mapReportEvent("agent", {
+        agent: "freshness",
+        state: "done",
+        label: "Checked for the latest earnings call",
+        summary: "Found a newer call: Q4 FY2026",
+      }),
+    ).toEqual({
+      type: "agent",
+      agent: "freshness",
+      state: "done",
+      label: "Checked for the latest earnings call",
+      summary: "Found a newer call: Q4 FY2026",
+    });
+  });
+
   it("maps the saved report to the camelCase DTO without agent stats", () => {
     const event = mapReportEvent("done", {
       report: reportContent(),

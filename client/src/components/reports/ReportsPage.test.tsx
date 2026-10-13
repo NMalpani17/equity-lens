@@ -259,12 +259,12 @@ describe("ReportsPage", () => {
     },
   );
 
-  it("says so when no company is indexed", async () => {
+  it("says so when no company is available", async () => {
     api.listReports.mockResolvedValue({ tickers: [], usage: view().usage });
 
     renderAt("/reports");
 
-    expect(await screen.findByText("No companies are indexed yet.")).toBeVisible();
+    expect(await screen.findByText("No companies are available yet.")).toBeVisible();
     expect(api.getReport).not.toHaveBeenCalled();
   });
 
@@ -346,10 +346,24 @@ describe("ReportsPage", () => {
         .getAllByRole("listitem")
         .map((li) => li.textContent),
     ).toEqual([
+      "Checking for the latest earnings call… (pending)",
       "Researching transcripts… (pending)",
       "Analyzing price data… (pending)",
       "Writing report… (pending)",
     ]);
+    emit({
+      type: "agent",
+      agent: "freshness",
+      state: "running",
+      label: "Checking for the latest earnings call…",
+    });
+    emit({
+      type: "agent",
+      agent: "freshness",
+      state: "done",
+      label: "Checked for the latest earnings call",
+      summary: "Found a newer call: Q3 FY2027",
+    });
     emit({
       type: "agent",
       agent: "transcripts",
@@ -375,6 +389,7 @@ describe("ReportsPage", () => {
           .getAllByRole("listitem")
           .map((li) => li.textContent),
       ).toEqual([
+        "Checked for the latest earnings call · Found a newer call: Q3 FY2027 (done)",
         "Researching transcripts… (running)",
         "Analyzed price data · 2 data sources (done)",
         "Writing report… (pending)",
@@ -480,7 +495,7 @@ describe("ReportsPage", () => {
     renderAt("/reports/NVDA");
 
     expect(await screen.findByRole("note")).toHaveTextContent(
-      "A newer earnings call (Q3 FY2027) is indexed. This report covers Q2 FY2027.",
+      "A newer earnings call (Q3 FY2027) is available. This report covers Q2 FY2027.",
     );
     expect(screen.getByRole("button", { name: /Generate report/ })).toBeEnabled();
   });

@@ -63,7 +63,7 @@ def classify_model_error(exc: BaseException) -> ChatError:
     if status == 400 and ("failed_precondition" in text or "billing" in text):
         return ChatError(
             "ai_unavailable",
-            "The AI analyst is unavailable (billing is not set up).",
+            "The AI analyst is unavailable right now. Please try again later.",
             retryable=False,
         )
     if status is not None and status >= 500:

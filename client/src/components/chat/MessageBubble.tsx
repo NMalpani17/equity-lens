@@ -95,7 +95,7 @@ export function MessageBubble({
                 title={usedTools.map((t) => t.label).join("\n")}
               >
                 <Wrench aria-hidden="true" className="size-3" />
-                {usedTools.length} tool {usedTools.length === 1 ? "call" : "calls"}
+                {usedTools.length} research {usedTools.length === 1 ? "step" : "steps"}
               </span>
             )}
             {canRetry && (

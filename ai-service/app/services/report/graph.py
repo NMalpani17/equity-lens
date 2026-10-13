@@ -321,7 +321,8 @@ def build_report_graph(
                 )
             else:
                 raise ReportError(
-                    "not_indexed", f"{inputs.ticker} has no indexed earnings call."
+                    "not_indexed",
+                    f"We don't have earnings calls for {inputs.ticker} yet.",
                 )
             agent = create_agent(
                 agents.transcript_model(),
