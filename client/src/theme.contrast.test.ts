@@ -55,6 +55,7 @@ const NON_TEXT_PAIRS: [string, string[]][] = [
   ["ring", SURFACES],
   ["brand", SURFACES],
   ["chart-1", ["card"]],
+  ["chart-benchmark", ["card"]],
 ];
 
 describe("design token contrast", () => {

@@ -225,6 +225,100 @@ export function getPortfolioSummary(): Promise<PortfolioSummary> {
   return request<PortfolioSummary>("/api/portfolio/summary");
 }
 
+// --- Performance and sectors ----------------------------------------------
+
+export const PERFORMANCE_RANGES = ["1M", "3M", "6M", "1Y", "ALL"] as const;
+export type PerformanceRange = (typeof PERFORMANCE_RANGES)[number];
+
+export interface PerformancePoint {
+  date: string;
+  portfolioPercent: number;
+  benchmarkPercent: number | null;
+  portfolioValue: number;
+}
+
+export interface PortfolioPerformance {
+  range: PerformanceRange;
+  status: "ok" | "empty" | "no_dates" | "no_data";
+  benchmark: { ticker: string; available: boolean };
+  startDate: string | null;
+  endDate: string | null;
+  startClamped: boolean;
+  portfolioReturnPercent: number | null;
+  benchmarkReturnPercent: number | null;
+  points: PerformancePoint[];
+  excluded: { ticker: string; reason: "no_history" | "no_close_yet" }[];
+  lotsWithoutDate: number;
+}
+
+export function getPortfolioPerformance(
+  range: PerformanceRange,
+): Promise<PortfolioPerformance> {
+  return request<PortfolioPerformance>(`/api/portfolio/performance?range=${range}`);
+}
+
+export interface SectorSlice {
+  sector: string;
+  marketValue: number;
+  weightPercent: number;
+  holdings: { ticker: string; name: string | null; marketValue: number }[];
+}
+
+export interface SectorAllocation {
+  totalMarketValue: number;
+  sectors: SectorSlice[];
+  unpricedTickers: string[];
+  pendingTickers: string[];
+}
+
+export function getSectorAllocation(): Promise<SectorAllocation> {
+  return request<SectorAllocation>("/api/portfolio/sectors");
+}
+
+// --- CSV import -----------------------------------------------------------
+
+/** Largest CSV the API accepts (matches IMPORT_MAX_FILE_BYTES). */
+export const IMPORT_MAX_FILE_BYTES = 100_000;
+
+export interface ImportRow {
+  line: number;
+  ticker: string;
+  shares: number;
+  buyPrice: number;
+  purchaseDate: string;
+}
+
+export interface ImportPreview {
+  rows: ImportRow[];
+  errors: { line: number; field: string; message: string }[];
+  warnings: { line: number; message: string }[];
+  totalRows: number;
+  errorRowCount: number;
+}
+
+/** Validate a CSV file's text; nothing is saved. */
+export function previewHoldingsImport(csv: string): Promise<ImportPreview> {
+  return request<ImportPreview>("/api/holdings/import/preview", {
+    method: "POST",
+    body: JSON.stringify({ csv }),
+  });
+}
+
+/** Save previewed rows in one transaction (all or nothing). */
+export function importHoldings(rows: ImportRow[]): Promise<{ imported: number }> {
+  return request<{ imported: number }>("/api/holdings/import", {
+    method: "POST",
+    body: JSON.stringify({
+      rows: rows.map(({ ticker, shares, buyPrice, purchaseDate }) => ({
+        ticker,
+        shares,
+        buyPrice,
+        purchaseDate,
+      })),
+    }),
+  });
+}
+
 // --- Account --------------------------------------------------------------
 
 /** Permanently delete the authenticated user's account and all their data. */

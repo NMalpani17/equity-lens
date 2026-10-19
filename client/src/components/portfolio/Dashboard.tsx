@@ -10,9 +10,12 @@ import { HoldingsTable } from "./HoldingsTable";
 import { HoldingFormDialog } from "./HoldingFormDialog";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ConfirmDeletePositionDialog } from "./ConfirmDeletePositionDialog";
+import { PerformanceChart } from "./PerformanceChart";
 
 export function Dashboard() {
-  const { state, refresh, refreshing } = usePortfolio();
+  const { state, refresh: refreshSummary, refreshing } = usePortfolio();
+  // Bumped whenever holdings may have changed, so the insights reload too.
+  const [version, setVersion] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PortfolioLot | null>(null);
   const [deleting, setDeleting] = useState<PortfolioLot | null>(null);
@@ -22,6 +25,11 @@ export function Dashboard() {
 
   const loading = state.kind === "loading";
   const data = state.kind === "loaded" ? state.data : null;
+
+  function refresh(): Promise<void> {
+    setVersion((v) => v + 1);
+    return refreshSummary();
+  }
 
   function openAdd() {
     setEditing(null);
@@ -39,7 +47,7 @@ export function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your holdings with live prices.
+            Your holdings with live prices and performance.
           </p>
         </div>
         <div className="flex gap-2">
@@ -106,6 +114,8 @@ export function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {data && data.positions.length > 0 && <PerformanceChart version={version} />}
 
       {data && data.positions.length > 0 && (
         <Card className="overflow-hidden">
