@@ -116,6 +116,26 @@ export interface PortfolioPerformance {
   lotsWithoutDate: number;
 }
 
+/** One sector's share of the portfolio's market value. */
+export interface SectorSlice {
+  /** One of 11 GICS sectors, "Funds", or "Other" when unknown. */
+  sector: string;
+  marketValue: number;
+  weightPercent: number;
+  /** The positions in it, largest first. */
+  holdings: { ticker: string; name: string | null; marketValue: number }[];
+}
+
+export interface SectorAllocation {
+  totalMarketValue: number;
+  /** Largest first, with "Other" last. */
+  sectors: SectorSlice[];
+  /** Positions without a live price, left out of the breakdown. */
+  unpricedTickers: string[];
+  /** Positions whose sector hasn't been looked up yet (shown in "Other"). */
+  pendingTickers: string[];
+}
+
 export interface ServiceHealth {
   status: "ok" | "unreachable";
   service: string;

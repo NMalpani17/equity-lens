@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 
 import { getPortfolioSummary } from "../services/portfolio.service.js";
 import { getPortfolioPerformance } from "../services/performance.service.js";
+import { getSectorAllocation } from "../services/sectors.service.js";
 import { ensureDemoHoldings } from "../services/holdings.service.js";
 import { getUserId, isAnonymousRequest } from "../middleware/auth.js";
 import { performanceQuerySchema } from "../schemas/portfolio.schema.js";
@@ -22,6 +23,11 @@ async function portfolioOwner(req: Request): Promise<string> {
 export async function getSummary(req: Request, res: Response): Promise<void> {
   const summary = await getPortfolioSummary(await portfolioOwner(req));
   res.status(200).json(summary);
+}
+
+export async function getSectors(req: Request, res: Response): Promise<void> {
+  const allocation = await getSectorAllocation(await portfolioOwner(req));
+  res.status(200).json(allocation);
 }
 
 export async function getPerformance(req: Request, res: Response): Promise<void> {

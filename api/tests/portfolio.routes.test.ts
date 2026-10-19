@@ -9,6 +9,9 @@ vi.mock("../src/services/performance.service.js", () => ({
 vi.mock("../src/services/portfolio.service.js", () => ({
   getPortfolioSummary: vi.fn(),
 }));
+vi.mock("../src/services/sectors.service.js", () => ({
+  getSectorAllocation: vi.fn(),
+}));
 vi.mock("../src/services/holdings.service.js", () => ({
   ensureDemoHoldings: vi.fn(),
 }));
@@ -19,6 +22,7 @@ vi.mock("../src/auth/verifyToken.js", () => ({
 import { createApp } from "../src/app.js";
 import { getPortfolioPerformance } from "../src/services/performance.service.js";
 import { ensureDemoHoldings } from "../src/services/holdings.service.js";
+import { getSectorAllocation } from "../src/services/sectors.service.js";
 import { verifySupabaseToken } from "../src/auth/verifyToken.js";
 import { UpstreamError } from "../src/errors.js";
 import type { PortfolioPerformance } from "../src/types.js";
@@ -98,5 +102,48 @@ describe("GET /api/portfolio/performance", () => {
     const res = await request(app).get("/api/portfolio/performance");
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe("GET /api/portfolio/sectors", () => {
+  const allocation = {
+    totalMarketValue: 100,
+    sectors: [
+      {
+        sector: "Funds",
+        marketValue: 100,
+        weightPercent: 100,
+        holdings: [{ ticker: "VOO", name: null, marketValue: 100 }],
+      },
+    ],
+    unpricedTickers: [],
+    pendingTickers: [],
+  };
+
+  it("returns the user's sector allocation", async () => {
+    vi.mocked(getSectorAllocation).mockResolvedValue(allocation);
+
+    const res = await get("/api/portfolio/sectors");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(allocation);
+    expect(getSectorAllocation).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it("seeds the demo portfolio first for an anonymous user", async () => {
+    verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: true });
+    vi.mocked(getSectorAllocation).mockResolvedValue(allocation);
+
+    await get("/api/portfolio/sectors");
+
+    expect(ensureDemoHoldings).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it("returns 502 when sector data is unavailable", async () => {
+    vi.mocked(getSectorAllocation).mockRejectedValue(new UpstreamError("down"));
+
+    const res = await get("/api/portfolio/sectors");
+
+    expect(res.status).toBe(502);
   });
 });
