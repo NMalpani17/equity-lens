@@ -45,6 +45,19 @@ cp ai-service/.env.example ai-service/.env
 
 > Never commit `.env` files — only `.env.example` is tracked. See `CLAUDE.md`.
 
+**Portfolio insights** (performance chart, sector allocation, CSV import)
+need no new keys. They use the Finnhub key and `DATABASE_URL` above; without
+the database, closes and profiles are fetched uncached. Optional tuning (all
+have defaults): `AI_SERVICE_FINNHUB_CALLS_PER_MINUTE` (50),
+`AI_SERVICE_PROFILE_MAX_LOOKUPS_PER_REQUEST` (25),
+`AI_SERVICE_TICKER_CHECK_FINNHUB_BUDGET` (20) and
+`AI_SERVICE_MARKET_HISTORY_WORKERS` (8) in `ai-service/.env`;
+`HOLDINGS_MAX_LOTS_PER_USER` (1000), `IMPORT_MAX_FILE_BYTES` (100000) and
+`IMPORT_MAX_ROWS` (500) in `api/.env`. The client's file-size check mirrors
+`IMPORT_MAX_FILE_BYTES` (`client/src/lib/api.ts`). Running the ai-service
+locally writes market data to the cache tables in the (production) database.
+It holds no user data, but it is still a write.
+
 ## One environment and Claude Code guardrails
 
 There is no separate dev project: the Supabase database, Pinecone index,

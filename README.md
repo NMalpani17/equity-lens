@@ -65,6 +65,17 @@ Click **Try demo**; no sign-up needed.
 - **Portfolio tracking.** Lots grouped into positions with average cost,
   gain/loss and today's change. Live quotes come from Finnhub, with a yfinance
   fallback.
+- **Performance vs the S&P 500.** A chart of the portfolio's time-weighted
+  price return (no dividends) against SPY over 1M, 3M, 6M, 1Y or All. Each lot
+  counts from its purchase date, so adding money never shows as a gain. Daily
+  closes are cached in Postgres, so repeat loads don't refetch them.
+  [How it's calculated](docs/architecture.md#portfolio-performance).
+- **Sector allocation.** Market value by sector (11 GICS sectors, plus Funds
+  for ETFs), from Finnhub company profiles with a yfinance fallback, cached in
+  Postgres.
+- **CSV import.** Upload ticker, quantity, price and purchase date for up to
+  500 lots, from a downloadable template. Preview the valid rows and every
+  row's errors, then save all of them or none.
 - **Accounts and instant demo.** Supabase Auth with email and password or
   Google, password reset and account deletion. Forms validate as you go, and
   errors never reveal whether an email is registered. "Try demo" gives each

@@ -386,6 +386,88 @@ client renders them below the answer once it has finished streaming (so the
 growing text never pushes a drawn chart down), with Recharts lazy-loaded in its
 own chunk and a "View data" table for each. Chart shapes are in [api.md](api.md#ai-analyst-chat).
 
+## Portfolio performance
+
+`api/src/services/performance.service.ts` charts the portfolio against the
+S&P 500 (SPY) from each lot's purchase date and quantity:
+
+- **Timeline.** SPY's trading days, so weekends and holidays have no point.
+  A holding without a close that day (a halt, a foreign holiday) carries its
+  last close forward.
+- **Entry.** A lot joins at the close of its purchase date, or the next
+  trading day's close for a weekend or holiday. Before that it doesn't count.
+- **Time-weighted return.** Each day's return is
+  `(value − value of lots joining today) / yesterday's value − 1`, chained
+  over the range. A new lot is a cash flow valued at its first close, so
+  buying more never reads as a gain. SPY's line is its own close over its close
+  at the start.
+- **Range.** Both lines are rebased to 0% at the last close on or before the
+  range start (`1M` is a calendar month before today in New York). If nothing
+  was held yet, they start at the first purchase's close instead
+  (`startClamped`). `ALL` starts at the first purchase.
+- **Price return.** Closes are split-adjusted but not dividend-adjusted, for
+  holdings and SPY alike. The chart says dividends aren't included.
+- **Left out, and said so.** Lots without a purchase date
+  (`purchase_date` is optional), tickers with no history (`no_history`) and
+  lots bought after the latest close (`no_close_yet`).
+- **Limits.** There is no record of sales, so the chart shows the current
+  lots back-dated; a lot that was sold and deleted isn't in it.
+
+## Market data cache
+
+Historical prices and company profiles are shared, user-free data, cached in
+Postgres by the ai-service (`ai-service/app/services/market_data/`). Prisma
+owns the tables (migration `20261018000000_add_market_data_cache`), like the
+RAG and report tables, with row level security on each.
+
+- **Daily closes** (`market_daily_closes`, `market_history_coverage`) come
+  from yfinance; Finnhub's candles aren't on the free plan. Only completed New
+  York sessions are stored (a session is final from 4:30 pm ET). Coverage
+  records the earliest date held and the last session filled, so a request
+  fetches only the earlier range it lacks, or the sessions since the last fill
+  plus a 10-day overlap.
+- **Splits.** A split rewrites every earlier close. When the overlap shows a
+  new split, or stored closes changed by more than 0.5%, the ticker's history is
+  replaced.
+- **Missing history.** A ticker with no closes is remembered as `no_history`
+  and asked again after a day. yfinance reports a network error as an empty
+  history, so a ticker only counts as having none while SPY still returns
+  prices; otherwise it's `unavailable` and nothing is cached.
+- **Company profiles** (`company_profiles`): Finnhub's `profile2` first, then
+  yfinance's `info` when Finnhub has none (ETFs, foreign listings) or its
+  industry isn't mapped. Both map onto the 11 GICS sectors plus `Funds` (ETFs
+  and mutual funds) in `sectors.py`; anything else is null, shown as `Other`.
+  Profiles are kept 30 days (unknown ones 7). A provider outage is never cached
+  as unknown.
+- **Without the database** (not configured, or down), every request is served
+  uncached; market data never depends on it.
+
+All Finnhub calls in a process share one sliding-window limit (50 a minute,
+under the free plan's 60). A call past it isn't sent and fails as unavailable,
+so quotes and profiles fall back to yfinance instead of hitting a 429. Per-request
+costs are in [api.md](api.md#ai-service-httplocalhost8000).
+
+## Sector allocation
+
+`api/src/services/sectors.service.ts` prices positions with the portfolio
+summary, gets each priced ticker's sector from the ai-service, and sums
+market value per sector: largest first, `Other` last. Unpriced positions are
+left out and listed. A request looks up at most 25 uncached profiles; the rest
+are `pending` (shown under `Other`) and looked up on a later load.
+
+## CSV import
+
+`api/src/services/csvImport.service.ts` parses with `csv-parse` (quoted
+fields, a BOM, `\r\n`) and validates each row with Zod
+(`api/src/schemas/import.schema.ts`). It collects one error per bad field per
+row, rather than stopping at the first. The preview then checks every distinct
+ticker in one batched ai-service call and writes nothing. The save is a
+separate request: it validates and re-checks again, then inserts every row
+with one `createMany` inside a transaction that first takes a per-user
+advisory lock. Two imports can't both pass the 1,000-lot cap, and a failure
+saves nothing. The client only sends rows the user confirmed. Rows with errors
+are skipped only after an explicit "Skip N rows with errors" confirmation.
+
 ## Client design system
 
 - **Tokens.** Every color is a CSS variable in `client/src/index.css`: navy
@@ -394,6 +476,10 @@ own chunk and a "View data" table for each. Chart shapes are in [api.md](api.md#
   (`--gain`) and red (`--loss`) mean gain and loss only; red is also used for
   errors and destructive actions (`--destructive`). Components use the tokens
   (`text-gain`, `bg-info`, `border-brand`), never raw Tailwind colors.
+- **Charts.** A series is mid navy (`--chart-1`); a benchmark is a dashed
+  neutral gray (`--chart-benchmark`), so green and red stay reserved for the
+  gain/loss figures beside them. Each chart has a legend or labels, a "View
+  data" table, and Recharts loaded in its own chunk.
 - **Contrast.** `client/src/theme.contrast.test.ts` reads `index.css` and fails
   if a text pair drops below WCAG AA (4.5:1) or a non-text mark (input border,
   focus ring, accent, chart line) below 3:1. Add a pair there when you add a
