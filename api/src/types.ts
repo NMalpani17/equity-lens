@@ -74,6 +74,48 @@ export interface PortfolioSummary {
   totals: PortfolioTotals;
 }
 
+/** Chart ranges for portfolio performance. */
+export const PERFORMANCE_RANGES = ["1M", "3M", "6M", "1Y", "ALL"] as const;
+export type PerformanceRange = (typeof PERFORMANCE_RANGES)[number];
+
+/** One trading day on the performance chart. */
+export interface PerformancePoint {
+  date: string;
+  /** Time-weighted price return since the start of the range, in percent. */
+  portfolioPercent: number;
+  /** The benchmark's price return since the start, or null without its closes. */
+  benchmarkPercent: number | null;
+  /** Market value of the lots held that day (at that day's close). */
+  portfolioValue: number;
+}
+
+/** Why a ticker is missing from the chart. */
+export type PerformanceExclusionReason =
+  /** The market-data service has no daily closes for it. */
+  | "no_history"
+  /** Bought on or after the latest close, so it has no close to count from. */
+  | "no_close_yet";
+
+export interface PortfolioPerformance {
+  range: PerformanceRange;
+  /**
+   * "ok": points to chart. "empty": no holdings. "no_dates": no lot has a
+   * purchase date. "no_data": dated lots exist but none has a close yet.
+   */
+  status: "ok" | "empty" | "no_dates" | "no_data";
+  benchmark: { ticker: string; available: boolean };
+  startDate: string | null;
+  endDate: string | null;
+  /** True when the range began before the first purchase, so the chart starts there. */
+  startClamped: boolean;
+  portfolioReturnPercent: number | null;
+  benchmarkReturnPercent: number | null;
+  points: PerformancePoint[];
+  excluded: { ticker: string; reason: PerformanceExclusionReason }[];
+  /** Lots left out because they have no purchase date. */
+  lotsWithoutDate: number;
+}
+
 export interface ServiceHealth {
   status: "ok" | "unreachable";
   service: string;
