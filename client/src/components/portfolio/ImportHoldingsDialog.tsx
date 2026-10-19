@@ -1,5 +1,5 @@
-import { useEffect, useId, useState, type ChangeEvent } from "react";
-import { Download, Loader2 } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { Download, Loader2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
   type ImportPreview,
 } from "@/lib/api";
 import { formatCurrency, formatDate, formatShares } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface ImportHoldingsDialogProps {
   open: boolean;
@@ -53,6 +54,8 @@ export function ImportHoldingsDialog({
   onImported,
 }: ImportHoldingsDialogProps) {
   const fileInputId = useId();
+  const fileNameId = useId();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [skipErrors, setSkipErrors] = useState(false);
@@ -125,14 +128,41 @@ export function ImportHoldingsDialog({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-col gap-2">
             <Label htmlFor={fileInputId}>CSV file</Label>
+            {/* The native input is cleared after each pick (so the same file can
+                be chosen again), so its own "No file chosen" text would be
+                wrong; a button and the file's name stand in for it. */}
             <input
+              ref={fileInputRef}
               id={fileInputId}
               type="file"
               accept=".csv,text/csv"
               onChange={(e) => void handleFile(e)}
               disabled={busy !== null}
-              className="text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-card file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent"
+              tabIndex={-1}
+              className="sr-only"
             />
+            <div className="flex min-w-0 items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy !== null}
+                aria-describedby={fileNameId}
+              >
+                <Upload />
+                Choose file
+              </Button>
+              <span
+                id={fileNameId}
+                className={cn(
+                  "truncate text-sm",
+                  fileName ? "text-foreground" : "text-muted-foreground",
+                )}
+              >
+                {fileName ?? "No file chosen"}
+              </span>
+            </div>
           </div>
           <a
             href={TEMPLATE_URL}

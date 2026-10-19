@@ -56,6 +56,21 @@ describe("ImportHoldingsDialog", () => {
     );
   });
 
+  it("shows the chosen file name while the preview is shown", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(respond(previewWithErrors));
+    renderDialog();
+    expect(screen.getByText("No file chosen")).toBeInTheDocument();
+
+    chooseFile(CSV, "my-holdings.csv");
+
+    expect(await screen.findByText("2 rows of 3 ready to import.")).toBeInTheDocument();
+    expect(screen.getByText("my-holdings.csv")).toBeInTheDocument();
+    expect(screen.queryByText("No file chosen")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Choose file" }),
+    ).toHaveAccessibleDescription("my-holdings.csv");
+  });
+
   it("previews the file, then imports the valid rows after the skip confirmation", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
