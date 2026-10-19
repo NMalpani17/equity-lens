@@ -706,12 +706,16 @@ rebuild `rag_tickers` from the vectors if the database was lost too.
    `20261008000000_add_research_reports` (the `research_reports` table, with
    RLS, and `chat_usage_events.weight`), then deploys the ai-service and api.
 2. Pre-generate the demo tickers' reports, so demo users have something to
-   view (they can't generate). From `ai-service/`, with local settings (which
-   point at production):
+   view (they can't generate, and can view only these). The demo tickers are
+   `api/src/demoReportTickers.json` (AAPL, MSFT, NVDA, TSLA, AMD, JPM), the
+   one list both the api and the script read, so edit it only there and keep
+   each one's report generated. From `ai-service/` in a repo checkout (the
+   script reads that file from the repo), with local settings (which point at
+   production):
 
    ```bash
-   python -m scripts.pregenerate_reports           # estimate only: AAPL, MSFT, NVDA, TSLA
-   python -m scripts.pregenerate_reports --yes     # generate and save (~$0.29 typical, $1.71 at most)
+   python -m scripts.pregenerate_reports           # estimate only: prints the plan and its cost
+   python -m scripts.pregenerate_reports --yes     # generate and save
    ```
 
    Reports under 7 days old are skipped unless `--force`; `--max-cost`

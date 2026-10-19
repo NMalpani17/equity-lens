@@ -9,6 +9,10 @@ import path from "node:path";
 import dotenv from "dotenv";
 import { z } from "zod";
 
+// The demo report tickers, shared with ai-service/scripts/pregenerate_reports.py
+// (a checked-in file rather than an env var, so the two can't drift).
+import demoReportTickers from "./demoReportTickers.json" with { type: "json" };
+
 // Load `.env` from the api package root, resolved relative to this module so it
 // works no matter what directory the process was started from (e.g. the repo
 // root via `npm run dev`). `config.ts` lives in `api/src`, so the package root
@@ -90,6 +94,22 @@ export function parseOrigins(raw: string): string[] {
     .filter((origin) => origin.length > 0);
 }
 
+/** Split a comma-separated ticker list: trimmed, uppercased, empties dropped. */
+export function parseTickerList(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(",")
+        .map((ticker) => ticker.trim().toUpperCase())
+        .filter((ticker) => ticker.length > 0),
+    ),
+  ];
+}
+
+const demoTickersFile = z
+  .object({ tickers: z.array(z.string()).min(1) })
+  .parse(demoReportTickers);
+
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
@@ -124,6 +144,8 @@ export const config = {
     regenerateAfterDays: parsed.data.REPORT_REGENERATE_AFTER_DAYS,
     staleGenerationMinutes: parsed.data.REPORT_STALE_GENERATION_MINUTES,
     connectTimeoutMs: parsed.data.REPORT_CONNECT_TIMEOUT_MS,
+    // Reports demo (anonymous) users may view; every other needs an account.
+    demoTickers: parseTickerList(demoTickersFile.tickers.join(",")),
   },
   holdings: {
     maxLotsPerUser: parsed.data.HOLDINGS_MAX_LOTS_PER_USER,

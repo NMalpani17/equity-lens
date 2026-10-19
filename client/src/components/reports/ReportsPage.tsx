@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { DemoBanner } from "@/components/DemoBanner";
 import { Header } from "@/components/Header";
+import { LockedReport } from "@/components/reports/LockedReport";
 import { ReportActions } from "@/components/reports/ReportActions";
 import { ReportDocument } from "@/components/reports/ReportDocument";
 import { ReportProgress } from "@/components/reports/ReportProgress";
@@ -42,14 +43,16 @@ function ErrorNote({
 /**
  * Research reports: pick a company, read its multi-agent report (cited
  * passages, price chart, dates), and generate or regenerate it if allowed.
- * Reports are shared by all users; demo accounts can only view them.
+ * Reports are shared by all users; demo accounts can only view them, and only
+ * for the demo companies (others ask them to sign up).
  */
 export function ReportsPage() {
   const { isDemo } = useAuth();
   const { ticker: param } = useParams();
   const navigate = useNavigate();
   const reports = useReports(param?.toUpperCase());
-  const { ticker, view } = reports;
+  const { ticker, view, locked } = reports;
+  const companyName = reports.tickers?.find((t) => t.ticker === ticker)?.companyName;
 
   const select = (next: string) => navigate(`/reports/${encodeURIComponent(next)}`);
 
@@ -95,7 +98,9 @@ export function ReportsPage() {
           </Card>
         )}
 
-        {ticker && reports.loadingView && !view && (
+        {ticker && locked && <LockedReport companyName={companyName ?? ticker} />}
+
+        {ticker && !locked && reports.loadingView && !view && (
           <p
             role="status"
             className="flex items-center gap-2 text-sm text-muted-foreground"
@@ -104,9 +109,11 @@ export function ReportsPage() {
             Loading the report…
           </p>
         )}
-        {ticker && reports.viewError && <ErrorNote message={reports.viewError} />}
+        {ticker && !locked && reports.viewError && (
+          <ErrorNote message={reports.viewError} />
+        )}
 
-        {view && (
+        {view && !locked && (
           <>
             <ReportActions
               view={view}

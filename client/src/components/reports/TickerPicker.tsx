@@ -1,6 +1,7 @@
 import type { ReportSummary } from "@/lib/reportsApi";
 
 function status(item: ReportSummary): string {
+  if (item.demoLocked) return "sign up to view";
   if (item.generating) return "generating";
   if (!item.report) return "no report yet";
   return item.report.outdated ? "older quarter" : "report ready";

@@ -314,7 +314,8 @@ the content holds nothing user-specific: no portfolio, no user id, and times
 in US market time.
 
 **Who may generate** (the api, `api/src/services/reports.service.ts`): signed-in
-users only (demo users view), not while a generation runs, not within 7 days
+users only (demo users only view, and only the reports listed in
+`api/src/demoReportTickers.json`; others are a `403`), not while a generation runs, not within 7 days
 of the current report, 2 per user per UTC day (failed generations count),
 and 3 units of the global daily cap (a chat turn is 1).
 The caps are checked and the usage event written under one advisory lock. The

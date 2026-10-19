@@ -1,5 +1,8 @@
 """Pre-generate research reports for the demo tickers.
 
+The demo tickers are api/src/demoReportTickers.json, the list the api lets
+demo users view, so run this from a repo checkout.
+
 Usage (from ai-service/):
     python -m scripts.pregenerate_reports              # plan + cost estimate only
     python -m scripts.pregenerate_reports --yes        # generate and save
@@ -17,26 +20,47 @@ stops before the next report once the actual spend reaches --max-cost.
 
 import argparse
 import asyncio
+import json
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.config import Settings, get_settings
 from app.logging_config import configure_logging
 from app.models.report import ReportRequest
 from app.services.evals.pricing import ReportEstimate, estimate_reports
 
-# The demo portfolio's tickers that have earnings calls (VOO is an ETF);
-# keep in sync with api/src/services/demoHoldings.ts.
-DEMO_TICKERS = ("AAPL", "MSFT", "NVDA", "TSLA")
+# The demo report tickers, the one list shared with the api (which shows demo
+# users only these reports). Read from the repo checkout: this script runs from
+# ai-service/ locally and is not part of the ai-service image.
+DEMO_TICKERS_FILE = (
+    Path(__file__).resolve().parents[2] / "api/src/demoReportTickers.json"
+)
 # The requester in traces (hashed there) for reports nobody asked for.
 SCRIPT_USER = "system:pregenerate"
 DEFAULT_MAX_COST = 1.00
 
 
+def demo_tickers(path: Path | None = None) -> list[str]:
+    """The shared demo report tickers; exits with a clear message if unreadable."""
+    path = path or DEMO_TICKERS_FILE
+    try:
+        tickers = json.loads(path.read_text(encoding="utf-8"))["tickers"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SystemExit(f"Can't read the demo tickers from {path}: {exc}") from exc
+    if not tickers or not all(isinstance(t, str) and t.strip() for t in tickers):
+        raise SystemExit(f"{path} must list at least one ticker under 'tickers'.")
+    return [t.strip().upper() for t in tickers]
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--tickers", nargs="+", default=list(DEMO_TICKERS))
+    parser.add_argument(
+        "--tickers",
+        nargs="+",
+        help=f"default: the demo tickers in {DEMO_TICKERS_FILE.name}",
+    )
     parser.add_argument("--yes", action="store_true", help="generate (writes reports)")
     parser.add_argument(
         "--force", action="store_true", help="regenerate reports under 7 days old"
@@ -49,7 +73,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         f"(default {DEFAULT_MAX_COST:.2f})",
     )
     args = parser.parse_args(argv)
-    args.tickers = list(dict.fromkeys(t.strip().upper() for t in args.tickers))
+    tickers = args.tickers if args.tickers is not None else demo_tickers()
+    args.tickers = list(dict.fromkeys(t.strip().upper() for t in tickers))
     return args
 
 

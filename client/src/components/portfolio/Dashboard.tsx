@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { AlertTriangle, Loader2, Plus, RefreshCw, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Loader2, Plus, RefreshCw, Upload, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +14,9 @@ import { PerformanceChart } from "./PerformanceChart";
 import { SectorAllocation } from "./SectorAllocation";
 import { ImportHoldingsDialog } from "./ImportHoldingsDialog";
 
+/** How long a confirmation (e.g. "Imported 12 holdings.") stays up. */
+export const NOTICE_MS = 5000;
+
 export function Dashboard() {
   const { state, refresh: refreshSummary, refreshing } = usePortfolio();
   // Bumped whenever holdings may have changed, so the insights reload too.
@@ -26,6 +29,13 @@ export function Dashboard() {
   const [deletingPosition, setDeletingPosition] = useState<PortfolioPosition | null>(
     null,
   );
+
+  // Auto-dismiss; a new notice restarts the timer.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const loading = state.kind === "loading";
   const data = state.kind === "loaded" ? state.data : null;
@@ -42,14 +52,32 @@ export function Dashboard() {
     void refresh();
   }
 
+  // Starting another change clears the last confirmation.
+  function openImport() {
+    setNotice(null);
+    setImportOpen(true);
+  }
+
   function openAdd() {
+    setNotice(null);
     setEditing(null);
     setFormOpen(true);
   }
 
   function openEdit(lot: PortfolioLot) {
+    setNotice(null);
     setEditing(lot);
     setFormOpen(true);
+  }
+
+  function startDelete(lot: PortfolioLot) {
+    setNotice(null);
+    setDeleting(lot);
+  }
+
+  function startDeletePosition(position: PortfolioPosition) {
+    setNotice(null);
+    setDeletingPosition(position);
   }
 
   return (
@@ -70,7 +98,7 @@ export function Dashboard() {
             <RefreshCw className={refreshing ? "animate-spin" : ""} />
             Refresh
           </Button>
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Button variant="outline" onClick={openImport}>
             <Upload />
             Import CSV
           </Button>
@@ -82,12 +110,19 @@ export function Dashboard() {
       </header>
 
       {notice && (
-        <p
-          role="status"
-          className="rounded-md bg-info px-4 py-2 text-sm text-info-foreground"
-        >
-          {notice}
-        </p>
+        <div className="flex items-center gap-3 rounded-md bg-info px-4 py-2 text-sm text-info-foreground">
+          <p role="status" className="flex-1">
+            {notice}
+          </p>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="Dismiss"
+            className="rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X aria-hidden="true" className="size-4" />
+          </button>
+        </div>
       )}
 
       <SummaryCards
@@ -136,7 +171,7 @@ export function Dashboard() {
                 <Plus />
                 Add holding
               </Button>
-              <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Button variant="outline" onClick={openImport}>
                 <Upload />
                 Import CSV
               </Button>
@@ -160,8 +195,8 @@ export function Dashboard() {
             <HoldingsTable
               positions={data.positions}
               onEdit={openEdit}
-              onDelete={setDeleting}
-              onDeletePosition={setDeletingPosition}
+              onDelete={startDelete}
+              onDeletePosition={startDeletePosition}
             />
           </CardContent>
         </Card>

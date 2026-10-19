@@ -1,9 +1,7 @@
-import { useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/context/auth-context";
-import { rememberSignupIntent } from "@/lib/authIntent";
+import { useDemoSignUp } from "@/hooks/useDemoSignUp";
 
 /**
  * Banner shown to anonymous demo users, nudging them to create a real
@@ -12,18 +10,7 @@ import { rememberSignupIntent } from "@/lib/authIntent";
  * login page) after flagging it to open in sign-up mode.
  */
 export function DemoBanner() {
-  const { signOut } = useAuth();
-  const [busy, setBusy] = useState(false);
-
-  async function handleSignUp() {
-    setBusy(true);
-    try {
-      rememberSignupIntent();
-      await signOut();
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { signUp: handleSignUp, busy } = useDemoSignUp();
 
   return (
     <div

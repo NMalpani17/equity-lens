@@ -9,8 +9,21 @@ companies, earnings calls and your holdings, with every claim cited.
 Click **Try demo**; no sign-up needed.
 
 <p align="center">
-  <img src="docs/images/dashboard.png" width="63%" alt="Portfolio dashboard in demo mode: total value, total gain/loss, today's change and holdings count above a table of AAPL, MSFT, NVDA, VOO and TSLA positions with expandable lots, average buy price, current price, market value, gain/loss and today's change in green or red">
-  <img src="docs/images/chat-answer.png" width="34%" alt="AI analyst answer to how NVIDIA's stock did over six months and what management said about data center demand: a table of start, end, low and high prices, bullet points with inline citation markers from the latest earnings call, and a six-month NVDA price chart">
+  <img src="docs/images/portfolio-insights.png" width="100%" alt="Portfolio page with summary cards (total value $18,451.90, gain +$4,530.90 or +32.55%, today's change -$5.50, 6 holdings), a 1Y performance chart of the portfolio (+21.68%) against the S&amp;P 500 (+14.88%) as price return, and a sector allocation of Information Technology 61.7%, Funds 30.4%, Consumer Staples 5.1% and Financials 2.8% with each sector's holdings and value">
+  <br>
+  <em>Performance vs the S&amp;P 500 and sector allocation.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/dashboard.png" width="100%" alt="Portfolio dashboard in demo mode: total value, total gain/loss, today's change and holdings count above a table of positions with expandable lots, average buy price, current price, market value, gain/loss and today's change in green or red">
+  <br>
+  <em>The portfolio dashboard: positions with live prices, gain/loss and today's change.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/chat-answer.png" width="100%" alt="AI analyst answer to how NVIDIA's stock did over six months and what management said about data center demand: a table of start, end, low and high prices, bullet points with inline citation markers from the latest earnings call, and a six-month NVDA price chart">
+  <br>
+  <em>An AI analyst answer with cited earnings-call passages and a price chart.</em>
 </p>
 
 ## Features
@@ -23,8 +36,15 @@ Click **Try demo**; no sign-up needed.
   buy/sell advice.
 
   <p>
-    <img src="docs/images/citation-source.png" width="44%" alt="Citation dialog over a chat answer showing source [1]: NVIDIA Corporation's Q2 FY2027 earnings call on Aug 26, 2026, prepared remarks by CFO Colette Kress, with the full quoted transcript passage">
-    <img src="docs/images/guardrail.png" width="53%" alt="The analyst answering 'Should I sell my TSLA and buy more NVDA?' without a recommendation: a table of both positions, the sale proceeds and taxable gain, cited fundamentals for both companies, a note on concentration, and a not-financial-advice line">
+    <img src="docs/images/citation-source.png" width="100%" alt="Citation dialog over a chat answer showing source [1]: NVIDIA Corporation's Q2 FY2027 earnings call on Aug 26, 2026, prepared remarks by CFO Colette Kress, with the full quoted transcript passage">
+    <br>
+    <em>A citation opened to the exact transcript passage it quotes.</em>
+  </p>
+
+  <p>
+    <img src="docs/images/guardrail.png" width="100%" alt="The analyst answering 'Should I sell my TSLA and buy more NVDA?' without a recommendation: a table of both positions, the sale proceeds and taxable gain, cited fundamentals for both companies, a note on concentration, and a not-financial-advice line">
+    <br>
+    <em>Facts and trade-offs instead of buy/sell advice.</em>
   </p>
 
 - **Earnings-call search (RAG).** Hybrid dense + keyword search over each
@@ -49,18 +69,32 @@ Click **Try demo**; no sign-up needed.
   always cites the earlier quarter; if it still can't, the report fails and
   isn't counted against the user. Reports are shared and cached per ticker and
   quarter, so viewing one costs nothing; signed-in users can generate 2 a day
-  (about $0.06 and 45–102 s each, measured), and demo users can view them.
+  (about $0.06 and 45–102 s each, measured). Demo users can view the reports
+  for six companies (AAPL, MSFT, NVDA, TSLA, AMD, JPM); the rest ask them to
+  sign up.
   [How it works](docs/architecture.md#research-reports).
 
-  <img src="docs/images/report-progress.png" width="600" alt="A report generating for Costco (COST): transcript research done (15 passages from Q3 FY2026 and Q2 FY2026), price data analyzed (3 data sources), and the writer still running">
+  <p>
+    <img src="docs/images/report-progress.png" width="100%" alt="A report generating for Costco (COST): transcript research done (15 passages from Q3 FY2026 and Q2 FY2026), price data analyzed (3 data sources), and the writer still running">
+    <br>
+    <em>A report generating, agent by agent.</em>
+  </p>
 
-  <img src="docs/images/report.png" width="600" alt="Research report for Microsoft Corporation (MSFT) based on the Q4 FY2026 earnings call, compared with Q3 FY2026: generation, call, quote and price dates, then a summary and demand and business drivers with inline citation markers">
+  <p>
+    <img src="docs/images/report.png" width="100%" alt="Research report for Microsoft Corporation (MSFT) based on the Q4 FY2026 earnings call, compared with Q3 FY2026: generation, call, quote and price dates, then a summary and demand and business drivers with inline citation markers">
+    <br>
+    <em>A finished research report with its dates and cited sections.</em>
+  </p>
 
 - **Charts in answers.** Price and allocation charts built only from tool data,
   never from numbers the model wrote. They stream in with the answer and are
   saved with the conversation.
 
-  <img src="docs/images/portfolio-chat.png" width="600" alt="The analyst answering 'How is my portfolio allocated?' with a table of each holding's shares, market value, weight, gain and return, a short insight on tech concentration, and a horizontal bar chart of portfolio weights">
+  <p>
+    <img src="docs/images/portfolio-chat.png" width="100%" alt="The analyst answering 'How is my portfolio allocated?' with a table of each holding's shares, market value, weight, gain and return, a short insight on tech concentration, and a horizontal bar chart of portfolio weights">
+    <br>
+    <em>An allocation chart built from portfolio tool data.</em>
+  </p>
 
 - **Portfolio tracking.** Lots grouped into positions with average cost,
   gain/loss and today's change. Live quotes come from Finnhub, with a yfinance
@@ -151,7 +185,11 @@ Data sources: earnings call transcripts from [Equibles](https://equibles.com), l
   details and secrets are masked before export. Tracing is optional and can't
   slow or break a turn.
 
-  <img src="docs/images/langfuse-trace.png" width="600" alt="Langfuse timeline of one research report for AMD: 45.3 s and $0.057 in total, with the market analyst (2.8 s) and the transcript researcher (28.2 s) running in parallel, then the writer (17.1 s), each span with its cost">
+  <p>
+    <img src="docs/images/langfuse-trace.png" width="100%" alt="Langfuse timeline of one research report for AMD: 45.3 s and $0.057 in total, with the market analyst (2.8 s) and the transcript researcher (28.2 s) running in parallel, then the writer (17.1 s), each span with its cost">
+    <br>
+    <em>A Langfuse trace of one report: agents in parallel, with each step's time and cost.</em>
+  </p>
 
 - **Guardrails.** Off-topic and prompt-injection requests are refused before
   the model runs. The agent gives facts rather than buy/sell advice, and daily
