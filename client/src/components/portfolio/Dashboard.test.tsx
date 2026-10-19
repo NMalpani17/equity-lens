@@ -1,7 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
-import { Dashboard } from "./Dashboard";
+import { Dashboard, NOTICE_MS } from "./Dashboard";
 import type { PortfolioSummary } from "@/lib/api";
 
 const summary: PortfolioSummary = {
@@ -64,12 +71,29 @@ const emptyPerformance = {
   lotsWithoutDate: 1,
 };
 
+const importPreview = {
+  rows: [
+    { line: 2, ticker: "AAPL", shares: 1, buyPrice: 100, purchaseDate: "2024-01-02" },
+    { line: 3, ticker: "MSFT", shares: 2, buyPrice: 200, purchaseDate: "2024-01-03" },
+  ],
+  errors: [],
+  warnings: [],
+  totalRows: 2,
+  errorRowCount: 0,
+};
+
 /** Answer the summary with `body`; the insight endpoints get empty results. */
 function mockFetchOnce(body: unknown, status = 200) {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input);
     if (url.includes("/performance")) {
       return new Response(JSON.stringify(emptyPerformance));
+    }
+    if (url.includes("/holdings/import/preview")) {
+      return new Response(JSON.stringify(importPreview));
+    }
+    if (url.includes("/holdings/import")) {
+      return new Response(JSON.stringify({ imported: 2 }), { status: 201 });
     }
     if (url.includes("/sectors")) {
       return new Response(
@@ -140,5 +164,76 @@ describe("Dashboard", () => {
     await waitFor(() => {
       expect(screen.getByText("Couldn't load your portfolio.")).toBeInTheDocument();
     });
+  });
+});
+
+describe("Dashboard import notice", () => {
+  beforeEach(() => {
+    // Timers are faked, but time still flows so async UI updates settle.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Import two holdings through the dialog; resolves once the notice shows. */
+  async function importTwoHoldings() {
+    fireEvent.click(screen.getByRole("button", { name: "Import CSV" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Import holdings from CSV",
+    });
+    const file = new File(["ticker,quantity,price,purchase_date"], "h.csv", {
+      type: "text/csv",
+    });
+    fireEvent.change(within(dialog).getByLabelText("CSV file"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Import 2 holdings" }),
+    );
+    return screen.findByText("Imported 2 holdings.");
+  }
+
+  async function renderLoaded() {
+    mockFetchOnce(summary);
+    render(<Dashboard />);
+    await screen.findByText("AAPL");
+  }
+
+  it("dismisses itself after 5 seconds and keeps role=status", async () => {
+    await renderLoaded();
+    const notice = await importTwoHoldings();
+    expect(notice).toHaveAttribute("role", "status");
+
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_MS - 100);
+    });
+    expect(screen.getByText("Imported 2 holdings.")).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(screen.queryByText("Imported 2 holdings.")).not.toBeInTheDocument();
+  });
+
+  it("closes with the dismiss button", async () => {
+    await renderLoaded();
+    await importTwoHoldings();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByText("Imported 2 holdings.")).not.toBeInTheDocument();
+  });
+
+  it("clears when another add or import starts", async () => {
+    await renderLoaded();
+    await importTwoHoldings();
+    fireEvent.click(screen.getByRole("button", { name: "Add holding" }));
+    expect(screen.queryByText("Imported 2 holdings.")).not.toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+    await importTwoHoldings();
+    fireEvent.click(screen.getByRole("button", { name: "Import CSV" }));
+    expect(screen.queryByText("Imported 2 holdings.")).not.toBeInTheDocument();
   });
 });
