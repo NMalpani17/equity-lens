@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { Dashboard } from "./Dashboard";
 import type { PortfolioSummary } from "@/lib/api";
@@ -107,6 +107,18 @@ describe("Dashboard", () => {
       await screen.findByText(
         "Add purchase dates to your holdings to see performance.",
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the CSV import from the header", async () => {
+    mockFetchOnce(summary);
+
+    render(<Dashboard />);
+    await screen.findByText("AAPL");
+    fireEvent.click(screen.getByRole("button", { name: "Import CSV" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Import holdings from CSV" }),
     ).toBeInTheDocument();
   });
 
