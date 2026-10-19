@@ -9,12 +9,6 @@ companies, earnings calls and your holdings, with every claim cited.
 Click **Try demo**; no sign-up needed.
 
 <p align="center">
-  <img src="docs/images/chat-answer.png" width="100%" alt="AI analyst answer to how NVIDIA's stock did over six months and what management said about data center demand: a table of start, end, low and high prices, bullet points with inline citation markers from the latest earnings call, and a six-month NVDA price chart">
-  <br>
-  <em>An AI analyst answer with cited earnings-call passages and a price chart.</em>
-</p>
-
-<p align="center">
   <img src="docs/images/portfolio-insights.png" width="100%" alt="Portfolio page with summary cards (total value $18,451.90, gain +$4,530.90 or +32.55%, today's change -$5.50, 6 holdings), a 1Y performance chart of the portfolio (+21.68%) against the S&amp;P 500 (+14.88%) as price return, and a sector allocation of Information Technology 61.7%, Funds 30.4%, Consumer Staples 5.1% and Financials 2.8% with each sector's holdings and value">
   <br>
   <em>Performance vs the S&amp;P 500 and sector allocation.</em>
@@ -24,6 +18,12 @@ Click **Try demo**; no sign-up needed.
   <img src="docs/images/dashboard.png" width="100%" alt="Portfolio dashboard in demo mode: total value, total gain/loss, today's change and holdings count above a table of positions with expandable lots, average buy price, current price, market value, gain/loss and today's change in green or red">
   <br>
   <em>The portfolio dashboard: positions with live prices, gain/loss and today's change.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/chat-answer.png" width="100%" alt="AI analyst answer to how NVIDIA's stock did over six months and what management said about data center demand: a table of start, end, low and high prices, bullet points with inline citation markers from the latest earnings call, and a six-month NVDA price chart">
+  <br>
+  <em>An AI analyst answer with cited earnings-call passages and a price chart.</em>
 </p>
 
 ## Features
