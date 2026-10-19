@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     profile_ttl_days: int = 30
     profile_unknown_ttl_days: int = 7
     profile_max_lookups_per_request: int = 25
+    # Import ticker check: Finnhub is asked only when yfinance is down, for at
+    # most this many tickers per request (one call each).
+    ticker_check_finnhub_budget: int = 20
 
     # --- Database (Supabase Postgres) ---
     # The RAG state tables are owned by Prisma (api/prisma) and accessed here via

@@ -95,6 +95,12 @@ class FinnhubProvider(MarketDataProvider):
         except ValueError as exc:
             raise ProviderUnavailableError("finnhub returned invalid JSON") from exc
 
+    def has_quote(self, ticker: str) -> bool:
+        """Whether Finnhub quotes the symbol, in one call (no name lookup)."""
+        if not self._api_key:
+            raise ProviderUnavailableError("finnhub api key not configured")
+        return bool(self._get_json("/quote", {"symbol": ticker.upper()}).get("c"))
+
     def get_profile(self, ticker: str) -> dict:
         """The company profile (``name``, ``finnhubIndustry``, ...).
 

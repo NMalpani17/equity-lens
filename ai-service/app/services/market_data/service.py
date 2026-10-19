@@ -34,6 +34,10 @@ class MarketDataService:
         self._providers = providers
         self._cache = cache
 
+    def cached_quote(self, ticker: str) -> Quote | None:
+        """The cached quote, without asking any provider."""
+        return self._cache.get(ticker.upper())
+
     def get_quote(self, ticker: str) -> Quote:
         symbol = ticker.upper()
 
