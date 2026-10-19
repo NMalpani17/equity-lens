@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     market_history_workers: int = 8
     # Most tickers one daily-closes or profiles request may ask for.
     market_max_symbols: int = 500
+    # Company profiles (sector allocation): how long a cached profile is kept,
+    # and how many uncached tickers one request looks up (each costs at most
+    # one Finnhub call); the rest are looked up on later requests.
+    profile_ttl_days: int = 30
+    profile_unknown_ttl_days: int = 7
+    profile_max_lookups_per_request: int = 25
 
     # --- Database (Supabase Postgres) ---
     # The RAG state tables are owned by Prisma (api/prisma) and accessed here via

@@ -7,6 +7,7 @@ from app.services.market_data.repository import (
     STATUS_NO_HISTORY,
     STATUS_OK,
     Coverage,
+    StoredProfile,
 )
 from app.services.rag.repository import utcnow
 
@@ -16,6 +17,17 @@ class FakeMarketRepository:
         self.closes_by_ticker: dict[str, dict[date, float]] = {}
         self.coverage_by_ticker: dict[str, Coverage] = {}
         self.replaced: list[str] = []
+        self.stored_profiles: dict[str, StoredProfile] = {}
+
+    # --- company profiles -----------------------------------------------
+
+    def profiles(self, tickers: Sequence[str]) -> dict[str, StoredProfile]:
+        return {
+            t: self.stored_profiles[t] for t in tickers if t in self.stored_profiles
+        }
+
+    def save_profile(self, profile: StoredProfile) -> None:
+        self.stored_profiles[profile.ticker] = profile
 
     # --- daily closes ---------------------------------------------------
 

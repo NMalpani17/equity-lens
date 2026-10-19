@@ -31,9 +31,57 @@ class Coverage:
     fetched_at: datetime
 
 
+@dataclass(frozen=True)
+class StoredProfile:
+    """A ``company_profiles`` row."""
+
+    ticker: str
+    name: str | None
+    sector: str | None
+    industry: str | None
+    source: str
+    fetched_at: datetime
+
+
 class MarketDataRepository:
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
+
+    def profiles(self, tickers: Sequence[str]) -> dict[str, StoredProfile]:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT ticker, name, sector, industry, source, fetched_at
+                FROM company_profiles
+                WHERE ticker = ANY(%s)
+                """,
+                (list(tickers),),
+            ).fetchall()
+        return {row["ticker"]: StoredProfile(**row) for row in rows}
+
+    def save_profile(self, profile: StoredProfile) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO company_profiles
+                    (ticker, name, sector, industry, source, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (ticker) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    sector = EXCLUDED.sector,
+                    industry = EXCLUDED.industry,
+                    source = EXCLUDED.source,
+                    fetched_at = EXCLUDED.fetched_at
+                """,
+                (
+                    profile.ticker,
+                    profile.name,
+                    profile.sector,
+                    profile.industry,
+                    profile.source,
+                    profile.fetched_at,
+                ),
+            )
 
     def coverage(self, tickers: Sequence[str]) -> dict[str, Coverage]:
         with self._pool.connection() as conn:

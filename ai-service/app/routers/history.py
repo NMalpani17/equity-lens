@@ -3,11 +3,10 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
-from app.config import get_settings
 from app.models.daily_closes import DailyClosesResponse
-from app.routers.market import parse_symbols
+from app.routers.market import checked_symbols
 from app.services.market_data.daily_closes import (
     DailyClosesService,
     get_daily_closes_service,
@@ -16,17 +15,6 @@ from app.services.market_data.daily_closes import (
 router = APIRouter(prefix="/history", tags=["market"])
 
 ServiceDep = Annotated[DailyClosesService, Depends(get_daily_closes_service)]
-
-
-def checked_symbols(symbols: str) -> list[str]:
-    """Parsed symbols, or 422 when there are none or too many."""
-    parsed = parse_symbols(symbols)
-    if not parsed:
-        raise HTTPException(status_code=422, detail="no valid symbols provided")
-    limit = get_settings().market_max_symbols
-    if len(parsed) > limit:
-        raise HTTPException(status_code=422, detail=f"at most {limit} symbols")
-    return parsed
 
 
 @router.get("/daily", response_model=DailyClosesResponse)

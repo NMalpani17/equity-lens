@@ -95,10 +95,19 @@ class FinnhubProvider(MarketDataProvider):
         except ValueError as exc:
             raise ProviderUnavailableError("finnhub returned invalid JSON") from exc
 
+    def get_profile(self, ticker: str) -> dict:
+        """The company profile (``name``, ``finnhubIndustry``, ...).
+
+        Empty for symbols Finnhub has no profile for, including ETFs.
+        """
+        if not self._api_key:
+            raise ProviderUnavailableError("finnhub api key not configured")
+        return self._get_json("/stock/profile2", {"symbol": ticker.upper()})
+
     def _fetch_name(self, symbol: str) -> str | None:
         """Best-effort company name lookup; never fails the quote."""
         try:
-            data = self._get_json("/stock/profile2", {"symbol": symbol})
+            data = self.get_profile(symbol)
         except ProviderUnavailableError:
             return None
         name = data.get("name")

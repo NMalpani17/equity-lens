@@ -78,6 +78,19 @@ def test_save_append_and_replace_closes(repo) -> None:
     assert repo.closes(["AAPL"], oct1) == {"AAPL": [(oct5, 51.5)]}
 
 
+def test_save_and_update_profiles(repo) -> None:
+    from app.services.market_data.repository import StoredProfile
+
+    repo.save_profile(StoredProfile("VOO", None, None, None, "none", T0))
+    repo.save_profile(
+        StoredProfile("VOO", "Vanguard S&P 500 ETF", "Funds", "ETF", "yfinance", T0)
+    )
+
+    stored = repo.profiles(["VOO", "AAPL"])
+    assert list(stored) == ["VOO"]
+    assert stored["VOO"].sector == "Funds" and stored["VOO"].fetched_at == T0
+
+
 def test_mark_no_history(repo) -> None:
     repo.mark_no_history(
         "ZZZZ", covered_from=date(2026, 10, 1), fetched_through=date(2026, 10, 16)

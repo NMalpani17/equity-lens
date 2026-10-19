@@ -14,7 +14,7 @@ from starlette.middleware import Middleware
 from app.config import get_settings
 from app.errors import AppError
 from app.logging_config import configure_logging
-from app.routers import chat, health, history, market, rag, report
+from app.routers import chat, health, history, market, profiles, rag, report
 from app.security import InternalTokenMiddleware, require_internal_token
 from app.services.chat.mcp_server import mcp
 from app.services.observability.tracing import shutdown_tracer
@@ -71,6 +71,7 @@ def create_app() -> FastAPI:
     for router in (
         market.router,
         history.router,
+        profiles.router,
         rag.router,
         chat.router,
         report.router,
