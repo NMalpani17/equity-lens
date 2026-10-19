@@ -19,6 +19,8 @@ vi.mock("../src/db/prisma.js", () => {
 });
 
 import { config, parseTickerList } from "../src/config.js";
+import demoReportTickers from "../src/demoReportTickers.json" with { type: "json" };
+import { SAMPLE_DEMO_LOTS } from "../src/services/demoHoldings.js";
 import { prisma } from "../src/db/prisma.js";
 import {
   ForbiddenError,
@@ -266,8 +268,8 @@ describe("getReport", () => {
 });
 
 describe("demo report access", () => {
-  it("defaults to six demo tickers, parsed from config", () => {
-    expect(config.reports.demoTickers).toEqual([
+  it("reads the six demo tickers from the shared file", () => {
+    expect(demoReportTickers.tickers).toEqual([
       "AAPL",
       "MSFT",
       "NVDA",
@@ -275,7 +277,15 @@ describe("demo report access", () => {
       "AMD",
       "JPM",
     ]);
+    expect(config.reports.demoTickers).toEqual(demoReportTickers.tickers);
     expect(parseTickerList(" aapl, ,MSFT,aapl ")).toEqual(["AAPL", "MSFT"]);
+  });
+
+  it("covers every company in the demo portfolio (ETFs have no report)", () => {
+    const stocks = new Set(SAMPLE_DEMO_LOTS.map((lot) => lot.ticker));
+    stocks.delete("VOO");
+
+    expect(config.reports.demoTickers).toEqual(expect.arrayContaining([...stocks]));
   });
 
   it("locks only tickers outside the list, and only for demo users", () => {

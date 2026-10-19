@@ -1,5 +1,6 @@
 """The pre-generate script: estimate-only by default, budgeted, honest exit code."""
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -59,12 +60,12 @@ def test_without_yes_it_only_prints_the_estimate(capsys) -> None:
     code = script.main([], settings=settings(), service_factory=never_built)
 
     out = capsys.readouterr().out
-    expected = estimate_reports(settings(), 4)
+    expected = estimate_reports(settings(), 6)
     assert code == 0
-    assert "Reports: 4 (AAPL, MSFT, NVDA, TSLA)" in out
+    assert "Reports: 6 (AAPL, MSFT, NVDA, TSLA, AMD, JPM)" in out
     assert f"~${expected.typical_total:.2f} typical" in out
     assert f"${expected.most_total:.2f} at most" in out
-    assert "Pinecone reranks: at most 24" in out
+    assert f"Pinecone reranks: at most {expected.reranks_max}" in out
     assert "Estimate only: nothing was contacted" in out
 
 
@@ -157,11 +158,43 @@ def test_a_failed_report_fails_the_run(capsys) -> None:
     assert "NVDA: failed research_failed: m" in capsys.readouterr().out
 
 
-def test_demo_tickers_match_the_demo_portfolio_minus_etfs() -> None:
+def test_default_tickers_are_the_api_demo_list() -> None:
+    shared = REPO / "api/src/demoReportTickers.json"
+
+    # The repo file the api reads, not a copy inside ai-service.
+    assert script.DEMO_TICKERS_FILE == shared
+    assert script.parse_args([]).tickers == [
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "TSLA",
+        "AMD",
+        "JPM",
+    ]
+    assert script.demo_tickers() == json.loads(shared.read_text())["tickers"]
+
+
+def test_demo_tickers_cover_the_demo_portfolio_minus_etfs() -> None:
     source = (REPO / "api/src/services/demoHoldings.ts").read_text(encoding="utf-8")
     demo = set(re.findall(r'ticker: "([A-Z.]+)"', source))
 
-    assert set(script.DEMO_TICKERS) == demo - {"VOO"}
+    assert demo - {"VOO"} <= set(script.demo_tickers())
+
+
+def test_explicit_tickers_dont_need_the_shared_file(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(script, "DEMO_TICKERS_FILE", tmp_path / "missing.json")
+
+    assert script.parse_args(["--tickers", "nvda"]).tickers == ["NVDA"]
+    with pytest.raises(SystemExit, match="Can't read the demo tickers"):
+        script.parse_args([])
+
+
+def test_an_empty_shared_list_is_refused(tmp_path) -> None:
+    path = tmp_path / "demo.json"
+    path.write_text('{"tickers": []}')
+
+    with pytest.raises(SystemExit, match="at least one ticker"):
+        script.demo_tickers(path)
 
 
 def test_exit_waits_for_the_trace_upload_before_closing_rag(monkeypatch) -> None:

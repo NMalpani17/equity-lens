@@ -58,10 +58,12 @@ have defaults): `AI_SERVICE_FINNHUB_CALLS_PER_MINUTE` (50),
 locally writes market data to the cache tables in the (production) database.
 It holds no user data, but it is still a write.
 
-**Demo reports:** `DEMO_REPORT_TICKERS` in `api/.env` (default
-`AAPL,MSFT,NVDA,TSLA,AMD,JPM`) lists the companies whose reports demo users
-may view. Keep each one's report generated, since demo users can't generate
-one.
+**Demo reports:** `api/src/demoReportTickers.json` (AAPL, MSFT, NVDA, TSLA,
+AMD, JPM) lists the companies whose reports demo users may view. It's a
+checked-in file, not an env var, because the api and
+`ai-service/scripts/pregenerate_reports.py` both read it and must agree. Edit
+it only there, and keep each one's report generated, since demo users can't
+generate one.
 
 ## One environment and Claude Code guardrails
 

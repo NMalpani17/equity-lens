@@ -483,8 +483,9 @@ A saved assistant message:
 
 All report routes require auth. Reports are shared: every user sees the same
 report for a ticker, and it holds nothing user-specific. Demo users can't
-generate reports, and can view only those for `DEMO_REPORT_TICKERS` (default
-AAPL, MSFT, NVDA, TSLA, AMD, JPM). Any other report needs an account.
+generate reports, and can view only those for the tickers in
+`api/src/demoReportTickers.json` (AAPL, MSFT, NVDA, TSLA, AMD, JPM). Any other
+report needs an account.
 
 ### `GET /api/reports`
 

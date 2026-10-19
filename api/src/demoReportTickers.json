@@ -1,0 +1,4 @@
+{
+  "description": "The companies whose research reports demo (anonymous) users may view. The api serves only these to demo users, and ai-service/scripts/pregenerate_reports.py generates these by default, so keep each one's report generated. Read by both; edit only here.",
+  "tickers": ["AAPL", "MSFT", "NVDA", "TSLA", "AMD", "JPM"]
+}
