@@ -14,6 +14,13 @@ export function createApp(): Express {
   app.use(pinoHttp({ logger }));
   // An array of strings: the cors package allows an origin only on an exact match.
   app.use(cors({ origin: config.clientOrigins }));
+  // CSV imports carry the file's text, so they get a larger body limit (JSON
+  // escaping can double it); the schema enforces the file-size limit itself.
+  // Parsed here first, the default parser below skips these bodies.
+  app.use(
+    "/api/holdings/import",
+    express.json({ limit: config.holdings.importMaxFileBytes * 2 + 1024 }),
+  );
   app.use(express.json());
 
   // All API routes are mounted under /api.

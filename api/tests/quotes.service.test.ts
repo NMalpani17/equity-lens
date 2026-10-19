@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getQuotes, verifyTicker } from "../src/services/quotes.service.js";
+import {
+  getQuotes,
+  verifyTicker,
+  verifyTickers,
+} from "../src/services/quotes.service.js";
 
 function upstreamQuote(overrides: Record<string, unknown> = {}) {
   return {
@@ -135,5 +139,40 @@ describe("verifyTicker", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
 
     expect(await verifyTicker("AAPL")).toBe("unavailable");
+  });
+});
+
+describe("verifyTickers", () => {
+  it("posts the tickers once and returns each status", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ results: { AAPL: "ok", ZZZZ: "not_found" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await verifyTickers(["AAPL", "ZZZZ"]);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(new URL(String(url)).pathname).toBe("/tickers/verify");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ symbols: ["AAPL", "ZZZZ"] });
+    expect(result).toEqual({ AAPL: "ok", ZZZZ: "not_found" });
+  });
+
+  it("skips the call for no tickers", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    expect(await verifyTickers([])).toEqual({});
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("reports every ticker unavailable when the ai-service fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("fetch failed"));
+
+    expect(await verifyTickers(["AAPL", "MSFT"])).toEqual({
+      AAPL: "unavailable",
+      MSFT: "unavailable",
+    });
   });
 });

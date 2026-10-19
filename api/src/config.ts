@@ -57,6 +57,11 @@ const envSchema = z.object({
   REPORT_STALE_GENERATION_MINUTES: z.coerce.number().int().positive().default(10),
   // Time to the ai-service's first response for a report (covers a cold start).
   REPORT_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  // Holdings: most lots one user may have (manual adds and imports alike).
+  HOLDINGS_MAX_LOTS_PER_USER: z.coerce.number().int().positive().default(1000),
+  // CSV import limits: file size in bytes and data rows per file.
+  IMPORT_MAX_FILE_BYTES: z.coerce.number().int().positive().default(100_000),
+  IMPORT_MAX_ROWS: z.coerce.number().int().positive().default(500),
   // Comma-separated origins allowed by CORS (exact matches, no wildcards),
   // e.g. "https://equity-lens.vercel.app,http://localhost:5173".
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
@@ -119,6 +124,11 @@ export const config = {
     regenerateAfterDays: parsed.data.REPORT_REGENERATE_AFTER_DAYS,
     staleGenerationMinutes: parsed.data.REPORT_STALE_GENERATION_MINUTES,
     connectTimeoutMs: parsed.data.REPORT_CONNECT_TIMEOUT_MS,
+  },
+  holdings: {
+    maxLotsPerUser: parsed.data.HOLDINGS_MAX_LOTS_PER_USER,
+    importMaxFileBytes: parsed.data.IMPORT_MAX_FILE_BYTES,
+    importMaxRows: parsed.data.IMPORT_MAX_ROWS,
   },
   clientOrigins: parseOrigins(parsed.data.CLIENT_ORIGIN),
   databaseUrl: parsed.data.DATABASE_URL,
