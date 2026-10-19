@@ -706,7 +706,9 @@ rebuild `rag_tickers` from the vectors if the database was lost too.
    `20261008000000_add_research_reports` (the `research_reports` table, with
    RLS, and `chat_usage_events.weight`), then deploys the ai-service and api.
 2. Pre-generate the demo tickers' reports, so demo users have something to
-   view (they can't generate). From `ai-service/`, with local settings (which
+   view (they can't generate, and can view only the api's
+   `DEMO_REPORT_TICKERS`, default AAPL, MSFT, NVDA, TSLA, AMD, JPM; keep each
+   one's report generated). From `ai-service/`, with local settings (which
    point at production):
 
    ```bash

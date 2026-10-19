@@ -482,8 +482,9 @@ A saved assistant message:
 ## Research reports
 
 All report routes require auth. Reports are shared: every user sees the same
-report for a ticker, and it holds nothing user-specific. Demo users can view
-them but not generate them.
+report for a ticker, and it holds nothing user-specific. Demo users can't
+generate reports, and can view only those for `DEMO_REPORT_TICKERS` (default
+AAPL, MSFT, NVDA, TSLA, AMD, JPM). Any other report needs an account.
 
 ### `GET /api/reports`
 
@@ -507,7 +508,8 @@ them but not generate them.
         },
         "outdated": false
       },
-      "generating": false
+      "generating": false,
+      "demoLocked": false
     }
   ],
   "usage": {
@@ -522,7 +524,10 @@ them but not generate them.
 
 Every indexed ticker, with its newest report (`null` if none; `outdated` when
 it covers an older quarter than `latestQuarter`) and whether one is being
-generated. No report content is loaded. Demo users get `limit: 0`.
+generated. No report content is loaded. Demo users get `limit: 0`, and every
+ticker outside the demo list has `demoLocked: true` (always `false` for
+signed-in users). Locked tickers are still listed, so the picker can offer
+sign-up.
 
 ### `GET /api/reports/:ticker`
 
@@ -612,6 +617,9 @@ one with `outdated: true`, plus permissions:
 - `blockedReason`, when `canGenerate` is false: `demo`, `in_progress`, `fresh`
   (see `regenerateAvailableAt`), `daily_limit` or `global_limit`.
 - `404` when the ticker isn't indexed; `422` for an invalid ticker.
+- `403` `demo_report_locked` ("Sign up to view or generate this report.") for a
+  demo user and a ticker outside the demo list. It's checked before anything
+  is read, so the response never reveals whether a report exists.
 
 ### `POST /api/reports/:ticker`
 

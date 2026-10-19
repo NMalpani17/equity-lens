@@ -49,7 +49,9 @@ Click **Try demo**; no sign-up needed.
   always cites the earlier quarter; if it still can't, the report fails and
   isn't counted against the user. Reports are shared and cached per ticker and
   quarter, so viewing one costs nothing; signed-in users can generate 2 a day
-  (about $0.06 and 45–102 s each, measured), and demo users can view them.
+  (about $0.06 and 45–102 s each, measured). Demo users can view the reports
+  for six companies (AAPL, MSFT, NVDA, TSLA, AMD, JPM); the rest ask them to
+  sign up.
   [How it works](docs/architecture.md#research-reports).
 
   <img src="docs/images/report-progress.png" width="600" alt="A report generating for Costco (COST): transcript research done (15 passages from Q3 FY2026 and Q2 FY2026), price data analyzed (3 data sources), and the writer still running">
