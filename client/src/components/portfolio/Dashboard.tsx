@@ -11,6 +11,7 @@ import { HoldingFormDialog } from "./HoldingFormDialog";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ConfirmDeletePositionDialog } from "./ConfirmDeletePositionDialog";
 import { PerformanceChart } from "./PerformanceChart";
+import { SectorAllocation } from "./SectorAllocation";
 
 export function Dashboard() {
   const { state, refresh: refreshSummary, refreshing } = usePortfolio();
@@ -115,7 +116,14 @@ export function Dashboard() {
         </Card>
       )}
 
-      {data && data.positions.length > 0 && <PerformanceChart version={version} />}
+      {data && data.positions.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="min-w-0 lg:col-span-2">
+            <PerformanceChart version={version} />
+          </div>
+          <SectorAllocation version={version} />
+        </div>
+      )}
 
       {data && data.positions.length > 0 && (
         <Card className="overflow-hidden">
