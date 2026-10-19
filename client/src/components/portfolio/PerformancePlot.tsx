@@ -9,19 +9,19 @@ import {
 } from "recharts";
 
 import type { PerformancePoint, PortfolioPerformance } from "@/lib/api";
-import { dateLabel, dateTick, isLongRange } from "@/lib/chartFormat";
+import {
+  dateLabel,
+  dateTick,
+  isLongRange,
+  percentAxis,
+  percentTick,
+} from "@/lib/chartFormat";
 import { formatCurrency, formatSignedPercent } from "@/lib/format";
 import { LineSwatch } from "./LineSwatch";
 
 // Matches the loading placeholder in PerformanceChart.
 const PLOT_HEIGHT = 240;
 const BENCHMARK_LABEL = "S&P 500";
-
-/** Axis tick for a percent return, e.g. "+12%" or "-3.5%". */
-function percentTick(value: number): string {
-  const rounded = Math.abs(value) >= 10 ? Math.round(value) : Number(value.toFixed(1));
-  return `${rounded > 0 ? "+" : ""}${rounded}%`;
-}
 
 function returnLabel(value: number | null): string {
   return value === null ? "—" : formatSignedPercent(value);
@@ -66,6 +66,14 @@ export default function PerformancePlot({
   performance: PortfolioPerformance;
 }) {
   const longRange = isLongRange(performance.points);
+  // Round steps on every range; the domain covers both series.
+  const axis = percentAxis(
+    performance.points.flatMap((p) =>
+      p.benchmarkPercent === null
+        ? [p.portfolioPercent]
+        : [p.portfolioPercent, p.benchmarkPercent],
+    ),
+  );
   return (
     <LineChart
       responsive
@@ -91,12 +99,14 @@ export default function PerformancePlot({
         tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
       />
       <YAxis
-        domain={["auto", "auto"]}
+        type="number"
+        domain={axis.domain}
+        ticks={axis.ticks}
+        interval={0}
         tickFormatter={percentTick}
         width={48}
         tickLine={false}
         axisLine={false}
-        tickCount={5}
         tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
       />
       <Tooltip
@@ -106,7 +116,7 @@ export default function PerformancePlot({
         cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
       />
       <Line
-        type="monotone"
+        type="linear"
         dataKey="benchmarkPercent"
         name={BENCHMARK_LABEL}
         stroke="var(--chart-benchmark)"
@@ -118,7 +128,7 @@ export default function PerformancePlot({
         isAnimationActive={false}
       />
       <Line
-        type="monotone"
+        type="linear"
         dataKey="portfolioPercent"
         name="Portfolio"
         stroke="var(--chart-1)"
