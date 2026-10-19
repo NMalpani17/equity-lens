@@ -45,6 +45,9 @@ OVERLAP_DAYS = 10
 # re-adjusted (a split).
 ADJUSTMENT_TOLERANCE = 0.005
 NO_HISTORY_RETRY = timedelta(days=1)
+# yfinance hides network errors behind an empty result, the same as an unknown
+# ticker's. A ticker counts as having no history only while this one has some.
+REACHABILITY_CANARY = "SPY"
 
 Rows = list[tuple[date, float]]
 
@@ -180,7 +183,22 @@ class DailyClosesService:
             logger.warning("daily closes unavailable for %s: %s", symbol, exc)
             return _Outcome(error="unavailable")
         rows = _completed(fetched.rows, start, through)
-        return _Outcome(rows=rows) if rows else _Outcome(error="not_found")
+        if rows:
+            return _Outcome(rows=rows)
+        try:
+            self._confirm_missing(symbol, through)
+        except ProviderUnavailableError as exc:
+            logger.warning("daily closes unavailable for %s: %s", symbol, exc)
+            return _Outcome(error="unavailable")
+        return _Outcome(error="not_found")
+
+    def _confirm_missing(self, symbol: str, through: date) -> None:
+        """Raise ProviderUnavailableError unless Yahoo is answering."""
+        if symbol == REACHABILITY_CANARY:
+            return
+        recent = through - timedelta(days=OVERLAP_DAYS)
+        if not self._fetcher(REACHABILITY_CANARY, recent).rows:
+            raise ProviderUnavailableError("yfinance returned no prices for SPY")
 
     def _resolve_cached(
         self,
@@ -214,6 +232,8 @@ class DailyClosesService:
     ) -> _Outcome:
         """Fetch everything from ``start`` and replace the ticker's cache."""
         rows = _completed(self._fetcher(symbol, start).rows, start, through)
+        if not rows:
+            self._confirm_missing(symbol, through)
         try:
             if rows:
                 repo.save_closes(

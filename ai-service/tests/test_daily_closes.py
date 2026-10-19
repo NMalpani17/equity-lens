@@ -165,25 +165,42 @@ def test_an_earlier_start_than_cached_refetches_from_it() -> None:
 
 
 def test_tickers_without_history_are_errors_and_retried_after_a_day() -> None:
-    fetcher = FakeFetcher({})
+    fetcher = FakeFetcher({"SPY": weekdays(date(2026, 9, 1), FRIDAY)})
     repo = FakeMarketRepository()
 
     result = make_service(fetcher, repo).get_closes(["ZZZZ"], date(2026, 10, 1))
     assert result.errors == {"ZZZZ": "not_found"} and not result.series
     assert repo.coverage_by_ticker["ZZZZ"].status == STATUS_NO_HISTORY
+    # SPY was asked to prove Yahoo was answering.
+    assert [symbol for symbol, _ in fetcher.calls] == ["ZZZZ", "SPY"]
 
     # Within a day: answered from the cache without asking yfinance.
     repo.coverage_by_ticker["ZZZZ"] = Coverage(
         "ZZZZ", date(2026, 10, 1), FRIDAY, STATUS_NO_HISTORY, datetime(2026, 10, 16, 12)
     )
     make_service(fetcher, repo).get_closes(["ZZZZ"], date(2026, 10, 1))
-    assert len(fetcher.calls) == 1
+    assert len(fetcher.calls) == 2
 
     # A day later: asked again.
     make_service(fetcher, repo, FRIDAY_EVENING + timedelta(days=1)).get_closes(
         ["ZZZZ"], date(2026, 10, 1)
     )
-    assert len(fetcher.calls) == 2
+    assert fetcher.calls[2][0] == "ZZZZ"
+
+
+def test_empty_history_while_yahoo_is_unreachable_is_not_cached() -> None:
+    # yfinance returns nothing for every symbol (a swallowed network error).
+    fetcher = FakeFetcher({})
+    repo = FakeMarketRepository()
+
+    result = make_service(fetcher, repo).get_closes(["AAPL"], date(2026, 10, 1))
+    uncached = DailyClosesService(
+        fetcher, lambda: None, clock=lambda: FRIDAY_EVENING
+    ).get_closes(["AAPL"], date(2026, 10, 1))
+
+    assert result.errors == {"AAPL": "unavailable"}
+    assert uncached.errors == {"AAPL": "unavailable"}
+    assert repo.coverage_by_ticker == {}
 
 
 def test_an_outage_serves_stale_closes_or_reports_unavailable() -> None:
