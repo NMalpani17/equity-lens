@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     market_cache_ttl_seconds: int = 60
     # HTTP timeout (seconds) for outbound provider requests.
     market_http_timeout_seconds: float = 5.0
+    # Parallel yfinance history fetches per request (portfolio performance).
+    market_history_workers: int = 8
+    # Most tickers one daily-closes or profiles request may ask for.
+    market_max_symbols: int = 500
 
     # --- Database (Supabase Postgres) ---
     # The RAG state tables are owned by Prisma (api/prisma) and accessed here via

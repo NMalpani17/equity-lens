@@ -22,7 +22,7 @@ router = APIRouter(prefix="/quotes", tags=["market"])
 ServiceDep = Annotated[MarketDataService, Depends(get_market_data_service)]
 
 
-def _parse_symbols(symbols: str) -> list[str]:
+def parse_symbols(symbols: str) -> list[str]:
     """Split a comma-separated ``symbols`` query into a clean, unique list."""
     seen: list[str] = []
     for raw in symbols.split(","):
@@ -40,7 +40,7 @@ def get_quotes(
     ],
 ) -> QuotesResponse:
     """Return quotes for many tickers; per-ticker failures land in ``errors``."""
-    parsed = _parse_symbols(symbols)
+    parsed = parse_symbols(symbols)
     if not parsed:
         raise HTTPException(status_code=422, detail="no valid symbols provided")
     return service.get_quotes(parsed)
