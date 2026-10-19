@@ -11,20 +11,20 @@ export const tickerSchema = z
 export const holdingIdSchema = z.string().uuid("invalid holding id");
 
 /** True when an ISO date (YYYY-MM-DD) is today or earlier (UTC). */
-function isNotFuture(value: string): boolean {
+export function isNotFuture(value: string): boolean {
   return value <= new Date().toISOString().slice(0, 10);
 }
 
 /**
- * Optional purchase date as an ISO calendar date (YYYY-MM-DD). Must not be in
- * the future. Compared as strings, which is safe for the YYYY-MM-DD format.
+ * Purchase date as an ISO calendar date (YYYY-MM-DD). Must not be in the
+ * future. Compared as strings, which is safe for the YYYY-MM-DD format.
  */
-const purchaseDateSchema = z
+export const purchaseDateString = z
   .string()
   .date("purchaseDate must be an ISO date (YYYY-MM-DD)")
-  .refine(isNotFuture, "purchaseDate cannot be in the future")
-  .nullable()
-  .optional();
+  .refine(isNotFuture, "purchaseDate cannot be in the future");
+
+const purchaseDateSchema = purchaseDateString.nullable().optional();
 
 export const createHoldingSchema = z.object({
   ticker: tickerSchema,

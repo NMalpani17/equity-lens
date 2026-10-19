@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, Loader2, Plus, RefreshCw } from "lucide-react";
+import { AlertTriangle, Loader2, Plus, RefreshCw, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,10 +10,17 @@ import { HoldingsTable } from "./HoldingsTable";
 import { HoldingFormDialog } from "./HoldingFormDialog";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { ConfirmDeletePositionDialog } from "./ConfirmDeletePositionDialog";
+import { PerformanceChart } from "./PerformanceChart";
+import { SectorAllocation } from "./SectorAllocation";
+import { ImportHoldingsDialog } from "./ImportHoldingsDialog";
 
 export function Dashboard() {
-  const { state, refresh, refreshing } = usePortfolio();
+  const { state, refresh: refreshSummary, refreshing } = usePortfolio();
+  // Bumped whenever holdings may have changed, so the insights reload too.
+  const [version, setVersion] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<PortfolioLot | null>(null);
   const [deleting, setDeleting] = useState<PortfolioLot | null>(null);
   const [deletingPosition, setDeletingPosition] = useState<PortfolioPosition | null>(
@@ -22,6 +29,18 @@ export function Dashboard() {
 
   const loading = state.kind === "loading";
   const data = state.kind === "loaded" ? state.data : null;
+
+  function refresh(): Promise<void> {
+    setVersion((v) => v + 1);
+    return refreshSummary();
+  }
+
+  function handleImported(count: number) {
+    setNotice(
+      `Imported ${count.toLocaleString("en-US")} ${count === 1 ? "holding" : "holdings"}.`,
+    );
+    void refresh();
+  }
 
   function openAdd() {
     setEditing(null);
@@ -39,10 +58,10 @@ export function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your holdings with live prices.
+            Your holdings with live prices and performance.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             onClick={() => void refresh()}
@@ -51,12 +70,25 @@ export function Dashboard() {
             <RefreshCw className={refreshing ? "animate-spin" : ""} />
             Refresh
           </Button>
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload />
+            Import CSV
+          </Button>
           <Button onClick={openAdd}>
             <Plus />
             Add holding
           </Button>
         </div>
       </header>
+
+      {notice && (
+        <p
+          role="status"
+          className="rounded-md bg-info px-4 py-2 text-sm text-info-foreground"
+        >
+          {notice}
+        </p>
+      )}
 
       <SummaryCards
         totals={data?.totals ?? null}
@@ -99,12 +131,27 @@ export function Dashboard() {
             <p className="text-sm text-muted-foreground">
               Add your first position to start tracking its value.
             </p>
-            <Button onClick={openAdd}>
-              <Plus />
-              Add holding
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={openAdd}>
+                <Plus />
+                Add holding
+              </Button>
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload />
+                Import CSV
+              </Button>
+            </div>
           </CardContent>
         </Card>
+      )}
+
+      {data && data.positions.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="min-w-0 lg:col-span-2">
+            <PerformanceChart version={version} />
+          </div>
+          <SectorAllocation version={version} />
+        </div>
       )}
 
       {data && data.positions.length > 0 && (
@@ -125,6 +172,11 @@ export function Dashboard() {
         onOpenChange={setFormOpen}
         lot={editing}
         onSaved={() => void refresh()}
+      />
+      <ImportHoldingsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={handleImported}
       />
       <ConfirmDeleteDialog
         lot={deleting}

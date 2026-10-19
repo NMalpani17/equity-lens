@@ -41,6 +41,17 @@ def test_disabled_limiter_never_sleeps() -> None:
     assert clock.sleeps == []
 
 
+def test_try_acquire_refuses_instead_of_waiting() -> None:
+    clock = FakeClock()
+    limiter = SlidingWindowLimiter(2, 60, clock=clock.time, sleep=clock.sleep)
+
+    assert limiter.try_acquire() and limiter.try_acquire()
+    assert not limiter.try_acquire()
+    clock.now = 60
+    assert limiter.try_acquire()
+    assert clock.sleeps == []
+
+
 def test_gemini_retry_after_reads_retry_info() -> None:
     exc = genai_errors.ClientError(
         429,

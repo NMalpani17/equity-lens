@@ -4,8 +4,9 @@
  */
 import { Prisma, type Holding } from "@prisma/client";
 
+import { config } from "../config.js";
 import { prisma } from "../db/prisma.js";
-import { NotFoundError } from "../errors.js";
+import { HoldingLimitError, NotFoundError } from "../errors.js";
 import { buildDemoHoldingData } from "./demoHoldings.js";
 import type { HoldingDto } from "../types.js";
 import type {
@@ -110,10 +111,19 @@ export async function getHolding(id: string, userId: string): Promise<HoldingDto
   return toDto(holding);
 }
 
+/** Throw HoldingLimitError when `adding` more lots would pass the per-user cap. */
+function assertWithinLimit(current: number, adding: number): void {
+  const limit = config.holdings.maxLotsPerUser;
+  if (current + adding > limit) {
+    throw new HoldingLimitError(limit, current);
+  }
+}
+
 export async function createHolding(
   input: CreateHoldingInput,
   userId: string,
 ): Promise<HoldingDto> {
+  assertWithinLimit(await prisma.holding.count({ where: { userId } }), 1);
   const holding = await prisma.holding.create({
     data: {
       userId,
@@ -124,6 +134,31 @@ export async function createHolding(
     },
   });
   return toDto(holding);
+}
+
+/**
+ * Create many lots in one transaction: all of them, or none (CSV import).
+ * A per-user advisory lock serializes concurrent imports, so two can't both
+ * pass the lot cap. Returns the number created.
+ */
+export async function createHoldings(
+  inputs: (CreateHoldingInput & { purchaseDate: string })[],
+  userId: string,
+): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`holdings:${userId}`}))`;
+    assertWithinLimit(await tx.holding.count({ where: { userId } }), inputs.length);
+    const { count } = await tx.holding.createMany({
+      data: inputs.map((input) => ({
+        userId,
+        ticker: input.ticker,
+        shares: new Prisma.Decimal(input.shares),
+        buyPrice: new Prisma.Decimal(input.buyPrice),
+        purchaseDate: toPurchaseDate(input.purchaseDate),
+      })),
+    });
+    return count;
+  });
 }
 
 export async function updateHolding(

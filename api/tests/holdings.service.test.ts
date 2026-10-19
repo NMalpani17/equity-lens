@@ -266,3 +266,68 @@ describe("holdings.service", () => {
     });
   });
 });
+
+describe("holdings cap and bulk create", () => {
+  const input = {
+    ticker: "AAPL",
+    shares: 1,
+    buyPrice: 100,
+    purchaseDate: "2024-01-02",
+  };
+
+  function transactionWith(count: number) {
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      holding: {
+        count: vi.fn().mockResolvedValue(count),
+        createMany: vi
+          .fn()
+          .mockImplementation(async ({ data }) => ({ count: data.length })),
+      },
+    };
+    mockPrisma.$transaction.mockImplementation((async (fn: (t: typeof tx) => unknown) =>
+      fn(tx)) as never);
+    return tx;
+  }
+
+  it("refuses a single add at the cap", async () => {
+    mockPrisma.holding.count.mockResolvedValue(1000);
+
+    await expect(service.createHolding(input, USER_ID)).rejects.toMatchObject({
+      status: 409,
+      code: "holding_limit_reached",
+    });
+    expect(mockPrisma.holding.create).not.toHaveBeenCalled();
+  });
+
+  it("creates every lot in one transaction under a per-user lock", async () => {
+    const tx = transactionWith(10);
+
+    const created = await service.createHoldings(
+      [input, { ...input, ticker: "MSFT" }],
+      USER_ID,
+    );
+
+    expect(created).toBe(2);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.holding.count).toHaveBeenCalledWith({ where: { userId: USER_ID } });
+    const data = tx.holding.createMany.mock.calls[0]![0].data;
+    expect(data).toHaveLength(2);
+    expect(data[0]).toMatchObject({
+      userId: USER_ID,
+      ticker: "AAPL",
+      purchaseDate: new Date("2024-01-02T00:00:00.000Z"),
+    });
+  });
+
+  it("creates nothing when the import would pass the cap", async () => {
+    const tx = transactionWith(999);
+
+    await expect(service.createHoldings([input, input], USER_ID)).rejects.toMatchObject(
+      {
+        code: "holding_limit_reached",
+      },
+    );
+    expect(tx.holding.createMany).not.toHaveBeenCalled();
+  });
+});

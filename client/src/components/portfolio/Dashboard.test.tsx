@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { Dashboard } from "./Dashboard";
 import type { PortfolioSummary } from "@/lib/api";
@@ -50,10 +50,39 @@ const summary: PortfolioSummary = {
   },
 };
 
+const emptyPerformance = {
+  range: "1Y",
+  status: "no_dates",
+  benchmark: { ticker: "SPY", available: false },
+  startDate: null,
+  endDate: null,
+  startClamped: false,
+  portfolioReturnPercent: null,
+  benchmarkReturnPercent: null,
+  points: [],
+  excluded: [],
+  lotsWithoutDate: 1,
+};
+
+/** Answer the summary with `body`; the insight endpoints get empty results. */
 function mockFetchOnce(body: unknown, status = 200) {
-  vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-    new Response(JSON.stringify(body), { status }),
-  );
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes("/performance")) {
+      return new Response(JSON.stringify(emptyPerformance));
+    }
+    if (url.includes("/sectors")) {
+      return new Response(
+        JSON.stringify({
+          totalMarketValue: 0,
+          sectors: [],
+          unpricedTickers: [],
+          pendingTickers: [],
+        }),
+      );
+    }
+    return new Response(JSON.stringify(body), { status });
+  });
 }
 
 afterEach(() => {
@@ -73,6 +102,24 @@ describe("Dashboard", () => {
     expect(screen.getAllByText("$1,100.00").length).toBeGreaterThan(0);
     expect(screen.getByText("Total value")).toBeInTheDocument();
     expect(screen.getByText("Apple Inc")).toBeInTheDocument();
+    // The performance card loads alongside.
+    expect(
+      await screen.findByText(
+        "Add purchase dates to your holdings to see performance.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the CSV import from the header", async () => {
+    mockFetchOnce(summary);
+
+    render(<Dashboard />);
+    await screen.findByText("AAPL");
+    fireEvent.click(screen.getByRole("button", { name: "Import CSV" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Import holdings from CSV" }),
+    ).toBeInTheDocument();
   });
 
   it("shows an empty state when there are no holdings", async () => {

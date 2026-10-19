@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import httpx
 
 from app.models.quote import Quote
+from app.services.rag.rate_limit import SlidingWindowLimiter
 
 from .base import (
     MarketDataProvider,
@@ -17,7 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 class FinnhubProvider(MarketDataProvider):
-    """Fetches quotes from the Finnhub REST API."""
+    """Fetches quotes from the Finnhub REST API.
+
+    Every call takes one unit from ``limiter`` (the free plan allows 60 calls
+    a minute). When the minute's budget is spent the call fails as
+    unavailable without being sent, so callers fall back to yfinance.
+    """
 
     name = "finnhub"
 
@@ -27,10 +33,12 @@ class FinnhubProvider(MarketDataProvider):
         *,
         base_url: str = "https://finnhub.io/api/v1",
         timeout: float = 5.0,
+        limiter: SlidingWindowLimiter | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._limiter = limiter
 
     def get_quote(self, ticker: str) -> Quote:
         if not self._api_key:
@@ -56,6 +64,8 @@ class FinnhubProvider(MarketDataProvider):
         )
 
     def _get_json(self, path: str, params: dict[str, str]) -> dict:
+        if self._limiter is not None and not self._limiter.try_acquire():
+            raise ProviderUnavailableError("finnhub call budget for this minute spent")
         url = f"{self._base_url}{path}"
         try:
             response = httpx.get(
@@ -85,10 +95,25 @@ class FinnhubProvider(MarketDataProvider):
         except ValueError as exc:
             raise ProviderUnavailableError("finnhub returned invalid JSON") from exc
 
+    def has_quote(self, ticker: str) -> bool:
+        """Whether Finnhub quotes the symbol, in one call (no name lookup)."""
+        if not self._api_key:
+            raise ProviderUnavailableError("finnhub api key not configured")
+        return bool(self._get_json("/quote", {"symbol": ticker.upper()}).get("c"))
+
+    def get_profile(self, ticker: str) -> dict:
+        """The company profile (``name``, ``finnhubIndustry``, ...).
+
+        Empty for symbols Finnhub has no profile for, including ETFs.
+        """
+        if not self._api_key:
+            raise ProviderUnavailableError("finnhub api key not configured")
+        return self._get_json("/stock/profile2", {"symbol": ticker.upper()})
+
     def _fetch_name(self, symbol: str) -> str | None:
         """Best-effort company name lookup; never fails the quote."""
         try:
-            data = self._get_json("/stock/profile2", {"symbol": symbol})
+            data = self.get_profile(symbol)
         except ProviderUnavailableError:
             return None
         name = data.get("name")

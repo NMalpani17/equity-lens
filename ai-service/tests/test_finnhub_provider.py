@@ -8,6 +8,7 @@ from app.services.market_data.base import (
     QuoteNotFoundError,
 )
 from app.services.market_data.finnhub import FinnhubProvider
+from app.services.rag.rate_limit import SlidingWindowLimiter
 
 
 def patch_get(monkeypatch: pytest.MonkeyPatch, handler) -> None:
@@ -59,6 +60,29 @@ def test_network_error_raises_unavailable(monkeypatch: pytest.MonkeyPatch) -> No
 
     with pytest.raises(ProviderUnavailableError):
         provider.get_quote("AAPL")
+
+
+def test_a_spent_call_budget_fails_without_calling_finnhub(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def handler(url, params=None, headers=None, timeout=None):
+        calls.append(url)
+        if "profile2" in url:
+            return httpx.Response(200, json={"name": "Apple Inc"})
+        return httpx.Response(200, json={"c": 150.0, "pc": 148.0})
+
+    patch_get(monkeypatch, handler)
+    provider = FinnhubProvider("key", limiter=SlidingWindowLimiter(3))
+
+    # A quote costs two calls (/quote and the name from /stock/profile2).
+    assert provider.get_quote("AAPL").name == "Apple Inc"
+    # One call left: the quote goes through, its name lookup doesn't.
+    assert provider.get_quote("MSFT").name is None
+    with pytest.raises(ProviderUnavailableError):
+        provider.get_quote("NVDA")
+    assert len(calls) == 3
 
 
 def test_missing_api_key_raises_unavailable() -> None:

@@ -16,7 +16,11 @@ All application routes are served by the Express gateway at
 | `PATCH`  | `/api/holdings/:id`                                | Update a holding.                                                 |
 | `DELETE` | `/api/holdings/:id`                                | Delete one lot.                                                   |
 | `DELETE` | `/api/holdings?ticker=X`                           | Delete a whole position (every lot for a ticker).                 |
+| `POST`   | `/api/holdings/import/preview`                     | Validate a CSV (`csv`): valid rows + row errors. Writes nothing.  |
+| `POST`   | `/api/holdings/import`                             | Save previewed rows (`rows`) in one transaction, all or nothing.  |
 | `GET`    | `/api/portfolio/summary`                           | Positions (lots grouped by ticker) with live prices + totals.     |
+| `GET`    | `/api/portfolio/performance?range=1Y`              | % price return vs SPY over `1M`, `3M`, `6M`, `1Y` or `ALL`.       |
+| `GET`    | `/api/portfolio/sectors`                           | Market value by sector, with each sector's holdings.              |
 | `DELETE` | `/api/account`                                     | Delete the authenticated user's account and all their data.       |
 | `POST`   | `/api/rag/search`                                  | Search earnings call transcripts (hybrid + rerank).               |
 | `GET`    | `/api/conversations`                               | The user's chat conversations, most recent first.                 |
@@ -76,6 +80,143 @@ Notes:
   `invalid_ticker`. A transient market-data outage does not block the write.
 - Validation failures return `422`; unknown resources return `404`; missing or
   invalid auth returns `401`.
+- A user may hold at most 1,000 lots (`HOLDINGS_MAX_LOTS_PER_USER`). An add or
+  import past it returns `409` `holding_limit_reached` with `limit` and
+  `current`.
+- A request body over its size limit returns `413` `payload_too_large`, and
+  malformed JSON returns `400` `invalid_body`.
+
+## Portfolio insights
+
+Both routes seed the demo portfolio first for an anonymous user, like the
+summary. If the ai-service is unreachable they return `502` `upstream_error`.
+
+### `GET /api/portfolio/performance`
+
+`range` is `1M`, `3M`, `6M`, `1Y` (the default) or `ALL` (case-insensitive).
+The response is the portfolio's **time-weighted price return** and SPY's price
+return, both rebased to 0% at the start of the range:
+
+```json
+{
+  "range": "1Y",
+  "status": "ok",
+  "benchmark": { "ticker": "SPY", "available": true },
+  "startDate": "2025-10-16",
+  "endDate": "2026-10-16",
+  "startClamped": false,
+  "portfolioReturnPercent": 18.42,
+  "benchmarkReturnPercent": 11.07,
+  "points": [
+    {
+      "date": "2025-10-16",
+      "portfolioPercent": 0,
+      "benchmarkPercent": 0,
+      "portfolioValue": 31250.4
+    }
+  ],
+  "excluded": [{ "ticker": "XYZ", "reason": "no_history" }],
+  "lotsWithoutDate": 1
+}
+```
+
+- `status`: `ok`; `empty` (no holdings); `no_dates` (no lot has a purchase
+  date); `no_data` (dated lots, but none has a close yet).
+- Points are SPY's trading days (no weekends or holidays), at most 400 (longer
+  series are thinned evenly; the returns use every day).
+- `startClamped` is true when the range began before the first purchase, so
+  the series starts at the first purchase's close.
+- `excluded`: tickers left out, `no_history` (no daily closes) or
+  `no_close_yet` (bought after the latest close).
+- `lotsWithoutDate`: lots left out because they have no purchase date.
+
+How it's computed: [architecture](architecture.md#portfolio-performance).
+
+### `GET /api/portfolio/sectors`
+
+```json
+{
+  "totalMarketValue": 31250.4,
+  "sectors": [
+    {
+      "sector": "Information Technology",
+      "marketValue": 18400.25,
+      "weightPercent": 58.88,
+      "holdings": [
+        { "ticker": "NVDA", "name": "NVIDIA Corp", "marketValue": 9800.1 }
+      ]
+    }
+  ],
+  "unpricedTickers": [],
+  "pendingTickers": []
+}
+```
+
+Sectors are the 11 GICS sectors plus `Funds` (ETFs and mutual funds); an
+unknown sector is `Other`. Sectors are largest first, with `Other` last.
+Positions without a live price are left out (`unpricedTickers`).
+`pendingTickers` haven't been looked up yet (at most 25 uncached tickers are
+looked up per request); they're counted under `Other` until a later load.
+
+## CSV import
+
+### `POST /api/holdings/import/preview`
+
+Body: `{ "csv": "<the file's text>" }`, at most 100 KB
+(`IMPORT_MAX_FILE_BYTES`) and 500 data rows (`IMPORT_MAX_ROWS`). The header
+row needs the columns `ticker`, `quantity`, `price` and `purchase_date` (case
+and spacing don't matter; `symbol`, `shares`, `buy price` and `date` also
+work). Extra columns and blank lines are ignored. Every field is required:
+
+- `ticker`: a valid symbol that the market-data service recognizes.
+- `quantity`, `price`: positive numbers; `$` and thousands separators are
+  allowed (`"$1,234.50"`).
+- `purchase_date`: `YYYY-MM-DD` or `M/D/YYYY`, not in the future.
+
+```json
+{
+  "rows": [
+    {
+      "line": 2,
+      "ticker": "AAPL",
+      "shares": 10,
+      "buyPrice": 172.4,
+      "purchaseDate": "2024-02-12"
+    }
+  ],
+  "errors": [
+    { "line": 3, "field": "quantity", "message": "quantity must be a number" }
+  ],
+  "warnings": [
+    {
+      "line": 4,
+      "message": "NEWCO couldn't be checked right now; it will be imported as entered."
+    }
+  ],
+  "totalRows": 3,
+  "errorRowCount": 1
+}
+```
+
+A problem with the file as a whole returns `422` with no rows:
+`invalid_csv` (unreadable, empty, or a header with no rows),
+`invalid_csv_header` (missing columns) or `too_many_rows`; a file over the size
+limit returns `422` `validation_error`.
+
+**Ticker check.** Each distinct ticker is checked once, in one batched
+ai-service call (`POST /tickers/verify`). That call spends no Finnhub calls
+unless yfinance is down, and then at most 20 per request (see below). If a
+ticker can't be checked right now, its rows are kept with a warning, like
+adding a single holding.
+
+### `POST /api/holdings/import`
+
+Body: `{ "rows": [{ "ticker", "shares", "buyPrice", "purchaseDate" }] }`,
+1–500 rows, typically the preview's `rows` (the client sends only the rows
+the user confirmed). Rows are validated and tickers re-checked (answered from
+the ai-service's caches after a preview), then every row is inserted in one
+transaction: `201` `{ "imported": 2 }`, or nothing is saved (`422` for a bad
+row or an unknown ticker, `409` past the lot cap).
 
 ## Transcript search (RAG)
 
@@ -223,16 +364,16 @@ If the ai-service doesn't start answering within `CHAT_CONNECT_TIMEOUT_MS`
 right now. Please try again shortly.", `retryable: true`) and `done` with the
 saved failed reply. Events:
 
-| Event           | Data                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------- |
-| `turn`          | `{ conversation, userMessage, assistantMessageId }` (the saved user message).               |
-| `tool_start`    | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.                    |
+| Event           | Data                                                                                          |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| `turn`          | `{ conversation, userMessage, assistantMessageId }` (the saved user message).                 |
+| `tool_start`    | `{ id, name, label, args }`, e.g. label `"Searching NVDA transcripts…"`.                      |
 | `tool_progress` | `{ id, label }` — live status for a running tool, e.g. `"Getting Starbucks earnings calls…"`. |
-| `tool_end`      | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                                     |
-| `chart`         | `{ chart }` — an inline chart built from a tool result (see below), right after `tool_end`. |
-| `token`         | `{ text }` — answer text as it is generated (reset by the next `tool_start`).               |
-| `error`         | `{ code, message, retryable }`, e.g. `ai_credits_exhausted`, `ai_rate_limited`.             |
-| `done`          | `{ message }` — the saved assistant message (always last).                                  |
+| `tool_end`      | `{ id, name, ok, summary }`, e.g. `"Found 5 passages"`.                                       |
+| `chart`         | `{ chart }` — an inline chart built from a tool result (see below), right after `tool_end`.   |
+| `token`         | `{ text }` — answer text as it is generated (reset by the next `tool_start`).                 |
+| `error`         | `{ code, message, retryable }`, e.g. `ai_credits_exhausted`, `ai_rate_limited`.               |
+| `done`          | `{ message }` — the saved assistant message (always last).                                    |
 
 ### `POST /api/conversations/:id/messages/:messageId/retry`
 
@@ -487,12 +628,12 @@ it). No body. Rule violations are JSON errors before streaming starts:
 
 Then the response is `text/event-stream` (with keepalive comments):
 
-| Event   | Data                                                                                                                                                                                                                     |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `start` | `{ ticker, quarter }`                                                                                                                                                                                                    |
+| Event   | Data                                                                                                                                                                                                                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start` | `{ ticker, quarter }`                                                                                                                                                                                                                                                                                                                                                     |
 | `agent` | `{ agent, state, label, summary? }`: `agent` is `freshness` (the check for a newer earnings call, always first; `summary` e.g. `"Found a newer call: Q4 FY2026"` or `"Latest call: Q3 FY2026"`), `transcripts`, `market` or `writer`; `state` is `running`, `done` or `failed`. `label` is `"Writing report…"` while running and past tense once done (`"Wrote report"`). |
-| `done`  | `{ report }`, the saved report (same shape as above).                                                                                                                                                                    |
-| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `comparison_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.                                                                              |
+| `done`  | `{ report }`, the saved report (same shape as above).                                                                                                                                                                                                                                                                                                                     |
+| `error` | `{ code, message, retryable }`, e.g. `research_failed`, `comparison_failed`, `report_timeout`, `report_unavailable`, `incomplete_response`.                                                                                                                                                                                                                               |
 
 A generation always finishes once it has started: if the client closes the
 connection, the api keeps reading the ai-service's stream until the report is
@@ -514,11 +655,35 @@ configured it fails closed with `503`.
 
 The market-data endpoints the API consumes directly:
 
-| Method | Path                  | Description                                    |
-| ------ | --------------------- | ---------------------------------------------- |
-| `GET`  | `/health`             | Service health.                                |
-| `GET`  | `/quotes/{ticker}`    | One quote (`404` unknown, `502` unavailable).  |
-| `GET`  | `/quotes?symbols=A,B` | Batch quotes; per-ticker failures in `errors`. |
+| Method | Path                                    | Description                                                                   |
+| ------ | --------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET`  | `/health`                               | Service health.                                                               |
+| `GET`  | `/quotes/{ticker}`                      | One quote (`404` unknown, `502` unavailable).                                 |
+| `GET`  | `/quotes?symbols=A,B`                   | Batch quotes; per-ticker failures in `errors`.                                |
+| `GET`  | `/history/daily?symbols=A,B&start=DATE` | Split-adjusted daily closes from `start`; `errors` for tickers without.       |
+| `GET`  | `/profiles?symbols=A,B`                 | Sector and name per ticker; tickers past the lookup budget in `pending`.      |
+| `POST` | `/tickers/verify`                       | `{symbols}` (1–500) → `{results: {T: "ok" \| "not_found" \| "unavailable"}}`. |
+
+`/history/daily` and `/profiles` take at most 500 symbols
+(`AI_SERVICE_MARKET_MAX_SYMBOLS`). Both cache in Postgres; see
+[architecture](architecture.md#market-data-cache).
+
+**Finnhub budget.** All Finnhub calls in a process share one limit of 50 a
+minute (`AI_SERVICE_FINNHUB_CALLS_PER_MINUTE`; the free plan allows 60). A call
+past it isn't sent, and quotes and profiles fall back to yfinance. Per
+request:
+
+- A quote costs 2 calls (the quote and the company name); cached quotes cost 0.
+- `/profiles` looks up at most 25 uncached tickers
+  (`AI_SERVICE_PROFILE_MAX_LOOKUPS_PER_REQUEST`), 1 Finnhub call each.
+- `/tickers/verify` (CSV import) costs **0 Finnhub calls** normally. Tickers
+  are settled from a one-hour memo, the quote cache, `company_profiles` and the
+  price-history cache, then one batched yfinance download for the rest. Only
+  while yfinance is down does it ask Finnhub, for at most 20 tickers
+  (`AI_SERVICE_TICKER_CHECK_FINNHUB_BUDGET`, 1 call each). The rest come back
+  `unavailable`. So a 500-row import costs at most 20 Finnhub calls for the
+  preview and 20 for the save, 40 in all, and only during a yfinance outage.
+  The save is usually free: the memo answers it.
 
 Transcript search (same semantics as the gateway routes above, snake_case JSON):
 
@@ -530,11 +695,11 @@ Transcript search (same semantics as the gateway routes above, snake_case JSON):
 
 Chat and MCP:
 
-| Method | Path              | Description                                                                                                                                                                                                                                                   |
-| ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST` | `/chat/stream`    | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, conversation_id, message, history, portfolio, time_zone}`.                                                                                                                          |
+| Method | Path              | Description                                                                                                                                                                                                                                                                                                                                               |
+| ------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/chat/stream`    | One chat turn as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, conversation_id, message, history, portfolio, time_zone}`.                                                                                                                                                                                                                      |
 | `POST` | `/reports/stream` | One research report generation as SSE (`X-Internal-Token`). Body: `{user_id, is_anonymous, ticker, regenerate_after_days}`. Events: `agent` (first `freshness`, waited for so the report covers the newest call, then the three agents), `done` `{report, fiscal_year, fiscal_quarter, generated_at, usage}`, `error`. The report is saved before `done`. |
-| any    | `/mcp/`           | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                                                                                                                                                                      |
+| any    | `/mcp/`           | The analyst tools over MCP (streamable HTTP), `X-Internal-Token` header.                                                                                                                                                                                                                                                                                  |
 
 The MCP server exposes the agent's read-only tools: `search_transcripts`,
 `compare_quarters`, `get_quote`, `get_price_history`, `get_portfolio`,

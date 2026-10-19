@@ -1,7 +1,11 @@
 /** Portfolio routes. */
 import { Router } from "express";
 
-import { getSummary } from "../controllers/portfolio.controller.js";
+import {
+  getPerformance,
+  getSectors,
+  getSummary,
+} from "../controllers/portfolio.controller.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 
@@ -11,3 +15,6 @@ export const portfolioRouter = Router();
 portfolioRouter.use(asyncHandler(requireAuth));
 
 portfolioRouter.get("/portfolio/summary", asyncHandler(getSummary));
+// ?range=1M|3M|6M|1Y|ALL (default 1Y).
+portfolioRouter.get("/portfolio/performance", asyncHandler(getPerformance));
+portfolioRouter.get("/portfolio/sectors", asyncHandler(getSectors));

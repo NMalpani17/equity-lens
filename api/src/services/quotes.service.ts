@@ -133,6 +133,56 @@ export async function getQuotes(tickers: string[]): Promise<QuotesResult> {
 /** Result of checking whether a single ticker is a real, quotable symbol. */
 export type TickerCheck = "ok" | "not_found" | "unavailable";
 
+const tickerCheckSchema = z.object({
+  results: z.record(z.enum(["ok", "not_found", "unavailable"])),
+});
+
+// A cold batch check downloads recent prices for every unknown ticker.
+const BATCH_CHECK_TIMEOUT_MS = 60_000;
+
+/**
+ * Check many tickers at once (CSV import). The ai-service answers from its
+ * caches and one batched yfinance download, so this spends no Finnhub calls
+ * unless yfinance is down (then at most 20). Never throws: on failure every
+ * ticker is "unavailable", which callers treat like a single-holding add.
+ */
+export async function verifyTickers(
+  tickers: string[],
+): Promise<Record<string, TickerCheck>> {
+  const unavailable = (): Record<string, TickerCheck> =>
+    Object.fromEntries(tickers.map((t) => [t, "unavailable" as const]));
+  if (tickers.length === 0) return {};
+
+  const url = aiServiceUrl("/tickers/verify");
+  try {
+    const response = await aiServiceFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: tickers }),
+      signal: AbortSignal.timeout(BATCH_CHECK_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      logger.warn(
+        { status: response.status },
+        "ai-service ticker check returned non-OK",
+      );
+      return unavailable();
+    }
+    const parsed = tickerCheckSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      logger.warn(
+        { err: parsed.error.flatten() },
+        "ai-service ticker check had an unexpected shape",
+      );
+      return unavailable();
+    }
+    return { ...unavailable(), ...parsed.data.results };
+  } catch (error) {
+    logger.warn({ err: error }, "failed to reach ai-service for the ticker check");
+    return unavailable();
+  }
+}
+
 /**
  * Check whether a ticker exists via the AI service's single-quote endpoint.
  * Returns "ok" if quotable, "not_found" if the symbol is unknown, and

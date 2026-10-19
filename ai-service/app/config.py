@@ -31,10 +31,26 @@ class Settings(BaseSettings):
     # Finnhub is the primary quote provider; yfinance is the automatic fallback.
     finnhub_api_key: str = ""
     finnhub_base_url: str = "https://finnhub.io/api/v1"
+    # Finnhub calls per minute per instance (the free plan allows 60). Past it,
+    # quotes and profiles fall back to yfinance. 0 disables the limit.
+    finnhub_calls_per_minute: int = 50
     # How long (seconds) a quote is served from cache before refetching.
     market_cache_ttl_seconds: int = 60
     # HTTP timeout (seconds) for outbound provider requests.
     market_http_timeout_seconds: float = 5.0
+    # Parallel yfinance history fetches per request (portfolio performance).
+    market_history_workers: int = 8
+    # Most tickers one daily-closes or profiles request may ask for.
+    market_max_symbols: int = 500
+    # Company profiles (sector allocation): how long a cached profile is kept,
+    # and how many uncached tickers one request looks up (each costs at most
+    # one Finnhub call); the rest are looked up on later requests.
+    profile_ttl_days: int = 30
+    profile_unknown_ttl_days: int = 7
+    profile_max_lookups_per_request: int = 25
+    # Import ticker check: Finnhub is asked only when yfinance is down, for at
+    # most this many tickers per request (one call each).
+    ticker_check_finnhub_budget: int = 20
 
     # --- Database (Supabase Postgres) ---
     # The RAG state tables are owned by Prisma (api/prisma) and accessed here via

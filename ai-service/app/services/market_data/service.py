@@ -5,6 +5,7 @@ from functools import lru_cache
 
 from app.config import Settings, get_settings
 from app.models.quote import Quote, QuotesResponse
+from app.services.rag.rate_limit import SlidingWindowLimiter
 
 from .base import (
     MarketDataProvider,
@@ -32,6 +33,10 @@ class MarketDataService:
             raise ValueError("at least one provider is required")
         self._providers = providers
         self._cache = cache
+
+    def cached_quote(self, ticker: str) -> Quote | None:
+        """The cached quote, without asking any provider."""
+        return self._cache.get(ticker.upper())
 
     def get_quote(self, ticker: str) -> Quote:
         symbol = ticker.upper()
@@ -81,15 +86,20 @@ class MarketDataService:
         return response
 
 
+@lru_cache
+def get_finnhub_provider() -> FinnhubProvider:
+    """The process-wide Finnhub client; all Finnhub calls share its limiter."""
+    settings = get_settings()
+    return FinnhubProvider(
+        settings.finnhub_api_key,
+        base_url=settings.finnhub_base_url,
+        timeout=settings.market_http_timeout_seconds,
+        limiter=SlidingWindowLimiter(settings.finnhub_calls_per_minute),
+    )
+
+
 def _build_service(settings: Settings) -> MarketDataService:
-    providers: list[MarketDataProvider] = [
-        FinnhubProvider(
-            settings.finnhub_api_key,
-            base_url=settings.finnhub_base_url,
-            timeout=settings.market_http_timeout_seconds,
-        ),
-        YFinanceProvider(),
-    ]
+    providers: list[MarketDataProvider] = [get_finnhub_provider(), YFinanceProvider()]
     cache = QuoteCache(ttl_seconds=settings.market_cache_ttl_seconds)
     return MarketDataService(providers, cache)
 

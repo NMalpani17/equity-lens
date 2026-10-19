@@ -232,6 +232,55 @@ model ChatUsageEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Market data cache. Shared across users (no user data in it). Owned by
+// Prisma, read and written by the ai-service via psycopg
+// (ai-service/app/services/market_data/repository.py). Keep column names in
+// sync.
+// ---------------------------------------------------------------------------
+
+/// One split-adjusted daily close (price return, no dividends) per ticker and
+/// trading day. Only completed sessions are stored.
+model MarketDailyClose {
+  ticker String
+  date   DateTime @db.Date
+  close  Decimal  @db.Decimal(20, 6)
+
+  @@id([ticker, date])
+  @@map("market_daily_closes")
+}
+
+/// What `market_daily_closes` holds for a ticker, so a request only fetches
+/// the missing range.
+model MarketHistoryCoverage {
+  ticker         String   @id
+  /// Earliest date the cached closes cover (the earliest start asked for).
+  coveredFrom    DateTime @map("covered_from") @db.Date
+  /// Last completed trading session the cache was filled through.
+  fetchedThrough DateTime @map("fetched_through") @db.Date
+  /// "ok", or "no_history" when the provider had no closes (retried daily).
+  status         String
+  fetchedAt      DateTime @map("fetched_at")
+
+  @@map("market_history_coverage")
+}
+
+/// Company profile used for sector allocation, refreshed after 30 days.
+model CompanyProfile {
+  ticker    String   @id
+  name      String?
+  /// Normalized sector (one of 11 GICS-style sectors, or "Funds"); null when
+  /// unknown, which the portfolio shows as "Other".
+  sector    String?
+  /// The provider's own industry or sector label, before normalizing.
+  industry  String?
+  /// "finnhub", "yfinance", or "none" when neither knew the ticker.
+  source    String
+  fetchedAt DateTime @map("fetched_at")
+
+  @@map("company_profiles")
+}
+
+// ---------------------------------------------------------------------------
 // Research reports. Shared across users (no user data in them), keyed by
 // ticker + the latest indexed quarter. Owned by Prisma, written by the
 // ai-service via psycopg (ai-service/app/services/report/repository.py) and

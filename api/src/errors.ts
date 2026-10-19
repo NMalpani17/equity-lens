@@ -42,6 +42,25 @@ export class InvalidTickerError extends HttpError {
   }
 }
 
+/** 409 — adding these lots would pass the per-user holdings cap. */
+export class HoldingLimitError extends HttpError {
+  constructor(limit: number, current: number) {
+    super(
+      409,
+      "holding_limit_reached",
+      `You can have up to ${limit.toLocaleString("en-US")} holdings; you have ${current.toLocaleString("en-US")}.`,
+      { limit, current },
+    );
+  }
+}
+
+/** 422 — an uploaded CSV can't be read as a whole (no rows are checked). */
+export class ImportFileError extends HttpError {
+  constructor(code: string, message: string) {
+    super(422, code, message);
+  }
+}
+
 /** 409 — the conversation already has a turn in progress. */
 export class TurnInProgressError extends HttpError {
   constructor(message = "a reply is still being generated in this conversation") {

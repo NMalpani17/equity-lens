@@ -32,12 +32,23 @@ class SlidingWindowLimiter:
         if self._max_units <= 0:
             return
         with self._lock:
-            while True:
+            while not self._take(units):
                 now = self._clock()
-                while self._events and now - self._events[0][0] >= self._period:
-                    self._used -= self._events.popleft()[1]
-                if not self._events or self._used + units <= self._max_units:
-                    self._events.append((now, units))
-                    self._used += units
-                    return
                 self._sleep(self._period - (now - self._events[0][0]))
+
+    def try_acquire(self, units: int = 1) -> bool:
+        """Take ``units`` if they fit right now; never waits."""
+        if self._max_units <= 0:
+            return True
+        with self._lock:
+            return self._take(units)
+
+    def _take(self, units: int) -> bool:
+        now = self._clock()
+        while self._events and now - self._events[0][0] >= self._period:
+            self._used -= self._events.popleft()[1]
+        if not self._events or self._used + units <= self._max_units:
+            self._events.append((now, units))
+            self._used += units
+            return True
+        return False
