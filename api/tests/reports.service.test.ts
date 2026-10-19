@@ -18,6 +18,7 @@ vi.mock("../src/db/prisma.js", () => {
   };
 });
 
+import { config, parseTickerList } from "../src/config.js";
 import { prisma } from "../src/db/prisma.js";
 import {
   ForbiddenError,
@@ -28,6 +29,7 @@ import {
 import {
   getReport,
   getReportUsage,
+  isDemoLocked,
   latestIndexedQuarter,
   listReports,
   parseQuarterLabel,
@@ -134,7 +136,7 @@ describe("listReports", () => {
       }),
     ]);
 
-    const items = await listReports();
+    const items = await listReports(false);
 
     expect(
       items.map((i) => [i.ticker, i.report?.outdated ?? null, i.generating]),
@@ -260,6 +262,69 @@ describe("getReport", () => {
     db.ragTicker.findUnique.mockResolvedValue(null);
 
     await expect(getReport("ZZZZ", USER, false)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("demo report access", () => {
+  it("defaults to six demo tickers, parsed from config", () => {
+    expect(config.reports.demoTickers).toEqual([
+      "AAPL",
+      "MSFT",
+      "NVDA",
+      "TSLA",
+      "AMD",
+      "JPM",
+    ]);
+    expect(parseTickerList(" aapl, ,MSFT,aapl ")).toEqual(["AAPL", "MSFT"]);
+  });
+
+  it("locks only tickers outside the list, and only for demo users", () => {
+    expect(isDemoLocked("NVDA", true)).toBe(false);
+    expect(isDemoLocked("COST", true)).toBe(true);
+    expect(isDemoLocked("COST", false)).toBe(false);
+  });
+
+  it("lists every ticker for demo users, marking the locked ones", async () => {
+    db.ragTicker.findMany.mockResolvedValue([
+      ticker({ ticker: "COST", companyName: "Costco" }),
+      ticker(),
+    ]);
+    db.researchReport.findMany.mockResolvedValue([
+      report(),
+      report({ ticker: "COST" }),
+    ]);
+
+    const demo = await listReports(true);
+    const signedIn = await listReports(false);
+
+    expect(demo.map((i) => [i.ticker, i.demoLocked])).toEqual([
+      ["COST", true],
+      ["NVDA", false],
+    ]);
+    expect(signedIn.every((i) => !i.demoLocked)).toBe(true);
+  });
+
+  it("is a 403 for a demo user outside the list, before reading anything", async () => {
+    const error = await getReport("COST", USER, true).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error).toMatchObject({ status: 403, code: "demo_report_locked" });
+    expect(db.ragTicker.findUnique).not.toHaveBeenCalled();
+    expect(db.researchReport.findMany).not.toHaveBeenCalled();
+  });
+
+  it("serves a demo-list report to a demo user and any report to a signed-in user", async () => {
+    db.ragTicker.findUnique.mockResolvedValue(
+      ticker({ ticker: "COST", companyName: "Costco" }),
+    );
+    db.researchReport.findMany.mockResolvedValue([report({ ticker: "COST" })]);
+    expect((await getReport("COST", USER, false)).report).not.toBeNull();
+
+    db.ragTicker.findUnique.mockResolvedValue(ticker());
+    db.researchReport.findMany.mockResolvedValue([report()]);
+    const demoView = await getReport("NVDA", USER, true);
+    expect(demoView.report).not.toBeNull();
+    expect(demoView.blockedReason).toBe("demo");
   });
 });
 

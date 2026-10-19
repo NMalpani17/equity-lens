@@ -57,6 +57,9 @@ const envSchema = z.object({
   REPORT_STALE_GENERATION_MINUTES: z.coerce.number().int().positive().default(10),
   // Time to the ai-service's first response for a report (covers a cold start).
   REPORT_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  // Comma-separated tickers whose reports demo (anonymous) users may view;
+  // every other report needs a real account.
+  DEMO_REPORT_TICKERS: z.string().default("AAPL,MSFT,NVDA,TSLA,AMD,JPM"),
   // Holdings: most lots one user may have (manual adds and imports alike).
   HOLDINGS_MAX_LOTS_PER_USER: z.coerce.number().int().positive().default(1000),
   // CSV import limits: file size in bytes and data rows per file.
@@ -88,6 +91,18 @@ export function parseOrigins(raw: string): string[] {
     .split(",")
     .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0);
+}
+
+/** Split a comma-separated ticker list: trimmed, uppercased, empties dropped. */
+export function parseTickerList(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(",")
+        .map((ticker) => ticker.trim().toUpperCase())
+        .filter((ticker) => ticker.length > 0),
+    ),
+  ];
 }
 
 const parsed = envSchema.safeParse(process.env);
@@ -124,6 +139,7 @@ export const config = {
     regenerateAfterDays: parsed.data.REPORT_REGENERATE_AFTER_DAYS,
     staleGenerationMinutes: parsed.data.REPORT_STALE_GENERATION_MINUTES,
     connectTimeoutMs: parsed.data.REPORT_CONNECT_TIMEOUT_MS,
+    demoTickers: parseTickerList(parsed.data.DEMO_REPORT_TICKERS),
   },
   holdings: {
     maxLotsPerUser: parsed.data.HOLDINGS_MAX_LOTS_PER_USER,

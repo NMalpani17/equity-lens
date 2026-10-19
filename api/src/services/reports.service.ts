@@ -5,7 +5,8 @@
  * Reports are keyed by ticker + fiscal quarter. The current report is the one
  * for the ticker's newest indexed call; until it exists, the newest older
  * report is shown as outdated. Rules for generating:
- *   - signed-in (non-demo) users only; demo users view cached reports
+ *   - signed-in (non-demo) users only; demo users view cached reports, and
+ *     only for DEMO_REPORT_TICKERS (any other report is a 403)
  *   - not while a generation runs, and not if the current report is newer
  *     than REPORT_REGENERATE_AFTER_DAYS
  *   - REPORT_DAILY_LIMIT per user per UTC day, counting failed and cancelled
@@ -64,6 +65,8 @@ export interface ReportSummaryDto {
   /** The newest generated report, current or outdated; null if none yet. */
   report: { generatedAt: string; quarter: Quarter; outdated: boolean } | null;
   generating: boolean;
+  /** True when the caller (a demo user) needs an account to view this report. */
+  demoLocked: boolean;
 }
 
 export interface ReportViewDto {
@@ -141,6 +144,11 @@ function newestFirst<T extends ReportRow>(rows: T[]): T[] {
   );
 }
 
+/** Whether a demo user is kept from this ticker's report (signed-in users never are). */
+export function isDemoLocked(ticker: string, isAnonymous: boolean): boolean {
+  return isAnonymous && !config.reports.demoTickers.includes(ticker);
+}
+
 function companyName(ticker: RagTicker): string {
   return companyDisplayName(ticker.ticker, ticker.companyName);
 }
@@ -174,8 +182,11 @@ async function indexedTicker(
   return { row, latest };
 }
 
-/** Every indexed ticker with its newest report (no report content). */
-export async function listReports(): Promise<ReportSummaryDto[]> {
+/**
+ * Every indexed ticker with its newest report (no report content). Demo users
+ * see every ticker too, with the ones outside the demo list marked locked.
+ */
+export async function listReports(isAnonymous: boolean): Promise<ReportSummaryDto[]> {
   const tickers = await prisma.ragTicker.findMany({
     where: { OR: [{ status: "indexed" }, { indexedAt: { not: null } }] },
     orderBy: { ticker: "asc" },
@@ -215,6 +226,7 @@ export async function listReports(): Promise<ReportSummaryDto[]> {
             }
           : null,
         generating: isGenerating(current, now),
+        demoLocked: isDemoLocked(ticker.ticker, isAnonymous),
       },
     ];
   });
@@ -238,12 +250,22 @@ async function blockedReason(
   return null;
 }
 
-/** A ticker's report (current, else the newest outdated one) and permissions. */
+/**
+ * A ticker's report (current, else the newest outdated one) and permissions.
+ * A demo user asking for a ticker outside the demo list gets a 403 before
+ * anything is read, so the response doesn't reveal whether a report exists.
+ */
 export async function getReport(
   ticker: string,
   userId: string,
   isAnonymous: boolean,
 ): Promise<ReportViewDto> {
+  if (isDemoLocked(ticker, isAnonymous)) {
+    throw new ForbiddenError(
+      "demo_report_locked",
+      "Sign up to view or generate this report.",
+    );
+  }
   const { row: tickerRow, latest } = await indexedTicker(ticker);
   const rows = newestFirst(await prisma.researchReport.findMany({ where: { ticker } }));
   const now = new Date();

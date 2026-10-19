@@ -30,9 +30,10 @@ const INCOMPLETE = {
 };
 
 export async function listReports(req: Request, res: Response): Promise<void> {
+  const isAnonymous = isAnonymousRequest(req);
   const [tickers, usage] = await Promise.all([
-    reportsService.listReports(),
-    reportsService.getReportUsage(getUserId(req), isAnonymousRequest(req)),
+    reportsService.listReports(isAnonymous),
+    reportsService.getReportUsage(getUserId(req), isAnonymous),
   ]);
   res.status(200).json({ tickers, usage });
 }

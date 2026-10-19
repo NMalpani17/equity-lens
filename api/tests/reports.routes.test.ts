@@ -103,6 +103,7 @@ describe("GET /api/reports", () => {
       usage: expect.objectContaining({ isDemo: true }),
     });
     expect(service.getReportUsage).toHaveBeenCalledWith(USER, true);
+    expect(service.listReports).toHaveBeenCalledWith(true);
   });
 });
 

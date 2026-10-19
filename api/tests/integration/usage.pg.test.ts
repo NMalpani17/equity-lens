@@ -153,7 +153,7 @@ describe.skipIf(!enabled)("usage and reports on real Postgres", () => {
       generatedAt: generatedAt.toISOString(),
     });
     expect(view).toMatchObject({ canGenerate: false, blockedReason: "fresh" });
-    const [item] = await reports.listReports();
+    const [item] = await reports.listReports(false);
     expect(item).toMatchObject({
       ticker: "NVDA",
       companyName: "NVIDIA Corporation",
