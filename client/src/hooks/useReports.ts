@@ -43,15 +43,23 @@ function pendingAgents(): AgentProgress[] {
   return AGENTS.map(({ agent, label }) => ({ agent, label, state: "pending" }));
 }
 
+/** The API's 403 code for a report a demo user may not view. */
+export const DEMO_REPORT_LOCKED = "demo_report_locked";
+
 /** The report /reports opens when no company is in the address. */
 export const DEFAULT_REPORT_TICKER = "NVDA";
 
-/** NVDA if its report is ready, else the first ready report, else the first company. */
+/**
+ * NVDA if its report is ready, else the first ready report, else the first
+ * company, never one the user (a demo user) is locked out of when another
+ * exists.
+ */
 export function defaultTicker(tickers: ReportSummary[]): string | undefined {
+  const open = tickers.filter((t) => !t.demoLocked);
   const ready = (t: ReportSummary) => t.report !== null && !t.report.outdated;
-  const preferred = tickers.find((t) => t.ticker === DEFAULT_REPORT_TICKER);
+  const preferred = open.find((t) => t.ticker === DEFAULT_REPORT_TICKER);
   if (preferred && ready(preferred)) return preferred.ticker;
-  return (tickers.find(ready) ?? tickers[0])?.ticker;
+  return (open.find(ready) ?? open[0] ?? tickers[0])?.ticker;
 }
 
 /**
@@ -89,9 +97,17 @@ export function useReports(requested: string | undefined) {
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState<AgentProgress[]>(pendingAgents);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  // A ticker the API refused with demo_report_locked (e.g. a link opened
+  // before the list loaded).
+  const [refusedTicker, setRefusedTicker] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const tickerRef = useRef(ticker);
   tickerRef.current = ticker;
+  // Demo users see the sign-up prompt instead of a report outside the demo list.
+  const listLocked = Boolean(tickers?.find((t) => t.ticker === ticker)?.demoLocked);
+  const locked = listLocked || (ticker !== undefined && refusedTicker === ticker);
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
 
   const loadList = useCallback(async () => {
     try {
@@ -116,7 +132,12 @@ export function useReports(requested: string | undefined) {
     } catch (error) {
       if (tickerRef.current === symbol) {
         setView(null);
-        setViewError(message(error, "Couldn't load this report."));
+        if (error instanceof ApiError && error.code === DEMO_REPORT_LOCKED) {
+          setRefusedTicker(symbol);
+          setViewError(null);
+        } else {
+          setViewError(message(error, "Couldn't load this report."));
+        }
       }
     } finally {
       if (!quiet && tickerRef.current === symbol) setLoadingView(false);
@@ -137,13 +158,15 @@ export function useReports(requested: string | undefined) {
     setView(null);
     setGenerateError(null);
     setProgress(pendingAgents());
-    if (ticker) void loadView(ticker);
-  }, [ticker, loadView]);
+    if (ticker && !listLocked) void loadView(ticker);
+  }, [ticker, listLocked, loadView]);
 
   // Refresh the list and the open report together (no loading spinners).
   const refresh = useCallback(() => {
     void loadList();
-    if (tickerRef.current) void loadView(tickerRef.current, { quiet: true });
+    if (tickerRef.current && !lockedRef.current) {
+      void loadView(tickerRef.current, { quiet: true });
+    }
   }, [loadList, loadView]);
 
   // A report is generating somewhere (another tab, another user, or a run
@@ -238,6 +261,7 @@ export function useReports(requested: string | undefined) {
     view,
     loadingView,
     viewError,
+    locked,
     generating,
     progress,
     generateError,

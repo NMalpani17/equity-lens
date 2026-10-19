@@ -148,6 +148,7 @@ const summaries: ReportSummary[] = [
     latestQuarter: { fiscalYear: 2026, fiscalQuarter: 3, label: "Q3 FY2026" },
     report: null,
     generating: false,
+    demoLocked: false,
   },
   {
     ticker: "NVDA",
@@ -155,11 +156,17 @@ const summaries: ReportSummary[] = [
     latestQuarter: Q2,
     report: { generatedAt: "2026-10-07T12:00:00.000Z", quarter: Q2, outdated: false },
     generating: false,
+    demoLocked: false,
   },
 ];
 
-function summary(ticker: string, report: { outdated: boolean } | null): ReportSummary {
+function summary(
+  ticker: string,
+  report: { outdated: boolean } | null,
+  demoLocked = false,
+): ReportSummary {
   return {
+    demoLocked,
     ticker,
     companyName: ticker,
     latestQuarter: Q2,
@@ -516,6 +523,95 @@ describe("ReportsPage", () => {
       await screen.findByText("Based on the Q2 FY2027 earnings call (Aug 26, 2026)."),
     ).toBeVisible();
     expect(screen.queryByText(/Quote as of/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ReportsPage demo access", () => {
+  const demoList = [
+    summary("COST", { outdated: false }, true),
+    summary("MSFT", { outdated: false }),
+  ];
+
+  it("marks locked companies in the picker and opens an allowed one by default", async () => {
+    api.listReports.mockResolvedValue({ tickers: demoList, usage: view().usage });
+    api.getReport.mockResolvedValue(
+      view({
+        ticker: "MSFT",
+        companyName: "MSFT",
+        canGenerate: false,
+        blockedReason: "demo",
+      }),
+    );
+
+    renderAt("/reports", { isDemo: true });
+
+    // The default skips the locked company; the placeholder option goes once
+    // it's chosen.
+    await waitFor(() => expect(screen.getByLabelText("Company")).toHaveValue("MSFT"));
+    expect(api.getReport).toHaveBeenCalledWith("MSFT");
+    expect(api.getReport).not.toHaveBeenCalledWith("COST");
+    expect(
+      within(screen.getByLabelText("Company"))
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["COST · COST (sign up to view)", "MSFT · MSFT (report ready)"]);
+  });
+
+  it("asks a demo user to sign up instead of loading a locked report", async () => {
+    api.listReports.mockResolvedValue({ tickers: demoList, usage: view().usage });
+    renderAt("/reports/MSFT", { isDemo: true });
+    await screen.findByLabelText("Company");
+
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "COST" } });
+
+    const prompt = await screen.findByRole("region", {
+      name: "Sign up to view or generate this report",
+    });
+    expect(prompt).toBeVisible();
+    expect(api.getReport).not.toHaveBeenCalledWith("COST");
+    expect(screen.queryByRole("heading", { name: "COST (COST)" })).toBeNull();
+
+    fireEvent.click(within(prompt).getByRole("button", { name: "Sign up" }));
+    await waitFor(() => expect(vi.mocked(useAuth)().signOut).toHaveBeenCalled());
+  });
+
+  it("shows the sign-up prompt, not an error, when the API refuses a locked report", async () => {
+    // A link opened before the list loads: the 403 from the API decides.
+    api.listReports.mockReturnValue(new Promise(() => {}));
+    api.getReport.mockRejectedValue(
+      new ApiError(
+        403,
+        "Sign up to view or generate this report.",
+        "demo_report_locked",
+      ),
+    );
+
+    renderAt("/reports/COST", { isDemo: true });
+
+    expect(
+      await screen.findByText("Sign up to view or generate this report"),
+    ).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("leaves signed-in users unaffected", async () => {
+    api.listReports.mockResolvedValue({
+      tickers: [summary("COST", { outdated: false })],
+      usage: view().usage,
+    });
+    api.getReport.mockResolvedValue(
+      view({
+        ticker: "COST",
+        companyName: "Costco",
+        report: report({ ticker: "COST", companyName: "Costco" }),
+      }),
+    );
+
+    renderAt("/reports/COST");
+
+    expect(await screen.findByRole("heading", { name: "Costco (COST)" })).toBeVisible();
+    expect(screen.queryByText("Sign up to view or generate this report")).toBeNull();
+    expect(screen.getByRole("button", { name: /Regenerate report/ })).toBeEnabled();
   });
 });
 

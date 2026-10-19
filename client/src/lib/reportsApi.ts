@@ -62,6 +62,8 @@ export interface ReportSummary {
   latestQuarter: Quarter;
   report: { generatedAt: string; quarter: Quarter; outdated: boolean } | null;
   generating: boolean;
+  /** True for a demo user when this report needs a real account. */
+  demoLocked: boolean;
 }
 
 export type BlockedReason =
