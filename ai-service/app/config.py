@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Finnhub is the primary quote provider; yfinance is the automatic fallback.
     finnhub_api_key: str = ""
     finnhub_base_url: str = "https://finnhub.io/api/v1"
+    # Finnhub calls per minute per instance (the free plan allows 60). Past it,
+    # quotes and profiles fall back to yfinance. 0 disables the limit.
+    finnhub_calls_per_minute: int = 50
     # How long (seconds) a quote is served from cache before refetching.
     market_cache_ttl_seconds: int = 60
     # HTTP timeout (seconds) for outbound provider requests.
