@@ -39,10 +39,31 @@ model Holding {
 /// "Try demo" users are seeded exactly once, so deleting every holding does not
 /// trigger a re-seed on the next load.
 model DemoSeed {
-  userId   String   @id @map("user_id") @db.Uuid
-  seededAt DateTime @default(now()) @map("seeded_at")
+  userId            String    @id @map("user_id") @db.Uuid
+  seededAt          DateTime  @default(now()) @map("seeded_at")
+  /// When the sample watchlist was seeded; null until then (including demo
+  /// users seeded before the watchlist existed).
+  watchlistSeededAt DateTime? @map("watchlist_seeded_at")
 
   @@map("demo_seeds")
+}
+
+/// A company the user is considering (not owned). Never part of portfolio
+/// totals, performance or sectors.
+model WatchlistItem {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// Supabase Auth user id; every query is scoped to it.
+  userId       String    @map("user_id") @db.Uuid
+  ticker       String
+  /// Price when added, for "change since added"; null until a quote is
+  /// available (then filled once, with `addedPriceAt`).
+  addedPrice   Decimal?  @map("added_price") @db.Decimal(20, 8)
+  addedPriceAt DateTime? @map("added_price_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@unique([userId, ticker])
+  @@index([userId, createdAt])
+  @@map("watchlist_items")
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +255,8 @@ model ChatUsageEvent {
 // ---------------------------------------------------------------------------
 // Market data cache. Shared across users (no user data in it). Owned by
 // Prisma, read and written by the ai-service via psycopg
-// (ai-service/app/services/market_data/repository.py). Keep column names in
+// (ai-service/app/services/market_data/repository.py, symbols.py and
+// earnings.py); the api reads market_symbols for names. Keep column names in
 // sync.
 // ---------------------------------------------------------------------------
 
@@ -278,6 +300,64 @@ model CompanyProfile {
   fetchedAt DateTime @map("fetched_at")
 
   @@map("company_profiles")
+}
+
+/// One US symbol from Finnhub's list (common stocks, ETFs and ADRs), for
+/// company search. The whole list is replaced at most once a day. The trigram
+/// indexes need pg_trgm (in the "extensions" schema).
+model MarketSymbol {
+  ticker     String   @id
+  /// Display name ("Microsoft Corp"), cleaned from `nameRaw`.
+  name       String
+  /// Finnhub's description as given ("MICROSOFT CORP").
+  nameRaw    String   @map("name_raw")
+  /// Lowercased name with punctuation collapsed, for matching.
+  searchName String   @map("search_name")
+  /// "stock", "etf" or "adr".
+  type       String
+  /// Market identifier code, e.g. "XNAS"; "OOTC" is over the counter.
+  exchange   String?
+  updatedAt  DateTime @map("updated_at")
+
+  @@index([ticker(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([searchName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("market_symbols")
+}
+
+/// A scheduled earnings report from Finnhub's calendar, for the next 60 days.
+model MarketEarnings {
+  ticker          String
+  date            DateTime @db.Date
+  /// "bmo" (before market open), "amc" (after market close), or null.
+  hour            String?
+  fiscalYear      Int?     @map("fiscal_year")
+  fiscalQuarter   Int?     @map("fiscal_quarter")
+  epsEstimate     Decimal? @map("eps_estimate") @db.Decimal(20, 6)
+  revenueEstimate Decimal? @map("revenue_estimate") @db.Decimal(24, 2)
+  fetchedAt       DateTime @map("fetched_at")
+
+  @@id([ticker, date])
+  @@index([date])
+  @@map("market_earnings")
+}
+
+/// When a shared dataset ("us_symbols", "earnings_calendar") was last
+/// refreshed, and the lease that lets only one refresh run at a time.
+model MarketRefreshState {
+  dataset         String    @id
+  refreshedAt     DateTime? @map("refreshed_at")
+  /// Last attempt, successful or not (failures back off from it).
+  attemptedAt     DateTime? @map("attempted_at")
+  /// Set while a refresh runs; a lease older than the stale window may be
+  /// re-claimed.
+  refreshingSince DateTime? @map("refreshing_since")
+  refreshId       String?   @map("refresh_id") @db.Uuid
+  rowCount        Int       @default(0) @map("row_count")
+  coveredFrom     DateTime? @map("covered_from") @db.Date
+  coveredTo       DateTime? @map("covered_to") @db.Date
+  lastError       String?   @map("last_error")
+
+  @@map("market_refresh_state")
 }
 
 // ---------------------------------------------------------------------------
