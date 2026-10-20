@@ -1,7 +1,7 @@
 """Finnhub market-data provider (primary)."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 
@@ -9,12 +9,17 @@ from app.models.quote import Quote
 from app.services.rag.rate_limit import SlidingWindowLimiter
 
 from .base import (
+    BudgetSpentError,
     MarketDataProvider,
     ProviderUnavailableError,
     QuoteNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_finnhub_host(host: str) -> bool:
+    return host == "finnhub.io" or host.endswith(".finnhub.io")
 
 
 class FinnhubProvider(MarketDataProvider):
@@ -33,14 +38,22 @@ class FinnhubProvider(MarketDataProvider):
         *,
         base_url: str = "https://finnhub.io/api/v1",
         timeout: float = 5.0,
+        file_timeout: float = 60.0,
         limiter: SlidingWindowLimiter | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._file_timeout = file_timeout
         self._limiter = limiter
 
     def get_quote(self, ticker: str) -> Quote:
+        """A quote with the company name (two calls: /quote and the profile)."""
+        quote = self.get_price(ticker)
+        return quote.model_copy(update={"name": self._fetch_name(quote.ticker)})
+
+    def get_price(self, ticker: str) -> Quote:
+        """A quote without the name, in one call (/quote)."""
         if not self._api_key:
             # No key configured: treat as unavailable so we fall back.
             raise ProviderUnavailableError("finnhub api key not configured")
@@ -60,12 +73,19 @@ class FinnhubProvider(MarketDataProvider):
             previous_close=float(previous_close or 0.0),
             provider=self.name,
             as_of=datetime.now(UTC),
-            name=self._fetch_name(symbol),
         )
 
     def _get_json(self, path: str, params: dict[str, str]) -> dict:
+        response = self._send(path, params)
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ProviderUnavailableError("finnhub returned invalid JSON") from exc
+
+    def _send(self, path: str, params: dict[str, str]) -> httpx.Response:
+        """One API call (one unit of the budget). Redirects are not followed."""
         if self._limiter is not None and not self._limiter.try_acquire():
-            raise ProviderUnavailableError("finnhub call budget for this minute spent")
+            raise BudgetSpentError("finnhub call budget for this minute spent")
         url = f"{self._base_url}{path}"
         try:
             response = httpx.get(
@@ -89,11 +109,63 @@ class FinnhubProvider(MarketDataProvider):
             raise ProviderUnavailableError(
                 f"finnhub client error: {response.status_code}"
             )
+        return response
 
+    def get_earnings_calendar(self, start: date, end: date) -> list[dict]:
+        """Scheduled earnings from ``start`` to ``end`` (inclusive), one call.
+
+        The free plan returns at most 1,500 rows and keeps the *latest* dates,
+        so a full answer means the window was truncated (see earnings.py).
+        """
+        if not self._api_key:
+            raise ProviderUnavailableError("finnhub api key not configured")
+        data = self._get_json(
+            "/calendar/earnings", {"from": start.isoformat(), "to": end.isoformat()}
+        )
+        rows = data.get("earningsCalendar") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            raise ProviderUnavailableError("finnhub earnings calendar had no rows list")
+        return rows
+
+    def get_symbol_list(self, exchange: str = "US") -> list[dict]:
+        """Every symbol Finnhub lists for ``exchange``, in one API call.
+
+        Finnhub answers with a redirect to a signed file on its static host.
+        The redirect is followed by hand and *without* the API key: the token
+        only ever goes to the API host. The signed URL is never logged.
+        """
+        if not self._api_key:
+            raise ProviderUnavailableError("finnhub api key not configured")
+        response = self._send("/stock/symbol", {"exchange": exchange})
+        if response.is_redirect:
+            target = httpx.URL(self._base_url).join(
+                response.headers.get("location", "")
+            )
+            if target.scheme != "https" or not _is_finnhub_host(target.host):
+                raise ProviderUnavailableError(
+                    "finnhub symbol list redirected to an unexpected host"
+                )
+            try:
+                # No headers: the Finnhub token must not reach the redirect target.
+                response = httpx.get(
+                    target, timeout=self._file_timeout, follow_redirects=False
+                )
+            except httpx.HTTPError as exc:
+                # The exception's text could include the signed URL; log its type.
+                raise ProviderUnavailableError(
+                    f"finnhub symbol file download failed ({type(exc).__name__})"
+                ) from None
+            if response.status_code != 200:
+                raise ProviderUnavailableError(
+                    f"finnhub symbol file returned {response.status_code}"
+                )
         try:
-            return response.json()
+            data = response.json()
         except ValueError as exc:
-            raise ProviderUnavailableError("finnhub returned invalid JSON") from exc
+            raise ProviderUnavailableError("finnhub symbol list was not JSON") from exc
+        if not isinstance(data, list):
+            raise ProviderUnavailableError("finnhub symbol list was not a list")
+        return data
 
     def has_quote(self, ticker: str) -> bool:
         """Whether Finnhub quotes the symbol, in one call (no name lookup)."""

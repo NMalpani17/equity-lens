@@ -10,6 +10,7 @@ import { DashboardPage } from "@/components/DashboardPage";
 import { AccountPage } from "@/components/AccountPage";
 import { ChatPage } from "@/components/chat/ChatPage";
 import { ReportsPage } from "@/components/reports/ReportsPage";
+import { WatchlistPage } from "@/components/watchlist/WatchlistPage";
 
 function App() {
   return (
@@ -25,6 +26,14 @@ function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/watchlist"
+        element={
+          <ProtectedRoute>
+            <WatchlistPage />
           </ProtectedRoute>
         }
       />

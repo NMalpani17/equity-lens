@@ -10,6 +10,8 @@ interface ChatComposerProps {
   disabled?: boolean;
   onSend: (content: string) => void;
   onStop: () => void;
+  /** A question to start with (e.g. from the watchlist's Ask AI); not sent. */
+  initialValue?: string;
 }
 
 /** Message input: Enter sends, Shift+Enter adds a line; disabled while streaming. */
@@ -18,8 +20,9 @@ export function ChatComposer({
   disabled = false,
   onSend,
   onStop,
+  initialValue = "",
 }: ChatComposerProps) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue);
   const tooLong = value.length > MAX_MESSAGE_CHARS;
   const canSend = !streaming && !disabled && value.trim().length > 0 && !tooLong;
 
@@ -60,6 +63,7 @@ export function ChatComposer({
           }
           aria-invalid={tooLong}
           aria-describedby="chat-input-help"
+          autoFocus={initialValue !== ""}
           className="max-h-40 min-h-[2.5rem] flex-1 resize-y rounded-lg border border-input bg-card px-3 py-2 text-base md:text-sm placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-destructive"
         />
         {streaming ? (

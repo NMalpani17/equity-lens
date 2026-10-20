@@ -38,6 +38,10 @@ class MarketDataService:
         """The cached quote, without asking any provider."""
         return self._cache.get(ticker.upper())
 
+    def remember(self, quote: Quote) -> None:
+        """Cache a quote fetched elsewhere (the batch path), for everyone."""
+        self._cache.set(quote.ticker, quote)
+
     def get_quote(self, ticker: str) -> Quote:
         symbol = ticker.upper()
 
@@ -94,6 +98,7 @@ def get_finnhub_provider() -> FinnhubProvider:
         settings.finnhub_api_key,
         base_url=settings.finnhub_base_url,
         timeout=settings.market_http_timeout_seconds,
+        file_timeout=settings.symbols_download_timeout_seconds,
         limiter=SlidingWindowLimiter(settings.finnhub_calls_per_minute),
     )
 

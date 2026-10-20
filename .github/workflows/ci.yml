@@ -68,8 +68,8 @@ jobs:
   # Everything that needs a real database, against a throwaway Postgres 17
   # (Supabase runs 17): migrations apply cleanly and match schema.prisma, RLS
   # covers every table, backup-db.sh / restore-db.sh round-trip every row, the
-  # api's queries run for real, and the ai-service's repository SQL (RAG and
-  # reports) passes its Postgres tests.
+  # api's queries run for real, and the ai-service's repository SQL (RAG,
+  # reports and market data) passes its Postgres tests.
   backup-roundtrip:
     name: migrations · RLS · backup round trip · api + repository SQL
     runs-on: ubuntu-24.04
@@ -114,7 +114,9 @@ jobs:
         # Fail rather than pass if the tests were skipped (no database URL).
         run: |
           set -o pipefail
-          tests=(tests/test_rag_repository_pg.py tests/test_report_repository_pg.py)
+          tests=(tests/test_rag_repository_pg.py tests/test_report_repository_pg.py
+            tests/test_market_repository_pg.py tests/test_market_symbols_pg.py
+            tests/test_market_earnings_pg.py)
           pytest -p no:cacheprovider -rs "${tests[@]}" | tee pytest.log
           if grep -q "SKIPPED" pytest.log; then
             echo "::error::Postgres-gated tests were skipped."

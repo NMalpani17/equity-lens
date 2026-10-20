@@ -54,6 +54,27 @@ export class HoldingLimitError extends HttpError {
   }
 }
 
+/** 409 — the watchlist is full. */
+export class WatchlistLimitError extends HttpError {
+  constructor(limit: number) {
+    super(
+      409,
+      "watchlist_limit_reached",
+      `You can watch up to ${limit} companies. Remove one to add another.`,
+      { limit },
+    );
+  }
+}
+
+/** 409 — the ticker is already on the user's watchlist. */
+export class AlreadyWatchingError extends HttpError {
+  constructor(ticker: string) {
+    super(409, "already_watching", `${ticker} is already on your watchlist.`, {
+      ticker,
+    });
+  }
+}
+
 /** 422 — an uploaded CSV can't be read as a whole (no rows are checked). */
 export class ImportFileError extends HttpError {
   constructor(code: string, message: string) {

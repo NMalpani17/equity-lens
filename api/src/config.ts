@@ -66,6 +66,8 @@ const envSchema = z.object({
   // CSV import limits: file size in bytes and data rows per file.
   IMPORT_MAX_FILE_BYTES: z.coerce.number().int().positive().default(100_000),
   IMPORT_MAX_ROWS: z.coerce.number().int().positive().default(500),
+  // Watchlist: most companies one user may watch.
+  WATCHLIST_MAX_ITEMS: z.coerce.number().int().positive().default(50),
   // Comma-separated origins allowed by CORS (exact matches, no wildcards),
   // e.g. "https://equity-lens.vercel.app,http://localhost:5173".
   CLIENT_ORIGIN: z.string().default("http://localhost:5173"),
@@ -151,6 +153,9 @@ export const config = {
     maxLotsPerUser: parsed.data.HOLDINGS_MAX_LOTS_PER_USER,
     importMaxFileBytes: parsed.data.IMPORT_MAX_FILE_BYTES,
     importMaxRows: parsed.data.IMPORT_MAX_ROWS,
+  },
+  watchlist: {
+    maxItems: parsed.data.WATCHLIST_MAX_ITEMS,
   },
   clientOrigins: parseOrigins(parsed.data.CLIENT_ORIGIN),
   databaseUrl: parsed.data.DATABASE_URL,

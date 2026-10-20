@@ -58,6 +58,19 @@ have defaults): `AI_SERVICE_FINNHUB_CALLS_PER_MINUTE` (50),
 locally writes market data to the cache tables in the (production) database.
 It holds no user data, but it is still a write.
 
+**Company search, watchlist and earnings calendar** need no new keys either
+(the Finnhub key and `DATABASE_URL`). Optional tuning: `WATCHLIST_MAX_ITEMS`
+(50) in `api/.env`; `AI_SERVICE_BATCH_QUOTE_FINNHUB_BUDGET` (15),
+`AI_SERVICE_SYMBOLS_REFRESH_HOURS` (24), `AI_SERVICE_EARNINGS_DAYS` (60),
+`AI_SERVICE_EARNINGS_REFRESH_HOURS` (24),
+`AI_SERVICE_EARNINGS_REFRESH_MAX_CALLS` (40),
+`AI_SERVICE_EARNINGS_REFRESH_CALLS_PER_MINUTE` (10),
+`AI_SERVICE_MARKET_REFRESH_RETRY_MINUTES` (30) and
+`AI_SERVICE_MARKET_REFRESH_STALE_MINUTES` (10) in `ai-service/.env`. A local
+ai-service whose search finds the symbol list older than a day reloads it
+(and likewise the earnings calendar) into the production tables: shared
+market data, but a write.
+
 **Demo reports:** `api/src/demoReportTickers.json` (AAPL, MSFT, NVDA, TSLA,
 AMD, JPM) lists the companies whose reports demo users may view. It's a
 checked-in file, not an env var, because the api and
@@ -310,9 +323,11 @@ invites you to sign up for your own account. To check each hop
   and MCP tools (`ai-service/tests/test_chat_agent.py`).
 - Repository integration tests run only when `AI_SERVICE_TEST_DATABASE_URL`
   points at a Postgres database: RAG (advisory-lock dedupe, daily caps,
-  once-per-day freshness checks, the freshness backfill) and research reports
+  once-per-day freshness checks, the freshness backfill), research reports
   (claims, a concurrent-claim race, stale takeover, the regenerate window,
-  RLS). They apply their migrations into a throwaway schema and drop it. CI
+  RLS), the market data cache, company search (ranking and typos with
+  pg_trgm, the refresh lease, the whole-list swap) and the earnings calendar.
+  They apply their migrations into a throwaway schema and drop it. CI
   runs them in the `backup-roundtrip` job against its Postgres service, and
   fails if they were skipped. Locally, use a throwaway container, never the
   production database, and `127.0.0.1` rather than `localhost` (on Windows
@@ -321,13 +336,17 @@ invites you to sign up for your own account. To check each hop
   ```bash
   docker run -d --name el-pgtest -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55432:5432 postgres:17
   AI_SERVICE_TEST_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55432/postgres?connect_timeout=5" \
-    pytest tests/test_rag_repository_pg.py tests/test_report_repository_pg.py
+    pytest tests/test_rag_repository_pg.py tests/test_report_repository_pg.py \
+      tests/test_market_repository_pg.py tests/test_market_symbols_pg.py \
+      tests/test_market_earnings_pg.py
   docker rm -f el-pgtest
   ```
 
 - api integration tests (`api/tests/integration/`, `npm run test:integration`)
   run the api's Prisma queries for real (raw SQL, the report usage advisory
-  lock, transactions, the weighted global cap, stored report reads). The unit
+  lock, transactions, the weighted global cap, stored report reads, the
+  watchlist cap under racing adds, its unique index and demo seed, and that a
+  watched ticker never enters the portfolio). The unit
   tests mock Prisma, which is how a `$queryRaw` that Prisma couldn't
   deserialize reached production. They need `API_TEST_DATABASE_URL` on
   localhost (the config refuses any other host) with the migrations applied,

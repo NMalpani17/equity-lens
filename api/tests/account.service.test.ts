@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../src/db/prisma.js", () => ({
   prisma: {
     holding: { deleteMany: vi.fn() },
+    watchlistItem: { deleteMany: vi.fn() },
     chatConversation: { deleteMany: vi.fn() },
     chatUsageEvent: { deleteMany: vi.fn() },
     demoSeed: { deleteMany: vi.fn() },
@@ -28,10 +29,13 @@ beforeEach(() => {
 });
 
 describe("account.service.deleteAccount", () => {
-  it("removes holdings, chats + demo marker in a transaction, then the auth user", async () => {
+  it("removes holdings, watchlist, chats + demo marker in a transaction, then the auth user", async () => {
     await deleteAccount(USER_ID);
 
     expect(mockPrisma.holding.deleteMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+    });
+    expect(mockPrisma.watchlistItem.deleteMany).toHaveBeenCalledWith({
       where: { userId: USER_ID },
     });
     expect(mockPrisma.demoSeed.deleteMany).toHaveBeenCalledWith({

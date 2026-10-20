@@ -75,6 +75,17 @@ export async function listHoldings(userId: string): Promise<HoldingDto[]> {
   return holdings.map(toDto);
 }
 
+/** The distinct tickers the user holds (read-only; for the watchlist page). */
+export async function listHeldTickers(userId: string): Promise<string[]> {
+  const rows = await prisma.holding.findMany({
+    where: { userId },
+    distinct: ["ticker"],
+    select: { ticker: true },
+    orderBy: { ticker: "asc" },
+  });
+  return rows.map((row) => row.ticker);
+}
+
 /**
  * Seed the sample demo portfolio for an anonymous "Try demo" user, exactly once.
  *

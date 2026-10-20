@@ -25,6 +25,13 @@ class ProviderUnavailableError(MarketDataError):
     """
 
 
+class BudgetSpentError(ProviderUnavailableError):
+    """This minute's call budget is spent; nothing was sent.
+
+    Background work may wait and retry; requests fall back instead.
+    """
+
+
 class MarketDataProvider(ABC):
     """A source of market quotes."""
 

@@ -649,6 +649,14 @@ tables in `public`/`auth`, restores without owners or grants, and fails unless
 every table's row count matches `db-counts.tsv`. Never point it at the
 production database.
 
+The dump holds only `public` and `auth`, so the extensions the schema uses
+(Supabase keeps them in the `extensions` schema: `pg_trgm` for the trigram
+indexes, `pgcrypto`, `uuid-ossp`) aren't in it. As Supabase advises for any
+restore, they're enabled on the target first: `restore-db.sh` runs
+`.github/scripts/db-extensions.sql` before `pg_restore`. The file is
+idempotent and lists every extension a migration creates (a test enforces
+it).
+
 ```bash
 # 1. Download a backup (check manifest.json for its time, commit and counts).
 gcloud storage ls gs://equity-lens-backups-0755818341/daily/2026/10/
@@ -673,6 +681,7 @@ this: a new project already has its own `auth` schema.
 
 ```bash
 NEW='postgresql://postgres.<ref>:<password>@<host>:5432/postgres'  # new, empty project (session URL)
+psql "$NEW" -X -v ON_ERROR_STOP=1 -f .github/scripts/db-extensions.sql   # extensions first (pg_trgm, ...)
 pg_restore --list restore/db/db.dump | grep -vE ' SCHEMA - public ' >public.toc
 pg_restore --dbname="$NEW" --no-owner --no-privileges --schema=public   --use-list=public.toc --exit-on-error restore/db/db.dump        # tables, RLS, data
 pg_restore --dbname="$NEW" --data-only --schema=auth restore/db/db.dump  # users
@@ -811,7 +820,8 @@ WHERE relnamespace = 'public'::regnamespace AND relkind = 'r';
 
 ## Prisma migrations
 
-The api's Prisma schema owns every table (chat, holdings, RAG state). Apply
+The api's Prisma schema owns every table (chat, holdings, watchlist, RAG
+state, market data). Apply
 migrations **before** deploying an api or ai-service revision that needs them,
 never from a serving container (the runtime image has no Prisma CLI).
 [Continuous deployment](#continuous-deployment) does this automatically when
@@ -827,6 +837,21 @@ docker build --provenance=false --sbom=false -t $IMG --target migrate api && doc
 gcloud run jobs update equity-lens-migrate --region us-east4 --image $IMG
 gcloud run jobs execute equity-lens-migrate --region us-east4 --wait
 ```
+
+**pg_trgm.** Migration `20261019000000_add_market_symbols_and_earnings`
+creates the `pg_trgm` extension in the `extensions` schema (Supabase's
+convention) and uses it schema-qualified everywhere. If pg_trgm is already
+installed in another schema, `CREATE EXTENSION IF NOT EXISTS` leaves it there
+and the trigram indexes fail, so check before applying it:
+
+```sql
+SELECT extnamespace::regnamespace FROM pg_extension WHERE extname = 'pg_trgm';
+-- no row, or "extensions": safe to apply
+```
+
+Backups don't include the `extensions` schema; a restore creates pg_trgm
+first ([Restore the database](#restore-the-database)). A migration that adds
+another extension must add it to `.github/scripts/db-extensions.sql` too.
 
 `migrate deploy` only applies committed migrations from
 `api/prisma/migrations` and never creates new ones. It's safe to run when

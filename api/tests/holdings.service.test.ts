@@ -249,6 +249,7 @@ describe("holdings.service", () => {
       mockPrisma.demoSeed.findUnique.mockResolvedValue({
         userId: USER_ID,
         seededAt: new Date("2026-01-01T00:00:00.000Z"),
+        watchlistSeededAt: null,
       });
 
       await service.ensureDemoHoldings(USER_ID);
