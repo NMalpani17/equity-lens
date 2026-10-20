@@ -25,6 +25,59 @@ export interface WatchlistAddedDto {
   addedAt: string;
 }
 
+/** A next earnings report, as shown on a watchlist row. */
+export interface NextEarningsDto {
+  date: string;
+  hour: "bmo" | "amc" | "dmh" | null;
+  epsEstimate: number | null;
+}
+
+/** One watchlist row: a company the user is considering, priced live. */
+export interface WatchlistRowDto {
+  ticker: string;
+  name: string | null;
+  price: number | null;
+  /** Today's change vs the previous close. */
+  change: number | null;
+  changePercent: number | null;
+  priceStatus: PriceStatus;
+  addedAt: string;
+  addedPrice: number | null;
+  /** When `addedPrice` was recorded (later than `addedAt` if filled later). */
+  addedPriceAt: string | null;
+  changeSinceAdded: number | null;
+  changeSinceAddedPercent: number | null;
+  nextEarnings: NextEarningsDto | null;
+  report: { status: "ready" | "outdated" | "none"; demoLocked: boolean };
+  /** The user also holds this ticker (after "I bought it"). */
+  inPortfolio: boolean;
+}
+
+export interface WatchlistDto {
+  items: WatchlistRowDto[];
+  limit: number;
+}
+
+export type EarningsSource = "holding" | "watchlist" | "both";
+
+/** The Watchlist page's "Upcoming earnings" (holdings and watchlist). */
+export interface UpcomingEarningsDto {
+  earnings: (NextEarningsDto & {
+    ticker: string;
+    name: string | null;
+    source: EarningsSource;
+  })[];
+  /** Tickers with nothing scheduled in the window (e.g. ETFs). */
+  unscheduled: { ticker: string; name: string | null; source: EarningsSource }[];
+  windowStart: string | null;
+  windowEnd: string | null;
+  refreshedAt: string | null;
+  /** The calendar is loading or being updated. */
+  refreshing: boolean;
+  /** False when the calendar couldn't be read. */
+  available: boolean;
+}
+
 /** A single lot within a position, enriched with live pricing. */
 export interface PortfolioLot {
   id: string;

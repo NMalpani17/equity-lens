@@ -7,12 +7,18 @@ vi.mock("../src/services/watchlist.service.js", () => ({
   removeItem: vi.fn(),
   ensureDemoWatchlist: vi.fn(),
 }));
+vi.mock("../src/services/watchlistView.service.js", () => ({ getWatchlist: vi.fn() }));
+vi.mock("../src/services/earnings.service.js", () => ({
+  getUserUpcomingEarnings: vi.fn(),
+}));
 vi.mock("../src/auth/verifyToken.js", () => ({
   verifySupabaseToken: vi.fn(),
 }));
 
 import { createApp } from "../src/app.js";
 import { verifySupabaseToken } from "../src/auth/verifyToken.js";
+import { getUserUpcomingEarnings } from "../src/services/earnings.service.js";
+import { getWatchlist } from "../src/services/watchlistView.service.js";
 import {
   AlreadyWatchingError,
   NotFoundError,
@@ -38,6 +44,62 @@ beforeEach(() => {
   vi.clearAllMocks();
   verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: false });
   service.watchTicker.mockResolvedValue(added);
+});
+
+describe("GET /api/watchlist", () => {
+  const get = () => request(app).get("/api/watchlist").set("Authorization", AUTH);
+
+  it("returns the user's rows", async () => {
+    vi.mocked(getWatchlist).mockResolvedValue({ items: [], limit: 50 });
+
+    const res = await get();
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ items: [], limit: 50 });
+    expect(getWatchlist).toHaveBeenCalledWith(USER_ID, false);
+    expect(service.ensureDemoWatchlist).not.toHaveBeenCalled();
+  });
+
+  it("seeds and reads as a demo user", async () => {
+    verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: true });
+    vi.mocked(getWatchlist).mockResolvedValue({ items: [], limit: 50 });
+
+    await get();
+
+    expect(service.ensureDemoWatchlist).toHaveBeenCalledWith(USER_ID);
+    expect(getWatchlist).toHaveBeenCalledWith(USER_ID, true);
+  });
+
+  it("requires a signed-in user", async () => {
+    expect((await request(app).get("/api/watchlist")).status).toBe(401);
+  });
+});
+
+describe("GET /api/earnings/upcoming", () => {
+  it("returns holdings and watchlist earnings", async () => {
+    const body = {
+      earnings: [],
+      unscheduled: [],
+      windowStart: "2026-10-20",
+      windowEnd: "2026-12-19",
+      refreshedAt: null,
+      refreshing: true,
+      available: true,
+    };
+    vi.mocked(getUserUpcomingEarnings).mockResolvedValue(body);
+
+    const res = await request(app)
+      .get("/api/earnings/upcoming")
+      .set("Authorization", AUTH);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(body);
+    expect(getUserUpcomingEarnings).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it("requires a signed-in user", async () => {
+    expect((await request(app).get("/api/earnings/upcoming")).status).toBe(401);
+  });
 });
 
 describe("POST /api/watchlist", () => {

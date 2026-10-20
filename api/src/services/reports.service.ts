@@ -232,6 +232,54 @@ export async function listReports(isAnonymous: boolean): Promise<ReportSummaryDt
   });
 }
 
+/** A ticker's report at a glance: for the current quarter, older, or none. */
+export type ReportStatus = "ready" | "outdated" | "none";
+
+export interface ReportStatusDto {
+  status: ReportStatus;
+  /** True when the caller (a demo user) needs an account to view it. */
+  demoLocked: boolean;
+}
+
+/**
+ * Report status per ticker, by the same rules as the Reports page: "ready"
+ * when the newest generated report covers the newest indexed call, else
+ * "outdated"; "none" without a generated report or an indexed call (then
+ * the Reports page has nothing to show).
+ */
+export async function reportStatuses(
+  tickers: string[],
+  isAnonymous: boolean,
+): Promise<Map<string, ReportStatusDto>> {
+  if (tickers.length === 0) return new Map();
+  const [ragRows, reportRows] = await Promise.all([
+    prisma.ragTicker.findMany({ where: { ticker: { in: tickers } } }),
+    prisma.researchReport.findMany({
+      where: { ticker: { in: tickers }, generatedAt: { not: null } },
+      select: {
+        ticker: true,
+        fiscalYear: true,
+        fiscalQuarter: true,
+        generatedAt: true,
+        generatingSince: true,
+        generationId: true,
+      },
+    }),
+  ]);
+  const statuses = new Map<string, ReportStatusDto>();
+  for (const ticker of tickers) {
+    const rag = ragRows.find((row) => row.ticker === ticker);
+    const latest = rag ? latestIndexedQuarter(rag) : null;
+    const generated = newestFirst(reportRows.filter((row) => row.ticker === ticker))[0];
+    let status: ReportStatus = "none";
+    if (latest && generated) {
+      status = isCurrent(generated, latest) ? "ready" : "outdated";
+    }
+    statuses.set(ticker, { status, demoLocked: isDemoLocked(ticker, isAnonymous) });
+  }
+  return statuses;
+}
+
 /** Why the user can't generate now (first reason that applies), or null. */
 async function blockedReason(
   isAnonymous: boolean,

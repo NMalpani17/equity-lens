@@ -109,6 +109,35 @@ describe.skipIf(!enabled)("watchlist on real Postgres", () => {
     expect(price("JPM")).toBe(300);
   });
 
+  it("never touches the portfolio", async () => {
+    const { Prisma } = await import("@prisma/client");
+    const { getPortfolioSummary } =
+      await import("../../src/services/portfolio.service.js");
+    const holdings = await import("../../src/services/holdings.service.js");
+    const user = randomUUID();
+    await prisma.holding.create({
+      data: {
+        userId: user,
+        ticker: "AAPL",
+        shares: new Prisma.Decimal(10),
+        buyPrice: new Prisma.Decimal(100),
+      },
+    });
+    await watchlist.addItem(user, "AMD", 150);
+    await watchlist.addItem(user, "AAPL", 230); // watched and held
+
+    // No ai-service here, so prices are unavailable; positions and cost are not.
+    const summary = await getPortfolioSummary(user);
+
+    expect(summary.positions.map((p) => p.ticker)).toEqual(["AAPL"]);
+    expect(summary.positions[0]!.totalShares).toBe(10);
+    expect(summary.positions[0]!.costBasis).toBe(1000);
+    // Totals cover one position (unpriced here), never a watched ticker.
+    expect(summary.totals.pricedCount + summary.totals.unpricedCount).toBe(1);
+    expect(await holdings.listHeldTickers(user)).toEqual(["AAPL"]);
+    expect(await prisma.holding.count({ where: { userId: user } })).toBe(1);
+  });
+
   it("removes only the owner's row", async () => {
     const owner = randomUUID();
     await watchlist.addItem(owner, "AMD", 150);

@@ -6,7 +6,9 @@ import {
   addWatchlistItemSchema,
   watchlistTickerParamSchema,
 } from "../schemas/watchlist.schema.js";
+import { getUserUpcomingEarnings } from "../services/earnings.service.js";
 import * as watchlist from "../services/watchlist.service.js";
+import { getWatchlist } from "../services/watchlistView.service.js";
 
 /** The user's id, after seeding the sample watchlist for demo visitors. */
 async function watchlistOwner(req: Request): Promise<string> {
@@ -15,6 +17,18 @@ async function watchlistOwner(req: Request): Promise<string> {
     await watchlist.ensureDemoWatchlist(userId);
   }
   return userId;
+}
+
+/** GET /api/watchlist — rows with live prices, earnings and report status. */
+export async function listItems(req: Request, res: Response): Promise<void> {
+  const userId = await watchlistOwner(req);
+  res.status(200).json(await getWatchlist(userId, isAnonymousRequest(req)));
+}
+
+/** GET /api/earnings/upcoming — the next 60 days for holdings and watchlist. */
+export async function upcomingEarnings(req: Request, res: Response): Promise<void> {
+  const userId = await watchlistOwner(req);
+  res.status(200).json(await getUserUpcomingEarnings(userId));
 }
 
 /** POST /api/watchlist { ticker } */
