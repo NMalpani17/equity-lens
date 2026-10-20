@@ -1,8 +1,27 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+// Company search is its own request; mocking it keeps fetch for the holding.
+vi.mock("@/lib/marketApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/marketApi")>()),
+  searchSymbols: vi.fn(),
+}));
 
 import { HoldingFormDialog } from "./HoldingFormDialog";
 import { todayISODate } from "@/lib/format";
+import { searchSymbols } from "@/lib/marketApi";
+import type { PortfolioLot } from "@/lib/api";
+
+const MSFT = {
+  ticker: "MSFT",
+  name: "Microsoft Corp",
+  type: "stock" as const,
+  exchange: "XNAS",
+};
+
+beforeEach(() => {
+  vi.mocked(searchSymbols).mockResolvedValue({ results: [], ready: true });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -133,6 +152,76 @@ describe("HoldingFormDialog", () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({
       purchaseDate: "2026-01-15",
     });
+  });
+
+  it("fills the ticker from a picked suggestion and shows the company", async () => {
+    vi.mocked(searchSymbols).mockResolvedValue({ results: [MSFT], ready: true });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "1", ticker: "MSFT" }), { status: 201 }),
+    );
+    const { onSaved } = renderAdd();
+    const ticker = screen.getByRole("combobox", { name: "Ticker" });
+    ticker.focus();
+
+    fireEvent.change(ticker, { target: { value: "mircosoft" } });
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Microsoft Corp (MSFT)" }),
+    );
+
+    expect(ticker).toHaveValue("MSFT");
+    expect(ticker).toHaveAccessibleDescription("Microsoft Corp");
+    fireEvent.change(screen.getByLabelText("Shares"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Buy price (USD)"), {
+      target: { value: "400" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add holding" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    const [, init] = vi.mocked(globalThis.fetch).mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toMatchObject({ ticker: "MSFT" });
+  });
+
+  it("closes the suggestions on Escape before the dialog", async () => {
+    vi.mocked(searchSymbols).mockResolvedValue({ results: [MSFT], ready: true });
+    const { onOpenChange } = renderAdd();
+    const ticker = screen.getByRole("combobox", { name: "Ticker" });
+    ticker.focus();
+    fireEvent.change(ticker, { target: { value: "micro" } });
+    await screen.findByRole("option");
+
+    fireEvent.keyDown(ticker, { key: "Escape" });
+
+    expect(ticker).toHaveAttribute("aria-expanded", "false");
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(ticker, { key: "Escape" });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps the ticker locked when editing a lot", () => {
+    const lot: PortfolioLot = {
+      id: "lot-1",
+      ticker: "AAPL",
+      shares: 10,
+      buyPrice: 150,
+      purchaseDate: null,
+      costBasis: 1500,
+      currentPrice: null,
+      marketValue: null,
+      gainLoss: null,
+      gainLossPercent: null,
+      dailyChange: null,
+      dailyChangePercent: null,
+      priceStatus: "unavailable",
+    };
+    render(
+      <HoldingFormDialog open onOpenChange={vi.fn()} lot={lot} onSaved={vi.fn()} />,
+    );
+
+    expect(screen.getByLabelText("Ticker")).toBeDisabled();
+    expect(screen.getByLabelText("Ticker")).toHaveValue("AAPL");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(searchSymbols).not.toHaveBeenCalled();
   });
 
   it("surfaces the API's error message when the ticker is rejected", async () => {

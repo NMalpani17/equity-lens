@@ -12,7 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CompanySearch } from "@/components/market/CompanySearch";
 import { createHolding, updateHolding, type PortfolioLot } from "@/lib/api";
+import { keepOpenForSuggestions } from "@/lib/combobox";
 import { todayISODate } from "@/lib/format";
 
 interface HoldingFormDialogProps {
@@ -33,6 +35,8 @@ export function HoldingFormDialog({
   const isEdit = lot !== null;
   const today = todayISODate();
   const [ticker, setTicker] = useState("");
+  // The name of the suggestion picked, shown under the field.
+  const [company, setCompany] = useState<string | null>(null);
   const [shares, setShares] = useState("");
   const [buyPrice, setBuyPrice] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
@@ -44,6 +48,7 @@ export function HoldingFormDialog({
   useEffect(() => {
     if (open) {
       setTicker(lot?.ticker ?? "");
+      setCompany(null);
       setShares(lot ? String(lot.shares) : "");
       setBuyPrice(lot ? String(lot.buyPrice) : "");
       setPurchaseDate(lot ? (lot.purchaseDate ?? "") : todayISODate());
@@ -101,7 +106,7 @@ export function HoldingFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent onEscapeKeyDown={keepOpenForSuggestions}>
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit lot" : "Add holding"}</DialogTitle>
           <DialogDescription>
@@ -114,14 +119,26 @@ export function HoldingFormDialog({
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label htmlFor="ticker">Ticker</Label>
-            <Input
-              id="ticker"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder="AAPL"
-              autoComplete="off"
-              disabled={isEdit}
-            />
+            {isEdit ? (
+              <Input id="ticker" value={ticker} autoComplete="off" disabled readOnly />
+            ) : (
+              <CompanySearch
+                id="ticker"
+                value={ticker}
+                onChange={(next) => {
+                  setTicker(next);
+                  setCompany(null);
+                }}
+                onSelect={(match) => setCompany(match.name)}
+                placeholder="Company or ticker, e.g. Microsoft or MSFT"
+                aria-describedby="ticker-company"
+              />
+            )}
+            {!isEdit && (
+              <p id="ticker-company" className="text-xs text-muted-foreground">
+                {company ?? "Search by name, or type the exact ticker."}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="shares">Shares</Label>
