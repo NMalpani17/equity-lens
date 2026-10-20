@@ -26,6 +26,7 @@ from app.routers import (
 )
 from app.security import InternalTokenMiddleware, require_internal_token
 from app.services.chat.mcp_server import mcp
+from app.services.market_data.refresh import shutdown_background_refresher
 from app.services.observability.tracing import shutdown_tracer
 from app.services.rag.container import shutdown_rag_components
 from app.services.report.service import shutdown_report_service
@@ -42,6 +43,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Running report generations first: cancelling one frees its claim, which
     # needs the database pool that the RAG shutdown closes.
     await shutdown_report_service(settings.shutdown_reports_timeout_seconds)
+    # A running market data refresh is abandoned; its lease goes stale.
+    shutdown_background_refresher()
     shutdown_rag_components(settings.shutdown_ingestion_timeout_seconds)
     shutdown_tracer(settings.shutdown_tracing_timeout_seconds)
 

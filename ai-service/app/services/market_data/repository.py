@@ -187,16 +187,22 @@ class MarketDataRepository:
         )
 
 
+def shared_pool() -> ConnectionPool | None:
+    """The service's shared database pool, or None without one."""
+    # Imported here: the RAG container pulls in Pinecone and Gemini clients.
+    from app.services.rag.container import get_rag_components
+
+    try:
+        return get_rag_components().pool
+    except Exception as exc:  # not configured, or the pool can't open
+        logger.info("market data database unavailable: %s", exc)
+        return None
+
+
 def shared_repository() -> MarketDataRepository | None:
     """The cache on the service's shared database pool, or None without one.
 
     Callers then work uncached, so market data never depends on the database.
     """
-    # Imported here: the RAG container pulls in Pinecone and Gemini clients.
-    from app.services.rag.container import get_rag_components
-
-    try:
-        return MarketDataRepository(get_rag_components().pool)
-    except Exception as exc:  # not configured, or the pool can't open
-        logger.info("market data cache unavailable, serving uncached: %s", exc)
-        return None
+    pool = shared_pool()
+    return MarketDataRepository(pool) if pool is not None else None

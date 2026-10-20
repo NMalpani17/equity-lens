@@ -94,6 +94,7 @@ def get_finnhub_provider() -> FinnhubProvider:
         settings.finnhub_api_key,
         base_url=settings.finnhub_base_url,
         timeout=settings.market_http_timeout_seconds,
+        file_timeout=settings.symbols_download_timeout_seconds,
         limiter=SlidingWindowLimiter(settings.finnhub_calls_per_minute),
     )
 

@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     # Import ticker check: Finnhub is asked only when yfinance is down, for at
     # most this many tickers per request (one call each).
     ticker_check_finnhub_budget: int = 20
+    # Company search: Finnhub's US symbol list (one call) is reloaded when a
+    # search finds it older than this, in the background.
+    symbols_refresh_hours: int = 24
+    # Timeout for downloading the symbol list file (~7 MB).
+    symbols_download_timeout_seconds: float = 60.0
+    # Shared-dataset refreshes (symbol list, earnings calendar): after a failed
+    # attempt wait this long before trying again; a refresh holding its lease
+    # longer than the stale window is assumed dead.
+    market_refresh_retry_minutes: int = 30
+    market_refresh_stale_minutes: int = 10
 
     # --- Database (Supabase Postgres) ---
     # The RAG state tables are owned by Prisma (api/prisma) and accessed here via
