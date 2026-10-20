@@ -131,6 +131,7 @@ Click **Try demo**; no sign-up needed.
     <br>
     <em>The watchlist, with upcoming earnings for holdings and watched companies.</em>
   </p>
+
 - **Accounts and instant demo.** Supabase Auth with email and password or
   Google, password reset and account deletion. Forms validate as you go, and
   errors never reveal whether an email is registered. "Try demo" gives each
