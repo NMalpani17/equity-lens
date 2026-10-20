@@ -4,6 +4,8 @@ import request from "supertest";
 vi.mock("../src/db/prisma.js", () => ({
   prisma: {
     marketSymbol: { findMany: vi.fn(), findUnique: vi.fn() },
+    companyProfile: { findMany: vi.fn() },
+    ragTicker: { findMany: vi.fn() },
   },
 }));
 vi.mock("../src/auth/verifyToken.js", () => ({
@@ -41,6 +43,9 @@ function jsonResponse(body: unknown, status = 200): Response {
 beforeEach(() => {
   vi.clearAllMocks();
   verifyTokenMock.mockResolvedValue({ userId: USER_ID, isAnonymous: false });
+  mockPrisma.marketSymbol.findMany.mockResolvedValue([]);
+  mockPrisma.companyProfile.findMany.mockResolvedValue([]);
+  mockPrisma.ragTicker.findMany.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -82,6 +87,58 @@ describe("symbol lookups", () => {
 
     expect(names.get("AMD")).toBe("Advanced Micro Devices");
     expect(names.has("ZZZZ")).toBe(false);
+  });
+
+  it("falls back to company profiles, then the transcript index", async () => {
+    mockPrisma.marketSymbol.findMany.mockResolvedValue([
+      { ticker: "AMD", name: "Advanced Micro Devices" },
+    ] as never);
+    mockPrisma.companyProfile.findMany.mockResolvedValue([
+      { ticker: "VOO", name: "Vanguard S&P 500 ETF" },
+    ] as never);
+    mockPrisma.ragTicker.findMany.mockResolvedValue([
+      { ticker: "NFLX", companyName: "Netflix  Inc" },
+    ] as never);
+
+    const names = await symbolNames(["AMD", "VOO", "NFLX", "ZZZZ"]);
+
+    expect(Object.fromEntries(names)).toEqual({
+      AMD: "Advanced Micro Devices",
+      VOO: "Vanguard S&P 500 ETF",
+      NFLX: "Netflix, Inc.", // cleaned like the Reports page
+    });
+    // Each fallback asks only for the tickers still missing.
+    expect(mockPrisma.companyProfile.findMany.mock.calls[0]![0]!.where).toEqual({
+      ticker: { in: ["VOO", "NFLX", "ZZZZ"] },
+      name: { not: null },
+    });
+    expect(mockPrisma.ragTicker.findMany.mock.calls[0]![0]!.where).toEqual({
+      ticker: { in: ["NFLX", "ZZZZ"] },
+      companyName: { not: null },
+    });
+  });
+
+  it("prefers the symbol list and skips fallbacks when every name is found", async () => {
+    mockPrisma.marketSymbol.findMany.mockResolvedValue([
+      { ticker: "MSFT", name: "Microsoft Corp" },
+    ] as never);
+
+    const names = await symbolNames(["MSFT"]);
+
+    expect(names.get("MSFT")).toBe("Microsoft Corp");
+    expect(mockPrisma.companyProfile.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.ragTicker.findMany).not.toHaveBeenCalled();
+  });
+
+  it("ignores blank names", async () => {
+    mockPrisma.companyProfile.findMany.mockResolvedValue([
+      { ticker: "VOO", name: "   " },
+    ] as never);
+    mockPrisma.ragTicker.findMany.mockResolvedValue([
+      { ticker: "VOO", companyName: "Vanguard 500" },
+    ] as never);
+
+    expect((await symbolNames(["VOO"])).get("VOO")).toBe("Vanguard 500");
   });
 
   it("skips the query for no tickers", async () => {

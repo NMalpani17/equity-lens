@@ -92,7 +92,8 @@ export async function addItem(
 }
 
 /**
- * Validate and add a ticker. A ticker in the symbol list is accepted without
+ * Validate and add a ticker. A ticker we know a name for (the symbol list,
+ * else a cached company profile or the transcript index) is accepted without
  * asking anyone; otherwise (the list isn't loaded yet, or an unusual symbol)
  * the quote decides, and only a confirmed unknown is rejected, like adding a
  * holding. The same one batch quote (at most one Finnhub call) gives the

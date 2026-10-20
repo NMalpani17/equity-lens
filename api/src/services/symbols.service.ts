@@ -1,7 +1,7 @@
 /**
  * Company search (the ai-service ranks Finnhub's US symbol list in Postgres)
  * and symbol lookups (read straight from `market_symbols`, which Prisma owns
- * and the ai-service fills).
+ * and the ai-service fills; names fall back to other cached tables).
  *
  * Search is best effort: on any failure it answers no matches and not ready,
  * and callers still accept an exact ticker typed in full.
@@ -11,6 +11,7 @@ import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import { logger } from "../logger.js";
 import { aiServiceFetch, aiServiceUrl } from "./aiServiceClient.js";
+import { companyDisplayName } from "./companyNames.js";
 
 const symbolMatchSchema = z.object({
   ticker: z.string(),
@@ -62,14 +63,47 @@ export async function searchSymbols(query: string): Promise<SymbolSearchResult> 
   }
 }
 
-/** Display names for the tickers found in the symbol list (others omitted). */
+/**
+ * Display names, from the first source that knows each ticker: the symbol
+ * list, then cached company profiles (sector allocation), then the transcript
+ * index's company names. Tickers none of them know are omitted. All
+ * database reads; no ai-service or Finnhub call.
+ */
 export async function symbolNames(tickers: string[]): Promise<Map<string, string>> {
-  if (tickers.length === 0) return new Map();
-  const rows = await prisma.marketSymbol.findMany({
+  const names = new Map<string, string>();
+  if (tickers.length === 0) return names;
+  const missing = () => tickers.filter((ticker) => !names.has(ticker));
+  const keep = (ticker: string, name: string | null | undefined) => {
+    const clean = (name ?? "").split(/\s+/).filter(Boolean).join(" ");
+    if (clean && !names.has(ticker)) names.set(ticker, clean);
+  };
+
+  for (const row of await prisma.marketSymbol.findMany({
     where: { ticker: { in: tickers } },
     select: { ticker: true, name: true },
-  });
-  return new Map(rows.map((row) => [row.ticker, row.name]));
+  })) {
+    keep(row.ticker, row.name);
+  }
+  if (missing().length > 0) {
+    for (const row of await prisma.companyProfile.findMany({
+      where: { ticker: { in: missing() }, name: { not: null } },
+      select: { ticker: true, name: true },
+    })) {
+      keep(row.ticker, row.name);
+    }
+  }
+  if (missing().length > 0) {
+    for (const row of await prisma.ragTicker.findMany({
+      where: { ticker: { in: missing() }, companyName: { not: null } },
+      select: { ticker: true, companyName: true },
+    })) {
+      keep(
+        row.ticker,
+        row.companyName && companyDisplayName(row.ticker, row.companyName),
+      );
+    }
+  }
+  return names;
 }
 
 /** Whether the ticker is in the symbol list (no ai-service or Finnhub call). */
