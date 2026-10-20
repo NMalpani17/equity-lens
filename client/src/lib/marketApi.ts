@@ -1,5 +1,5 @@
 /** Typed client for company search, the watchlist and the earnings calendar. */
-import { request } from "./api";
+import { request, type PriceStatus } from "./api";
 
 // --- Company search -------------------------------------------------------
 
@@ -32,4 +32,66 @@ export function searchSymbols(
 /** "Microsoft Corp (MSFT)". */
 export function matchLabel(match: Pick<SymbolMatch, "ticker" | "name">): string {
   return `${match.name} (${match.ticker})`;
+}
+
+// --- Watchlist ------------------------------------------------------------
+
+export type EarningsHour = "bmo" | "amc" | "dmh";
+
+export interface NextEarnings {
+  date: string;
+  hour: EarningsHour | null;
+  epsEstimate: number | null;
+}
+
+export type ReportStatus = "ready" | "outdated" | "none";
+
+export interface WatchlistRow {
+  ticker: string;
+  name: string | null;
+  price: number | null;
+  change: number | null;
+  changePercent: number | null;
+  priceStatus: PriceStatus;
+  addedAt: string;
+  addedPrice: number | null;
+  addedPriceAt: string | null;
+  changeSinceAdded: number | null;
+  changeSinceAddedPercent: number | null;
+  nextEarnings: NextEarnings | null;
+  report: { status: ReportStatus; demoLocked: boolean };
+  inPortfolio: boolean;
+}
+
+export interface Watchlist {
+  items: WatchlistRow[];
+  limit: number;
+}
+
+export function getWatchlist(): Promise<Watchlist> {
+  return request<Watchlist>("/api/watchlist");
+}
+
+export function addToWatchlist(ticker: string): Promise<unknown> {
+  return request("/api/watchlist", {
+    method: "POST",
+    body: JSON.stringify({ ticker }),
+  });
+}
+
+export function removeFromWatchlist(ticker: string): Promise<void> {
+  return request<void>(`/api/watchlist/${encodeURIComponent(ticker)}`, {
+    method: "DELETE",
+  });
+}
+
+const HOUR_LABELS: Record<EarningsHour, string> = {
+  bmo: "Before open",
+  amc: "After close",
+  dmh: "During market",
+};
+
+/** "Before open", "After close", "During market", or null if not announced. */
+export function earningsHourLabel(hour: EarningsHour | null): string | null {
+  return hour ? HOUR_LABELS[hour] : null;
 }

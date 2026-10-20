@@ -24,6 +24,8 @@ interface HoldingFormDialogProps {
   lot: PortfolioLot | null;
   /** Called after a successful create/update so the parent can refresh. */
   onSaved: () => void;
+  /** When adding: start with this ticker filled in (e.g. "I bought it"). */
+  initialTicker?: string | null;
 }
 
 export function HoldingFormDialog({
@@ -31,6 +33,7 @@ export function HoldingFormDialog({
   onOpenChange,
   lot,
   onSaved,
+  initialTicker = null,
 }: HoldingFormDialogProps) {
   const isEdit = lot !== null;
   const today = todayISODate();
@@ -47,14 +50,14 @@ export function HoldingFormDialog({
   // default the purchase date to today; the user can change or clear it.
   useEffect(() => {
     if (open) {
-      setTicker(lot?.ticker ?? "");
+      setTicker(lot?.ticker ?? initialTicker ?? "");
       setCompany(null);
       setShares(lot ? String(lot.shares) : "");
       setBuyPrice(lot ? String(lot.buyPrice) : "");
       setPurchaseDate(lot ? (lot.purchaseDate ?? "") : todayISODate());
       setError(null);
     }
-  }, [open, lot]);
+  }, [open, lot, initialTicker]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

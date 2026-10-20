@@ -21,6 +21,7 @@ import { useAuth } from "@/context/auth-context";
 
 const NAV_ITEMS = [
   { to: "/", label: "Portfolio", end: true },
+  { to: "/watchlist", label: "Watchlist", end: false },
   { to: "/chat", label: "AI analyst", end: false },
   { to: "/reports", label: "Reports", end: false },
 ];
