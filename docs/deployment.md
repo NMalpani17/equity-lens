@@ -811,7 +811,8 @@ WHERE relnamespace = 'public'::regnamespace AND relkind = 'r';
 
 ## Prisma migrations
 
-The api's Prisma schema owns every table (chat, holdings, RAG state). Apply
+The api's Prisma schema owns every table (chat, holdings, watchlist, RAG
+state, market data). Apply
 migrations **before** deploying an api or ai-service revision that needs them,
 never from a serving container (the runtime image has no Prisma CLI).
 [Continuous deployment](#continuous-deployment) does this automatically when
@@ -826,6 +827,17 @@ IMG=us-east4-docker.pkg.dev/PROJECT/equity-lens/api-migrate:TAG
 docker build --provenance=false --sbom=false -t $IMG --target migrate api && docker push $IMG
 gcloud run jobs update equity-lens-migrate --region us-east4 --image $IMG
 gcloud run jobs execute equity-lens-migrate --region us-east4 --wait
+```
+
+**pg_trgm.** Migration `20261019000000_add_market_symbols_and_earnings`
+creates the `pg_trgm` extension in the `extensions` schema (Supabase's
+convention) and uses it schema-qualified everywhere. If pg_trgm is already
+installed in another schema, `CREATE EXTENSION IF NOT EXISTS` leaves it there
+and the trigram indexes fail, so check before applying it:
+
+```sql
+SELECT extnamespace::regnamespace FROM pg_extension WHERE extname = 'pg_trgm';
+-- no row, or "extensions": safe to apply
 ```
 
 `migrate deploy` only applies committed migrations from

@@ -448,6 +448,113 @@ under the free plan's 60). A call past it isn't sent and fails as unavailable,
 so quotes and profiles fall back to yfinance instead of hitting a 429. Per-request
 costs are in [api.md](api.md#ai-service-httplocalhost8000).
 
+## Company search
+
+Add holding and the watchlist suggest companies from Finnhub's US symbol list
+(`ai-service/app/services/market_data/symbols.py`), stored in
+`market_symbols` (migration `20261019000000_add_market_symbols_and_earnings`;
+Prisma owns it, the ai-service writes and searches it, the api reads names
+from it).
+
+- **The list.** `/stock/symbol?exchange=US` is one API call. It answers with a
+  redirect to a signed file on `static2.finnhub.io`, which is followed by hand
+  only to an `https` `*.finnhub.io` host and **without** the API token; the
+  signed URL is never logged. Of about 31,000 rows, common stocks, ETFs
+  (`ETP`) and ADRs with valid tickers are kept (25,029 stocks and ETFs plus
+  ADRs, about 27,000). Names are made readable ("MICROSOFT CORP" →
+  "Microsoft Corp") and a lowercased search key is stored.
+- **Refresh, on demand.** A search that finds the list older than 24 hours
+  starts a background reload and answers from the stored list meanwhile; the
+  state is read at most once a minute. There is no cron. The reload swaps the
+  whole list in one transaction (COPY into a temporary table, upsert, delete
+  what's gone). A list under 1,000 rows or under half the stored one is
+  treated as a bad response and never replaces it.
+- **One refresh at a time.** A lease row in `market_refresh_state`
+  (`refreshing_since`, `refresh_id`) is claimed with `SELECT … FOR UPDATE`;
+  the data write checks the lease in the same transaction, so a refresh that
+  lost it (it ran past the 10-minute stale window) writes nothing. A row lease
+  rather than an advisory lock, because the pooled (PgBouncer) connection
+  can't hold a session lock. A failure keeps the old list and waits 30 minutes
+  before retrying; if Finnhub is down, search keeps working.
+- **Ranking** (pg_trgm, installed in the `extensions` schema and always used
+  schema-qualified; GIN trigram indexes on the ticker and the search key):
+  exact ticker, then ticker prefix, then name prefix (of the name or any
+  word), then fuzzy name (`word_similarity` ≥ 0.3, so "mircosoft" scores
+  about 0.4 against "microsoft corp"). Within a tier: exchange-listed before
+  OTC, stocks and ADRs before ETFs for name matches, the name's start before a
+  later word, closeness, then shorter tickers. At most 8 results, and no
+  Finnhub calls. Without a database or a loaded list the answer is empty and
+  not `ready`; the field still accepts an exact ticker.
+- **The combobox** (`client/src/components/market/CompanySearch.tsx`) follows
+  the WAI-ARIA combobox pattern: 250 ms debounce with stale requests aborted,
+  Up/Down to move, Enter to pick (with nothing highlighted it submits, so an
+  exact ticker works), Escape to close the list before the dialog, and a live
+  region with the result count. Edit lot keeps its ticker locked.
+
+## Watchlist
+
+`watchlist_items` (migration `20261019000100_add_watchlist`; written only by
+the api, `api/src/services/watchlist.service.ts`) holds one row per user and
+ticker (unique), up to 50 per user, checked under a per-user advisory lock so
+concurrent adds can't pass the cap. It never touches holdings, so it can't
+change portfolio totals, performance or sectors. RLS is on with no policies,
+like every table: the browser never reads it directly, and every query is
+scoped to the user.
+
+- **Adding.** A ticker in `market_symbols` is accepted as is; otherwise one
+  batch quote decides, and only a confirmed unknown is refused. The same
+  quote stores the price when added. If no quote was available, the first
+  priced load fills it once (and the row says "since" that date).
+- **The view** (`watchlistView.service.ts`) joins names, batch quotes, the
+  next earnings date, report status (ready / outdated / none, by the Reports
+  page's rules, with the demo lock) and whether the user also holds it.
+- **Demo users** get AMD and JPM once, gated by
+  `demo_seeds.watchlist_seeded_at`. Claiming it is an `UPDATE` that only
+  matches a null marker, so concurrent loads seed once, and demo users from
+  before the watchlist get it too.
+- **Shortcuts.** Ask AI opens `/chat?ask=…`, a new chat with the question in
+  the composer, unsent. "I bought it" opens Add holding with the ticker.
+
+## Earnings calendar
+
+`market_earnings` holds Finnhub's `/calendar/earnings` for the next 60 days
+(New York dates), whole market, refreshed by the ai-service
+(`market_data/earnings.py`) on demand at most once a day, under the same lease
+as the symbol list.
+
+- **The 1,500-row cap.** On the free plan a range call returns at most 1,500
+  rows and keeps the _latest_ dates (one 60-day call covered only the last
+  five weeks). A refresh asks for the whole range and halves any window that
+  comes back full, until each fits; a single day at the cap is kept and logged
+  as partial. About 8–15 calls in a busy season, at most 40, paced at 10 a
+  minute (waiting out a spent shared budget), and swapped in one transaction.
+  If Finnhub fails, the stored calendar keeps serving.
+- **Reading** costs no Finnhub calls: each ticker's first report on or after
+  today, up to the window's end, soonest first (before-open, during-market,
+  after-close, then unannounced), plus the tickers with nothing scheduled
+  (ETFs, or no date yet). The api's `GET /api/earnings/upcoming` covers the
+  user's holdings and watchlist, tagged by source.
+
+## Finnhub budget per Watchlist page load
+
+All Finnhub calls share one 50-a-minute limiter (one ai-service instance).
+For a 50-ticker watchlist:
+
+| Part                                              | Finnhub calls                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------- |
+| Names, report status, earnings dates, search      | 0 (Postgres)                                                   |
+| Quotes, warm (fetched in the last 60 s, any page) | 0                                                              |
+| Quotes, cold                                      | at most 15 (`/quote` only), then 1 yfinance batch for the rest |
+| Symbol list refresh                               | 1 a day, plus the file (sent no token)                         |
+| Earnings refresh                                  | about 8–15 a day (at most 40), 10 a minute, in the background  |
+
+The batch path (`market_data/batch_quotes.py`, `GET /quotes/batch`) serves
+each ticker from the shared 60-second cache, then Finnhub's `/quote` alone
+(names come from the symbol list, so no profile call) for at most
+`AI_SERVICE_BATCH_QUOTE_FINNHUB_BUDGET` uncached tickers, then one yfinance
+download; results go back into the shared cache. Portfolio quotes are
+unchanged.
+
 ## Sector allocation
 
 `api/src/services/sectors.service.ts` prices positions with the portfolio

@@ -36,6 +36,11 @@ All application routes are served by the Express gateway at
 | `GET`    | `/api/reports`                                     | Indexed tickers with their newest report, plus today's allowance. |
 | `GET`    | `/api/reports/:ticker`                             | A ticker's report and what the caller may do with it.             |
 | `POST`   | `/api/reports/:ticker`                             | Generate (or regenerate) the report; progress streams as SSE.     |
+| `GET`    | `/api/symbols/search?q=`                           | Up to 8 companies matching a name or ticker (no Finnhub calls).   |
+| `GET`    | `/api/watchlist`                                   | Watched companies with prices, earnings date and report status.   |
+| `POST`   | `/api/watchlist`                                   | Watch a company (`ticker`).                                       |
+| `DELETE` | `/api/watchlist/:ticker`                           | Stop watching a company.                                          |
+| `GET`    | `/api/earnings/upcoming`                           | Next 60 days of earnings for holdings and watchlist.              |
 
 ### Errors
 
@@ -46,7 +51,7 @@ Errors are JSON with a machine-readable `error` code and a plain-language
 ### Authentication
 
 Every route except `/api/health` and `/api/live` (holdings, portfolio, account,
-RAG, chat, reports and warm-up) requires a **Supabase access token** sent as a bearer
+RAG, chat, reports, company search, watchlist, earnings and warm-up) requires a **Supabase access token** sent as a bearer
 header:
 
 ```
@@ -61,7 +66,8 @@ existence of others' data isn't revealed). `/api/health` and `/api/live` are
 public; `/api/health` reports the AI service's status only to signed-in users.
 
 **Account deletion:** `DELETE /api/account` removes the user's holdings,
-conversations (with their messages), chat usage events and `demo_seeds` row in a
+watchlist, conversations (with their messages), chat usage events and
+`demo_seeds` row in a
 transaction, then deletes the Supabase auth user via the
 Admin API (using the server-only `SUPABASE_SERVICE_ROLE_KEY`). It returns `204`.
 
@@ -69,7 +75,9 @@ Admin API (using the server-only `SUPABASE_SERVICE_ROLE_KEY`). It returns `204`.
 first time such a user lists holdings or loads the portfolio summary, the API
 seeds a sample portfolio for them, so the demo dashboard is never empty. Seeding
 happens exactly once per user (tracked in a `demo_seeds` table), so a demo user
-who deletes every holding is not re-seeded on the next load.
+who deletes every holding is not re-seeded on the next load. The same goes for
+the sample watchlist (AMD and JPM), seeded on the first watchlist or earnings
+request (`demo_seeds.watchlist_seeded_at`).
 
 Notes:
 
@@ -655,6 +663,124 @@ Nor does it count if the report failed with `comparison_failed`: a comparison
 was available but the report still cited nothing from the earlier quarter, so
 it wasn't saved.
 
+## Company search, watchlist and earnings
+
+### `GET /api/symbols/search?q=micro`
+
+`q` is a name or ticker, 1–50 characters (else `422`). Up to 8 matches, ranked
+exact ticker → ticker prefix → name prefix → fuzzy name, so typos work
+("mircosoft"). Reads Postgres only. Best effort: if search is unavailable the
+answer is `{ "results": [], "ready": false }`, never an error, and an exact
+ticker can still be submitted.
+
+```json
+{
+  "results": [
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft Corp",
+      "type": "stock",
+      "exchange": "XNAS"
+    }
+  ],
+  "ready": true
+}
+```
+
+`type` is `stock`, `etf` or `adr`; `exchange` is a market identifier code
+(`OOTC` = over the counter).
+
+### `GET /api/watchlist`
+
+Seeds the sample watchlist first for a demo user. Rows in the order added:
+
+```json
+{
+  "items": [
+    {
+      "ticker": "AMD",
+      "name": "Advanced Micro Devices",
+      "price": 165,
+      "change": 5,
+      "changePercent": 3.13,
+      "priceStatus": "ok",
+      "addedAt": "2026-10-01T14:00:00.000Z",
+      "addedPrice": 150,
+      "addedPriceAt": "2026-10-01T14:00:00.000Z",
+      "changeSinceAdded": 15,
+      "changeSinceAddedPercent": 10,
+      "nextEarnings": {
+        "date": "2026-11-03",
+        "hour": "amc",
+        "epsEstimate": 1.97
+      },
+      "report": { "status": "ready", "demoLocked": false },
+      "inPortfolio": false
+    }
+  ],
+  "limit": 50
+}
+```
+
+- `priceStatus` is `ok`, `not_found` or `unavailable` (then the price fields
+  are `null`).
+- `addedPrice` is `null` when no quote was available at add time; the next
+  priced load fills it once and sets `addedPriceAt`.
+- `nextEarnings.hour` is `bmo` (before the open), `amc` (after the close),
+  `dmh` (during market hours) or `null`; `nextEarnings` is `null` with nothing
+  in the next 60 days.
+- `report.status` is `ready` (covers the newest earnings call), `outdated` (an
+  older quarter) or `none`. `demoLocked` is true for a demo user outside the
+  demo companies; `GET /api/reports/:ticker` then returns `403`.
+
+### `POST /api/watchlist`
+
+Body `{ "ticker": "AMD" }` only (`422` for anything else or an invalid
+ticker). `201` with `{ ticker, name, addedPrice, addedPriceAt, addedAt }`.
+
+- `409` `already_watching`: the ticker is already on the list.
+- `409` `watchlist_limit_reached` (with `limit`): 50 companies
+  (`WATCHLIST_MAX_ITEMS`).
+- `422` `invalid_ticker`: not in the symbol list and unknown to the quote
+  providers. During a market-data outage an unlisted ticker is accepted.
+
+### `DELETE /api/watchlist/:ticker`
+
+`204`, or `404` if the ticker isn't on the user's list.
+
+### `GET /api/earnings/upcoming`
+
+Each ticker the user holds or watches, with its next report in the next 60
+days (New York dates), soonest first:
+
+```json
+{
+  "earnings": [
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft Corp",
+      "date": "2026-10-28",
+      "hour": "amc",
+      "epsEstimate": 3.6,
+      "source": "holding"
+    }
+  ],
+  "unscheduled": [
+    { "ticker": "VOO", "name": "Vanguard S&P 500 ETF", "source": "holding" }
+  ],
+  "windowStart": "2026-10-20",
+  "windowEnd": "2026-12-19",
+  "refreshedAt": "2026-10-20T13:00:00Z",
+  "refreshing": false,
+  "available": true
+}
+```
+
+`source` is `holding`, `watchlist` or `both`. `refreshing` is true while the
+calendar loads or updates (in the background, at most once a day);
+`available` is false when it couldn't be read (every ticker is then
+unscheduled). Never an error for an empty or missing calendar.
+
 ## AI service (`http://localhost:8000`)
 
 Internal only: every route except `/health` requires the gateway's
@@ -672,6 +798,9 @@ The market-data endpoints the API consumes directly:
 | `GET`  | `/history/daily?symbols=A,B&start=DATE` | Split-adjusted daily closes from `start`; `errors` for tickers without.       |
 | `GET`  | `/profiles?symbols=A,B`                 | Sector and name per ticker; tickers past the lookup budget in `pending`.      |
 | `POST` | `/tickers/verify`                       | `{symbols}` (1–500) → `{results: {T: "ok" \| "not_found" \| "unavailable"}}`. |
+| `GET`  | `/quotes/batch?symbols=A,B`             | Quotes on a fixed Finnhub budget (no names); for the watchlist.               |
+| `GET`  | `/symbols/search?q=&limit=8`            | Ranked company matches from `market_symbols` (`{results, ready}`).            |
+| `POST` | `/earnings/upcoming`                    | `{symbols, days≤60}` → next report per ticker, `unscheduled`, `refreshing`.   |
 
 `/history/daily` and `/profiles` take at most 500 symbols
 (`AI_SERVICE_MARKET_MAX_SYMBOLS`). Both cache in Postgres; see
@@ -693,6 +822,14 @@ request:
   `unavailable`. So a 500-row import costs at most 20 Finnhub calls for the
   preview and 20 for the save, 40 in all, and only during a yfinance outage.
   The save is usually free: the memo answers it.
+- `/quotes/batch` asks Finnhub's `/quote` (1 call, no name) for at most 15
+  uncached tickers (`AI_SERVICE_BATCH_QUOTE_FINNHUB_BUDGET`), and one yfinance
+  download for the rest. A cold 50-ticker watchlist costs at most 15 calls; a
+  cached one 0.
+- `/symbols/search` and `/earnings/upcoming` read Postgres: **0 calls**. They
+  may start a background refresh of the symbol list (1 call a day) or the
+  earnings calendar (about 8–15 calls a day, at most 40, paced at 10 a minute).
+  See [architecture](architecture.md#finnhub-budget-per-watchlist-page-load).
 
 Transcript search (same semantics as the gateway routes above, snake_case JSON):
 

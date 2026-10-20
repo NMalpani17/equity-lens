@@ -110,6 +110,21 @@ Click **Try demo**; no sign-up needed.
 - **CSV import.** Upload ticker, quantity, price and purchase date for up to
   500 lots, from a downloadable template. Preview the valid rows and every
   row's errors, then save all of them or none.
+- **Company search.** Add holding and the watchlist suggest companies as you
+  type ("micro" or "mircosoft" both find Microsoft Corp (MSFT)), in an
+  accessible combobox; an exact ticker still works. It searches Finnhub's US
+  list of about 27,000 stocks, ETFs and ADRs, loaded into Postgres at most
+  once a day and ranked with trigram matching, so a search costs no API
+  calls. [How it works](docs/architecture.md#company-search).
+- **Watchlist.** Up to 50 companies you're considering, kept apart from the
+  portfolio: live price, today's change, change since added, next earnings
+  date, report status, an Ask AI shortcut, and "I bought it" to record a
+  purchase. Demo users start with AMD and JPM.
+- **Earnings calendar.** Upcoming earnings for your holdings and watchlist
+  over the next 60 days, with before/after-market timing and EPS estimates
+  when known. Refreshed once a day in the background from Finnhub's calendar,
+  split into windows under its 1,500-row cap so no early date is dropped.
+  [How it works](docs/architecture.md#earnings-calendar).
 - **Accounts and instant demo.** Supabase Auth with email and password or
   Google, password reset and account deletion. Forms validate as you go, and
   errors never reveal whether an email is registered. "Try demo" gives each
