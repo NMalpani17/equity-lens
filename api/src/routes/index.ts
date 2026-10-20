@@ -8,6 +8,7 @@ import { accountRouter } from "./account.routes.js";
 import { ragRouter } from "./rag.routes.js";
 import { chatRouter } from "./chat.routes.js";
 import { reportsRouter } from "./reports.routes.js";
+import { symbolsRouter } from "./symbols.routes.js";
 
 export const apiRouter = Router();
 
@@ -18,3 +19,4 @@ apiRouter.use(accountRouter);
 apiRouter.use(ragRouter);
 apiRouter.use(chatRouter);
 apiRouter.use(reportsRouter);
+apiRouter.use(symbolsRouter);
