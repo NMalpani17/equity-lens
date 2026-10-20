@@ -85,6 +85,40 @@ export function removeFromWatchlist(ticker: string): Promise<void> {
   });
 }
 
+/** The chat question the watchlist's Ask AI starts with (sent only by the user). */
+export function askAiQuestion(row: Pick<WatchlistRow, "ticker" | "name">): string {
+  const company = row.name ? `${row.name} (${row.ticker})` : row.ticker;
+  return `I'm considering ${company}. What did management say on the latest earnings call, and how has the stock done recently?`;
+}
+
+/** The chat page, opening a new chat with `question` ready to send. */
+export function askAiPath(question: string): string {
+  return `/chat?ask=${encodeURIComponent(question)}`;
+}
+
+// --- Earnings calendar ----------------------------------------------------
+
+export type EarningsSource = "holding" | "watchlist" | "both";
+
+export interface UpcomingEarnings {
+  earnings: (NextEarnings & {
+    ticker: string;
+    name: string | null;
+    source: EarningsSource;
+  })[];
+  unscheduled: { ticker: string; name: string | null; source: EarningsSource }[];
+  windowStart: string | null;
+  windowEnd: string | null;
+  refreshedAt: string | null;
+  refreshing: boolean;
+  available: boolean;
+}
+
+/** The next 60 days of earnings for the user's holdings and watchlist. */
+export function getUpcomingEarnings(): Promise<UpcomingEarnings> {
+  return request<UpcomingEarnings>("/api/earnings/upcoming");
+}
+
 const HOUR_LABELS: Record<EarningsHour, string> = {
   bmo: "Before open",
   amc: "After close",

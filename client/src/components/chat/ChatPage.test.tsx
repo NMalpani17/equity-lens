@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 
 vi.mock("@/context/auth-context", () => ({ useAuth: vi.fn() }));
 vi.mock("@/lib/chatApi", () => ({
@@ -826,5 +826,46 @@ describe("ChatPage", () => {
     expect(link).toHaveAttribute("rel", "noopener noreferrer nofollow");
     const bad = screen.queryByRole("link", { name: "bad" });
     expect(bad?.getAttribute("href") ?? "").not.toContain("javascript:");
+  });
+});
+
+describe("ChatPage from the watchlist's Ask AI", () => {
+  const question =
+    "I'm considering Advanced Micro Devices (AMD). What did management say on the latest earnings call, and how has the stock done recently?";
+
+  function LocationProbe() {
+    const location = useLocation();
+    return <span data-testid="search">{location.search}</span>;
+  }
+
+  it("opens a new chat with the question ready but unsent", async () => {
+    api.listConversations.mockResolvedValue([CONV]);
+    render(
+      <MemoryRouter initialEntries={[`/chat?ask=${encodeURIComponent(question)}`]}>
+        <ChatPage />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    const composer = await screen.findByRole("textbox");
+    expect(composer).toHaveValue(question);
+    expect(composer).toHaveFocus();
+    expect(api.streamMessage).not.toHaveBeenCalled();
+    expect(api.createConversation).not.toHaveBeenCalled();
+    expect(api.listMessages).not.toHaveBeenCalled(); // no earlier chat opened
+    // Dropped from the URL, so a reload doesn't bring it back.
+    await waitFor(() => expect(screen.getByTestId("search")).toHaveTextContent(""));
+  });
+
+  it("caps an over-long question at the message limit", async () => {
+    render(
+      <MemoryRouter initialEntries={[`/chat?ask=${"x".repeat(5000)}`]}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      ((await screen.findByRole("textbox")) as HTMLTextAreaElement).value,
+    ).toHaveLength(2000);
   });
 });

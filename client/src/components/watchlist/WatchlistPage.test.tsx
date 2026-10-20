@@ -9,6 +9,7 @@ vi.mock("@/lib/marketApi", async (importOriginal) => ({
   getWatchlist: vi.fn(),
   addToWatchlist: vi.fn(),
   removeFromWatchlist: vi.fn(),
+  getUpcomingEarnings: vi.fn(),
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -18,7 +19,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 import { useAuth } from "@/context/auth-context";
 import { ApiError, createHolding } from "@/lib/api";
 import * as marketApi from "@/lib/marketApi";
-import type { WatchlistRow } from "@/lib/marketApi";
+import type { UpcomingEarnings, WatchlistRow } from "@/lib/marketApi";
 import { WatchlistPage } from "./WatchlistPage";
 
 const api = vi.mocked(marketApi);
@@ -79,6 +80,134 @@ beforeEach(() => {
   api.getWatchlist.mockResolvedValue({ items: [row(), JPM], limit: 50 });
   api.addToWatchlist.mockResolvedValue({});
   api.removeFromWatchlist.mockResolvedValue(undefined);
+  api.getUpcomingEarnings.mockResolvedValue(calendar());
+});
+
+function calendar(overrides: Partial<UpcomingEarnings> = {}): UpcomingEarnings {
+  return {
+    earnings: [
+      {
+        ticker: "MSFT",
+        name: "Microsoft Corp",
+        date: "2026-10-28",
+        hour: "amc",
+        epsEstimate: 3.6,
+        source: "holding",
+      },
+      {
+        ticker: "AMD",
+        name: "Advanced Micro Devices",
+        date: "2026-11-03",
+        hour: null,
+        epsEstimate: null,
+        source: "both",
+      },
+    ],
+    unscheduled: [
+      { ticker: "VOO", name: "Vanguard S&P 500 ETF", source: "holding" },
+      { ticker: "JPM", name: "JPMorgan Chase & Co", source: "watchlist" },
+    ],
+    windowStart: "2026-10-20",
+    windowEnd: "2026-12-19",
+    refreshedAt: "2026-10-20T13:00:00Z",
+    refreshing: false,
+    available: true,
+    ...overrides,
+  };
+}
+
+const earningsList = async () =>
+  within(await screen.findByRole("list", { name: "Upcoming earnings" }));
+const earningsSection = () =>
+  within(screen.getByRole("region", { name: "Upcoming earnings" }));
+
+describe("Upcoming earnings", () => {
+  it("lists dates, sessions, estimates and where each ticker comes from", async () => {
+    renderPage();
+
+    const list = await earningsList();
+    const [msft, amd] = list.getAllByRole("listitem");
+    expect(msft).toHaveTextContent("Oct 28, 2026");
+    expect(msft).toHaveTextContent("After close");
+    expect(msft).toHaveTextContent("MSFT");
+    expect(msft).toHaveTextContent("EPS est. $3.60");
+    expect(msft).toHaveTextContent("Holding");
+    expect(amd).toHaveTextContent("Nov 3, 2026");
+    expect(amd).toHaveTextContent("No EPS estimate");
+    expect(amd).toHaveTextContent("Holding · Watching");
+    expect(
+      earningsSection().getByText("No date in the next 60 days: VOO, JPM"),
+    ).toBeInTheDocument();
+  });
+
+  it("says when nothing is scheduled", async () => {
+    api.getUpcomingEarnings.mockResolvedValue(calendar({ earnings: [] }));
+    renderPage();
+
+    expect(
+      await screen.findByText("No earnings scheduled in the next 60 days."),
+    ).toBeInTheDocument();
+  });
+
+  it("says when the calendar is still loading for the first time", async () => {
+    api.getUpcomingEarnings.mockResolvedValue(
+      calendar({ earnings: [], refreshing: true, refreshedAt: null }),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText("Earnings dates are updating. Check back in a minute."),
+    ).toBeInTheDocument();
+  });
+
+  it("says when the calendar is unavailable", async () => {
+    api.getUpcomingEarnings.mockResolvedValue(
+      calendar({ earnings: [], available: false }),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText("Earnings dates are unavailable right now."),
+    ).toBeInTheDocument();
+  });
+
+  it("explains an empty calendar with nothing held or watched", async () => {
+    api.getUpcomingEarnings.mockResolvedValue(
+      calendar({ earnings: [], unscheduled: [] }),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        "Add holdings or watch companies to see their earnings dates.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("reloads after the watchlist changes", async () => {
+    renderPage();
+    await item(/AMD/);
+    await earningsList();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove AMD from watchlist" }));
+
+    await waitFor(() => expect(api.getUpcomingEarnings).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("Ask AI", () => {
+  it("opens a new chat with a question about the company ready to send", async () => {
+    renderPage();
+
+    const link = within(await item(/AMD/)).getByRole("link", {
+      name: "Ask AI about AMD",
+    });
+    const url = new URL(link.getAttribute("href")!, "http://localhost");
+    expect(url.pathname).toBe("/chat");
+    expect(url.searchParams.get("ask")).toBe(
+      "I'm considering Advanced Micro Devices (AMD). What did management say on the latest earnings call, and how has the stock done recently?",
+    );
+  });
 });
 
 describe("WatchlistPage", () => {
@@ -161,7 +290,7 @@ describe("WatchlistPage", () => {
     const zzzz = within(await item(/ZZZZ/));
     expect(zzzz.getByText("price unavailable")).toBeInTheDocument();
     expect(zzzz.getByText("No report")).toBeInTheDocument();
-    expect(zzzz.queryByRole("link")).not.toBeInTheDocument();
+    expect(zzzz.queryByRole("link", { name: /report/ })).not.toBeInTheDocument();
     expect(zzzz.queryByRole("button", { name: /Sign up/ })).not.toBeInTheDocument();
   });
 

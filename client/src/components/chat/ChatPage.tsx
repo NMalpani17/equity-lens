@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ArrowDown, Menu, Plus, X } from "lucide-react";
 
 import { Header } from "@/components/Header";
 import { DemoBanner } from "@/components/DemoBanner";
 import { ChatBanner } from "@/components/chat/ChatBanner";
-import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ChatComposer, MAX_MESSAGE_CHARS } from "@/components/chat/ChatComposer";
 import { CitationDialog } from "@/components/chat/CitationDialog";
 import { ConversationSidebar } from "@/components/chat/ConversationSidebar";
 import { MessageBubble } from "@/components/chat/MessageBubble";
@@ -19,6 +20,16 @@ import { describeReset } from "@/lib/format";
 export function ChatPage() {
   const { isDemo } = useAuth();
   const chat = useChat();
+  // /chat?ask=... (the watchlist's Ask AI) opens a new chat with the question
+  // in the composer, unsent; the parameter is dropped so a reload doesn't
+  // bring it back.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [draft] = useState(
+    () => searchParams.get("ask")?.slice(0, MAX_MESSAGE_CHARS) ?? "",
+  );
+  useEffect(() => {
+    if (searchParams.has("ask")) setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [citation, setCitation] = useState<Citation | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const contentKey = [
@@ -148,6 +159,7 @@ export function ChatPage() {
             disabled={outOfMessages}
             onSend={send}
             onStop={chat.stop}
+            initialValue={draft}
           />
         </main>
       </div>

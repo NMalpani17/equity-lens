@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Eye, Loader2, RefreshCw, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, Eye, Loader2, MessageSquare, RefreshCw, X } from "lucide-react";
 
 import { DemoBanner } from "@/components/DemoBanner";
 import { Header } from "@/components/Header";
@@ -9,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/context/auth-context";
 import { useWatchlist } from "@/hooks/useWatchlist";
-import type { WatchlistRow } from "@/lib/marketApi";
+import { askAiPath, askAiQuestion, type WatchlistRow } from "@/lib/marketApi";
+import { UpcomingEarnings } from "./UpcomingEarnings";
 import { WatchlistAddForm } from "./WatchlistAddForm";
 import { WatchlistList } from "./WatchlistList";
 
@@ -25,6 +27,9 @@ export function WatchlistPage() {
   const [buying, setBuying] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  // Bumped when the watchlist or holdings change, so earnings reload too.
+  const [version, setVersion] = useState(0);
+  const changed = () => setVersion((v) => v + 1);
 
   useEffect(() => {
     if (!notice) return;
@@ -39,6 +44,7 @@ export function WatchlistPage() {
     setRemoveError(null);
     try {
       await watchlist.remove(row.ticker);
+      changed();
     } catch (error) {
       setRemoveError(error instanceof Error ? error.message : "Something went wrong.");
     }
@@ -47,7 +53,13 @@ export function WatchlistPage() {
   async function add(ticker: string) {
     setNotice(null);
     await watchlist.add(ticker);
+    changed();
     setNotice(`Added ${ticker} to your watchlist.`);
+  }
+
+  function refresh() {
+    changed();
+    void watchlist.refresh();
   }
 
   return (
@@ -65,7 +77,7 @@ export function WatchlistPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => void watchlist.refresh()}
+            onClick={refresh}
             disabled={state.kind === "loading" || watchlist.refreshing}
           >
             <RefreshCw className={watchlist.refreshing ? "animate-spin" : ""} />
@@ -149,10 +161,23 @@ export function WatchlistPage() {
                   setNotice(null);
                   setBuying(row.ticker);
                 }}
+                renderActions={(row) => (
+                  <Button asChild variant="outline" size="sm">
+                    <Link
+                      to={askAiPath(askAiQuestion(row))}
+                      aria-label={`Ask AI about ${row.ticker}`}
+                    >
+                      <MessageSquare aria-hidden="true" />
+                      Ask AI
+                    </Link>
+                  </Button>
+                )}
               />
             </CardContent>
           </Card>
         )}
+
+        <UpcomingEarnings version={version} />
       </main>
 
       <HoldingFormDialog
@@ -162,7 +187,7 @@ export function WatchlistPage() {
         initialTicker={buying}
         onSaved={() => {
           setNotice(`Added ${buying} to your portfolio.`);
-          void watchlist.refresh();
+          refresh();
         }}
       />
     </div>
