@@ -95,6 +95,7 @@ def test_ci_runs_the_postgres_gated_repository_tests() -> None:
     for test in (
         "tests/test_rag_repository_pg.py",
         "tests/test_report_repository_pg.py",
+        "tests/test_market_repository_pg.py",
         "tests/test_market_symbols_pg.py",
     ):
         assert test in step["run"]
