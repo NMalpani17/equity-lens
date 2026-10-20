@@ -12,6 +12,8 @@
 #   - Objects are restored without owners or grants (--no-owner
 #     --no-privileges); the Supabase roles the dump mentions are created as
 #     NOLOGIN placeholders if missing.
+#   - The extensions the schema needs (db-extensions.sql, in the extensions
+#     schema) are created before restoring; the dump doesn't contain them.
 set -euo pipefail
 dir=${1:?usage: restore-db.sh <backup dir> <target url> [--allow-remote]}
 target=${2:?usage: restore-db.sh <backup dir> <target url> [--allow-remote]}
@@ -47,8 +49,8 @@ if ((existing > 0)); then
   exit 2
 fi
 
-# Placeholders for roles and schemas a Supabase dump refers to (no-ops on a
-# Supabase target, where they already exist).
+# Placeholders for roles a Supabase dump refers to (no-ops on a Supabase
+# target, where they already exist).
 psql "$target" -Xq -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 DECLARE
@@ -63,10 +65,11 @@ BEGIN
     END LOOP;
 END
 $$;
-CREATE SCHEMA IF NOT EXISTS extensions;
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
 SQL
+
+# The extensions schema and the extensions public objects use (e.g. pg_trgm
+# for the trigram indexes): not in a public + auth dump, so create them first.
+psql "$target" -Xq -v ON_ERROR_STOP=1 -f "${here}/db-extensions.sql"
 
 # Every entry except "CREATE SCHEMA public", which already exists.
 toc=$(mktemp)

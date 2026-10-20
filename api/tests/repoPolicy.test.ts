@@ -158,3 +158,46 @@ describe("Prisma migrations: row level security", () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe("Backups: extensions are recreated before a restore", () => {
+  // Backups hold only public + auth, so an extension a migration creates (in
+  // the extensions schema) must be created on the target before pg_restore.
+  const migrationsDir = repoFile("api/prisma/migrations/");
+  const created = (text: string) =>
+    [...text.matchAll(/CREATE EXTENSION (?:IF NOT EXISTS )?"?([\w-]+)"?/gi)].map(
+      ([, name]) => name!.toLowerCase(),
+    );
+  const extensionsSql = readFileSync(
+    repoFile(".github/scripts/db-extensions.sql"),
+    "utf8",
+  );
+
+  it("db-extensions.sql creates every extension a migration creates", () => {
+    const fromMigrations = readdirSync(migrationsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) =>
+        created(
+          readFileSync(new URL(`${entry.name}/migration.sql`, migrationsDir), "utf8"),
+        ),
+      );
+
+    expect(fromMigrations).toContain("pg_trgm");
+    expect(created(extensionsSql)).toEqual(expect.arrayContaining(fromMigrations));
+  });
+
+  it("creates them in the extensions schema, idempotently", () => {
+    expect(extensionsSql).toMatch(/CREATE SCHEMA IF NOT EXISTS extensions;/);
+    for (const statement of extensionsSql.match(/CREATE EXTENSION[^;]*;/gi) ?? []) {
+      expect(statement).toMatch(/IF NOT EXISTS/i);
+      expect(statement).toMatch(/WITH SCHEMA extensions;$/i);
+    }
+  });
+
+  it("restore-db.sh runs it before pg_restore", () => {
+    const restore = readFileSync(repoFile(".github/scripts/restore-db.sh"), "utf8");
+    const runs = restore.indexOf('-f "${here}/db-extensions.sql"');
+
+    expect(runs).toBeGreaterThan(-1);
+    expect(runs).toBeLessThan(restore.indexOf('pg_restore --dbname="$target"'));
+  });
+});
