@@ -158,6 +158,120 @@ def test_replace_swaps_the_whole_list(db: Db) -> None:
     assert db.symbols.count() == 3
 
 
+# --- Search ranking ------------------------------------------------------------
+
+LISTED = [
+    ("MSFT", "MICROSOFT CORP", "Common Stock", "XNAS"),
+    ("MU", "MICRON TECHNOLOGY INC", "Common Stock", "XNAS"),
+    ("MCHP", "MICROCHIP TECHNOLOGY INC", "Common Stock", "XNAS"),
+    ("AMD", "ADVANCED MICRO DEVICES", "Common Stock", "XNAS"),
+    ("MS", "MORGAN STANLEY", "Common Stock", "XNYS"),
+    ("MSCI", "MSCI INC", "Common Stock", "XNYS"),
+    ("AAPL", "APPLE INC", "Common Stock", "XNAS"),
+    ("APLE", "APPLE HOSPITALITY REIT INC", "Common Stock", "XNYS"),
+    ("A", "AGILENT TECHNOLOGIES INC", "Common Stock", "XNYS"),
+    ("AA", "ALCOA CORP", "Common Stock", "XNYS"),
+    ("AAL", "AMERICAN AIRLINES GROUP INC", "Common Stock", "XNAS"),
+    ("ABNB", "AIRBNB INC-CLASS A", "Common Stock", "XNAS"),
+    ("ADBE", "ADOBE INC", "Common Stock", "XNAS"),
+    ("VOO", "VANGUARD S&P 500 ETF", "ETP", "ARCX"),
+    ("TSM", "TAIWAN SEMICONDUCTOR-SP ADR", "ADR", "XNYS"),
+    # A run of ETNs whose names also start with "micro".
+    *[
+        (t, f"MICROSECTORS {t} 3X LEVERAGED ETN", "ETP", "ARCX")
+        for t in ("BNKU", "CARU", "FNGU", "GDXU", "NRGU", "OILU", "SHNY", "WEBL")
+    ],
+]
+OTC = [
+    ("MSAAF", "MS ALPHA HOLDINGS", "Common Stock", "OOTC"),
+    ("MCRSF", "MICRO SOFT HOLDINGS", "Common Stock", "OOTC"),
+]
+
+
+@pytest.fixture
+def searchable(db: Db) -> Db:
+    from app.services.market_data.refresh import US_SYMBOLS
+    from app.services.market_data.symbols import parse_symbol_list
+
+    entries = [
+        {"symbol": t, "description": d, "type": k, "mic": m}
+        for t, d, k, m in LISTED + OTC
+    ]
+    lease = db.states.claim(US_SYMBOLS, policy(), now=T0)
+    assert db.symbols.replace_all(parse_symbol_list(entries), refresh_id=lease, now=T0)
+    return db
+
+
+def tickers(db: Db, query: str, limit: int = 8) -> list[str]:
+    return [m.ticker for m in db.symbols.search(query, limit)]
+
+
+def test_exact_ticker_comes_first(searchable: Db) -> None:
+    assert tickers(searchable, "msft")[0] == "MSFT"
+    assert tickers(searchable, "VOO")[0] == "VOO"
+    assert tickers(searchable, "tsm")[0] == "TSM"  # ADRs are searchable
+
+
+def test_ticker_prefix_before_names_and_otc_last(searchable: Db) -> None:
+    # MS exact; MSCI and MSFT by prefix (listed, by length then A-Z); then
+    # the OTC prefix match, though it sorts first alphabetically.
+    assert tickers(searchable, "MS") == ["MS", "MSCI", "MSFT", "MSAAF"]
+
+
+def test_partial_name_finds_microsoft(searchable: Db) -> None:
+    found = tickers(searchable, "micro")
+
+    assert len(found) == 8
+    # Names starting "micro" (stocks first), then a later word ("Advanced
+    # Micro Devices"), then the ETNs; the OTC lookalike is past the cut.
+    assert set(found[:3]) == {"MU", "MCHP", "MSFT"}
+    assert found[3] == "AMD"
+    assert all(
+        t in {"BNKU", "CARU", "FNGU", "GDXU", "NRGU", "OILU", "SHNY", "WEBL"}
+        for t in found[4:]
+    )
+    assert "MCRSF" not in found
+
+
+def test_otc_ranks_after_listed_matches_in_the_same_tier(searchable: Db) -> None:
+    found = tickers(searchable, "micro", limit=20)
+    listed = {"MU", "MCHP", "MSFT", "AMD", "BNKU", "CARU", "FNGU", "GDXU"}
+    listed |= {"NRGU", "OILU", "SHNY", "WEBL"}
+
+    assert found.index("MCRSF") > max(found.index(t) for t in listed)
+
+
+@pytest.mark.parametrize("typo", ["mircosoft", "microsft", "micrsoft corp"])
+def test_typos_find_microsoft(searchable: Db, typo: str) -> None:
+    assert tickers(searchable, typo)[0] == "MSFT"
+
+
+def test_multi_word_and_mixed_case_names(searchable: Db) -> None:
+    assert tickers(searchable, "Advanced Micro")[0] == "AMD"
+    assert tickers(searchable, "apple")[:2] == ["AAPL", "APLE"]
+
+
+def test_at_most_eight_results(searchable: Db) -> None:
+    assert len(tickers(searchable, "a")) == 8
+    assert len(tickers(searchable, "a", limit=3)) == 3
+
+
+def test_matches_carry_display_names(searchable: Db) -> None:
+    match = searchable.symbols.search("msft")[0]
+
+    assert (match.name, match.type, match.exchange) == (
+        "Microsoft Corp",
+        "stock",
+        "XNAS",
+    )
+    assert searchable.symbols.search("vanguard")[0].type == "etf"
+
+
+def test_nothing_matches(searchable: Db) -> None:
+    assert searchable.symbols.search("zzzzqqq") == []
+    assert searchable.symbols.has_any()
+
+
 def test_a_lost_lease_writes_nothing(db: Db) -> None:
     from app.services.market_data.refresh import US_SYMBOLS
 

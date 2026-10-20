@@ -1,8 +1,9 @@
 """The US symbol list behind company search (``market_symbols``).
 
 Finnhub's full US list (one API call, ~31k rows) is filtered to common stocks,
-ETFs and ADRs, given readable names ("MICROSOFT CORP" -> "Microsoft Corp"),
-and stored whole. A search that finds the list older than a day refreshes it
+ETFs and ADRs (~27k), given readable names ("MICROSOFT CORP" -> "Microsoft
+Corp"), and stored whole. Search ranks with pg_trgm so partial names and typos
+work ("micro", "mircosoft"). A search that finds the list older than a day refreshes it
 in the background (see :mod:`.refresh`); searches always read Postgres, so
 they cost no Finnhub calls. If Finnhub is down the stored list keeps serving.
 """
@@ -19,6 +20,7 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from app.config import get_settings
+from app.models.symbol import SymbolMatch, SymbolSearchResponse
 from app.services.rag.repository import utcnow
 
 from .base import ProviderUnavailableError
@@ -45,6 +47,70 @@ TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,9}$")
 # A list this short (or under half the stored one) is a bad response, not a
 # market change, so it never replaces the stored list.
 MIN_SYMBOLS = 1000
+MAX_RESULTS = 8
+# Fuzzy name matches need this much word similarity ("mircosoft" scores ~0.4
+# against "microsoft corp"), and a query this long (shorter ones match noise).
+FUZZY_THRESHOLD = 0.3
+FUZZY_MIN_CHARS = 3
+_TICKER_QUERY = re.compile(r"^[A-Z0-9.-]{1,10}$")
+
+# Tiers: exact ticker, ticker prefix, name prefix (of the name or any word),
+# then fuzzy name. Within a tier: exchange-listed before OTC, stocks and ADRs
+# before ETFs for name matches (so "micro" shows Microsoft before a run of
+# MicroSectors ETNs), the name's own start before a later word, closeness,
+# then shorter and alphabetical tickers. All trigram functions are
+# schema-qualified (pg_trgm lives in "extensions").
+_SEARCH_SQL = """
+SELECT ticker, name, type, exchange
+FROM (
+    SELECT ticker, name, type, exchange, search_name,
+        CASE
+            WHEN ticker = %(ticker)s THEN 0
+            WHEN ticker LIKE %(ticker_prefix)s THEN 1
+            WHEN search_name LIKE %(name_prefix)s
+                OR search_name LIKE %(word_prefix)s THEN 2
+            ELSE 3
+        END AS tier
+    FROM market_symbols
+    WHERE ticker = %(ticker)s
+        OR ticker LIKE %(ticker_prefix)s
+        OR search_name LIKE %(name_prefix)s
+        OR search_name LIKE %(word_prefix)s
+        OR (%(fuzzy)s AND %(name)s OPERATOR(extensions.<%%) search_name)
+) AS matches
+ORDER BY
+    tier,
+    exchange IS NOT DISTINCT FROM 'OOTC',
+    tier >= 2 AND type = 'etf',
+    search_name LIKE %(name_prefix)s DESC,
+    extensions.word_similarity(%(name)s, search_name) DESC,
+    length(ticker),
+    ticker
+LIMIT %(limit)s
+"""
+
+
+def search_params(query: str, limit: int) -> dict[str, Any] | None:
+    """Bind values for ``_SEARCH_SQL``; None when nothing could match."""
+    raw = " ".join(query.split())
+    ticker = raw.upper()
+    name = normalize_search(raw)
+    if not ticker or (not name and not _TICKER_QUERY.match(ticker)):
+        return None
+    # A query that can't be a ticker (spaces, "&") only matches names. LIKE
+    # wildcards can't appear: tickers allow [A-Z0-9.-], names [a-z0-9& ].
+    is_ticker = bool(_TICKER_QUERY.match(ticker))
+    never = "~"  # in neither alphabet, so it matches nothing
+    return {
+        "ticker": ticker if is_ticker else never,
+        "ticker_prefix": f"{ticker}%" if is_ticker else never,
+        "name": name or never,
+        "name_prefix": f"{name}%" if name else never,
+        "word_prefix": f"% {name}%" if name else never,
+        "fuzzy": len(name) >= FUZZY_MIN_CHARS,
+        "limit": limit,
+    }
+
 
 # Kept upper-case in display names.
 _ACRONYMS = frozenset(
@@ -141,6 +207,27 @@ class SymbolRepository:
             row = conn.execute("SELECT count(*) AS n FROM market_symbols").fetchone()
         return int(row["n"]) if row else 0
 
+    def has_any(self) -> bool:
+        with self._pool.connection() as conn:
+            return (
+                conn.execute("SELECT 1 FROM market_symbols LIMIT 1").fetchone()
+                is not None
+            )
+
+    def search(self, query: str, limit: int = MAX_RESULTS) -> list[SymbolMatch]:
+        """Best matches for ``query``, ranked (see ``_SEARCH_SQL``)."""
+        params = search_params(query, limit)
+        if params is None:
+            return []
+        with self._pool.connection() as conn, conn.transaction():
+            # For the "<%" operator; transaction-scoped, so pooler-safe.
+            conn.execute(
+                "SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)",
+                (str(FUZZY_THRESHOLD),),
+            )
+            rows = conn.execute(_SEARCH_SQL, params).fetchall()
+        return [SymbolMatch(**row) for row in rows]
+
     def replace_all(
         self, rows: Sequence[SymbolRow], *, refresh_id: str, now: datetime
     ) -> bool:
@@ -203,8 +290,8 @@ class SymbolRepository:
         return True
 
 
-class SymbolListService:
-    """Keeps ``market_symbols`` fresh (searching lives in a later layer)."""
+class SymbolService:
+    """Company search over ``market_symbols``, which it keeps fresh."""
 
     def __init__(
         self,
@@ -225,6 +312,24 @@ class SymbolListService:
         self._clock = clock
         self._check_every = check_every
         self._next_check: datetime | None = None
+
+    def search(self, query: str, limit: int = MAX_RESULTS) -> SymbolSearchResponse:
+        """Ranked matches from Postgres (no Finnhub calls), never failing.
+
+        Without a database or a loaded list the response is empty and not
+        ``ready``; the caller still accepts an exact ticker then.
+        """
+        self.ensure_fresh()
+        symbols = self._symbols()
+        if symbols is None:
+            return SymbolSearchResponse(ready=False)
+        try:
+            results = symbols.search(query, limit)
+            ready = bool(results) or symbols.has_any()
+        except psycopg.Error as exc:
+            logger.warning("symbol search failed: %s", exc)
+            return SymbolSearchResponse(ready=False)
+        return SymbolSearchResponse(results=results, ready=ready)
 
     def ensure_fresh(self) -> None:
         """Start a background refresh if the list is due; never blocks on it.
@@ -296,9 +401,9 @@ def refresh_policy(max_age: timedelta) -> RefreshPolicy:
 
 
 @lru_cache
-def get_symbol_list_service() -> SymbolListService:
+def get_symbol_service() -> SymbolService:
     settings = get_settings()
-    return SymbolListService(
+    return SymbolService(
         fetch_list=get_finnhub_provider().get_symbol_list,
         states=shared_state_repository,
         symbols=shared_symbol_repository,

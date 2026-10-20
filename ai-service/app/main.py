@@ -22,6 +22,7 @@ from app.routers import (
     profiles,
     rag,
     report,
+    symbols,
     tickers,
 )
 from app.security import InternalTokenMiddleware, require_internal_token
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
         history.router,
         profiles.router,
         tickers.router,
+        symbols.router,
         rag.router,
         chat.router,
         report.router,

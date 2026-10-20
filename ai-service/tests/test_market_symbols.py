@@ -16,7 +16,7 @@ from app.services.market_data.refresh import (
 )
 from app.services.market_data.symbols import (
     MIN_SYMBOLS,
-    SymbolListService,
+    SymbolService,
     display_name,
     normalize_search,
     parse_symbol_list,
@@ -273,7 +273,7 @@ def full_list(n: int = MIN_SYMBOLS) -> list[dict]:
 
 
 def make_service(states, symbols, fetch, refresher=None, clock=lambda: NOW):
-    return SymbolListService(
+    return SymbolService(
         fetch_list=fetch,
         states=lambda: states,
         symbols=lambda: symbols,
