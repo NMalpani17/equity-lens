@@ -48,6 +48,12 @@ class FinnhubProvider(MarketDataProvider):
         self._limiter = limiter
 
     def get_quote(self, ticker: str) -> Quote:
+        """A quote with the company name (two calls: /quote and the profile)."""
+        quote = self.get_price(ticker)
+        return quote.model_copy(update={"name": self._fetch_name(quote.ticker)})
+
+    def get_price(self, ticker: str) -> Quote:
+        """A quote without the name, in one call (/quote)."""
         if not self._api_key:
             # No key configured: treat as unavailable so we fall back.
             raise ProviderUnavailableError("finnhub api key not configured")
@@ -67,7 +73,6 @@ class FinnhubProvider(MarketDataProvider):
             previous_close=float(previous_close or 0.0),
             provider=self.name,
             as_of=datetime.now(UTC),
-            name=self._fetch_name(symbol),
         )
 
     def _get_json(self, path: str, params: dict[str, str]) -> dict:

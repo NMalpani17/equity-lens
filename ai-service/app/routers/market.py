@@ -11,6 +11,10 @@ from app.services.market_data.base import (
     ProviderUnavailableError,
     QuoteNotFoundError,
 )
+from app.services.market_data.batch_quotes import (
+    BatchQuoteService,
+    get_batch_quote_service,
+)
 from app.services.market_data.service import (
     MarketDataService,
     get_market_data_service,
@@ -21,6 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/quotes", tags=["market"])
 
 ServiceDep = Annotated[MarketDataService, Depends(get_market_data_service)]
+BatchServiceDep = Annotated[BatchQuoteService, Depends(get_batch_quote_service)]
 
 
 def parse_symbols(symbols: str) -> list[str]:
@@ -58,6 +63,21 @@ def get_quotes(
     return service.get_quotes(parsed)
 
 
+@router.get("/batch", response_model=QuotesResponse)
+def get_batch_quotes(
+    service: BatchServiceDep,
+    symbols: Annotated[
+        str, Query(description="Comma-separated ticker symbols, e.g. AMD,JPM")
+    ],
+) -> QuotesResponse:
+    """Quotes for many tickers on a fixed Finnhub budget (no names).
+
+    Uncached tickers past the budget come from one yfinance download.
+    """
+    return service.get_quotes(checked_symbols(symbols))
+
+
+# Declared after /batch, which it would otherwise capture as a ticker.
 @router.get("/{ticker}", response_model=Quote)
 def get_quote(ticker: str, service: ServiceDep) -> Quote:
     """Return a single quote, 404 for unknown tickers, 502 when unavailable."""

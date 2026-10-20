@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Import ticker check: Finnhub is asked only when yfinance is down, for at
     # most this many tickers per request (one call each).
     ticker_check_finnhub_budget: int = 20
+    # Batch quotes (the watchlist): uncached tickers past this many per request
+    # come from one yfinance download instead of Finnhub, one call each.
+    batch_quote_finnhub_budget: int = 15
     # Company search: Finnhub's US symbol list (one call) is reloaded when a
     # search finds it older than this, in the background.
     symbols_refresh_hours: int = 24

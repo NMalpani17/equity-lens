@@ -38,6 +38,10 @@ class MarketDataService:
         """The cached quote, without asking any provider."""
         return self._cache.get(ticker.upper())
 
+    def remember(self, quote: Quote) -> None:
+        """Cache a quote fetched elsewhere (the batch path), for everyone."""
+        self._cache.set(quote.ticker, quote)
+
     def get_quote(self, ticker: str) -> Quote:
         symbol = ticker.upper()
 
