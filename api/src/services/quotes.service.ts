@@ -73,13 +73,26 @@ function allUnavailable(tickers: string[]): QuotesResult {
   return { quotes: {}, errors };
 }
 
-/** Fetch quotes for the given tickers from the AI service. */
-export async function getQuotes(tickers: string[]): Promise<QuotesResult> {
+/** Fetch quotes (with names) for the given tickers from the AI service. */
+export function getQuotes(tickers: string[]): Promise<QuotesResult> {
+  return fetchQuotes("/quotes", tickers);
+}
+
+/**
+ * Quotes for many tickers on a fixed Finnhub budget (the watchlist): at most
+ * 15 uncached tickers use Finnhub, the rest one yfinance download. Names are
+ * null (they come from the symbol list). Never throws, like getQuotes.
+ */
+export function getBatchQuotes(tickers: string[]): Promise<QuotesResult> {
+  return fetchQuotes("/quotes/batch", tickers);
+}
+
+async function fetchQuotes(path: string, tickers: string[]): Promise<QuotesResult> {
   if (tickers.length === 0) {
     return { quotes: {}, errors: {} };
   }
 
-  const url = aiServiceUrl("/quotes");
+  const url = aiServiceUrl(path);
   url.searchParams.set("symbols", tickers.join(","));
 
   try {

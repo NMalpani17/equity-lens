@@ -15,6 +15,16 @@ export interface HoldingDto {
   updatedAt: string;
 }
 
+/** A ticker just added to the watchlist. */
+export interface WatchlistAddedDto {
+  ticker: string;
+  name: string | null;
+  /** Price when added; null when no quote was available (filled later). */
+  addedPrice: number | null;
+  addedPriceAt: string | null;
+  addedAt: string;
+}
+
 /** A single lot within a position, enriched with live pricing. */
 export interface PortfolioLot {
   id: string;
