@@ -27,12 +27,14 @@ from .base import ProviderUnavailableError
 from .refresh import (
     US_SYMBOLS,
     BackgroundRefresher,
+    FreshnessCheck,
     RefreshPolicy,
     RefreshStateRepository,
     get_background_refresher,
     hold_lease,
-    is_due,
     mark_refreshed,
+    refresh_policy,
+    shared_state_repository,
 )
 from .repository import shared_pool
 from .service import get_finnhub_provider
@@ -307,11 +309,16 @@ class SymbolService:
         self._fetch_list = fetch_list
         self._states = states
         self._symbols = symbols
-        self._refresher = refresher
         self._policy = policy
         self._clock = clock
-        self._check_every = check_every
-        self._next_check: datetime | None = None
+        self._freshness = FreshnessCheck(
+            US_SYMBOLS,
+            states=states,
+            refresher=refresher,
+            policy=policy,
+            clock=clock,
+            check_every=check_every,
+        )
 
     def search(self, query: str, limit: int = MAX_RESULTS) -> SymbolSearchResponse:
         """Ranked matches from Postgres (no Finnhub calls), never failing.
@@ -332,25 +339,8 @@ class SymbolService:
         return SymbolSearchResponse(results=results, ready=ready)
 
     def ensure_fresh(self) -> None:
-        """Start a background refresh if the list is due; never blocks on it.
-
-        The stored state is read at most once a minute, so searching as you
-        type doesn't add a query per keystroke.
-        """
-        now = self._clock()
-        if self._next_check is not None and now < self._next_check:
-            return
-        self._next_check = now + self._check_every
-        states = self._states()
-        if states is None:
-            return
-        try:
-            state = states.get(US_SYMBOLS)
-        except psycopg.Error as exc:
-            logger.warning("symbol list state read failed: %s", exc)
-            return
-        if is_due(state, now, self._policy):
-            self._refresher.submit(US_SYMBOLS, self.refresh)
+        """Start a background refresh if the list is due; never blocks on it."""
+        self._freshness.ensure_fresh(self.refresh)
 
     def refresh(self) -> bool:
         """Reload the list if due and the lease is ours; True when replaced."""
@@ -381,23 +371,9 @@ class SymbolService:
         return replaced
 
 
-def shared_state_repository() -> RefreshStateRepository | None:
-    pool = shared_pool()
-    return RefreshStateRepository(pool) if pool is not None else None
-
-
 def shared_symbol_repository() -> SymbolRepository | None:
     pool = shared_pool()
     return SymbolRepository(pool) if pool is not None else None
-
-
-def refresh_policy(max_age: timedelta) -> RefreshPolicy:
-    settings = get_settings()
-    return RefreshPolicy(
-        max_age=max_age,
-        retry_after=timedelta(minutes=settings.market_refresh_retry_minutes),
-        stale_after=timedelta(minutes=settings.market_refresh_stale_minutes),
-    )
 
 
 @lru_cache

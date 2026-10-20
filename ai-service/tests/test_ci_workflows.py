@@ -97,6 +97,7 @@ def test_ci_runs_the_postgres_gated_repository_tests() -> None:
         "tests/test_report_repository_pg.py",
         "tests/test_market_repository_pg.py",
         "tests/test_market_symbols_pg.py",
+        "tests/test_market_earnings_pg.py",
     ):
         assert test in step["run"]
     assert 'grep -q "SKIPPED"' in step["run"]  # skipped tests fail the job

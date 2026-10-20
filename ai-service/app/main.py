@@ -16,6 +16,7 @@ from app.errors import AppError
 from app.logging_config import configure_logging
 from app.routers import (
     chat,
+    earnings,
     health,
     history,
     market,
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
         profiles.router,
         tickers.router,
         symbols.router,
+        earnings.router,
         rag.router,
         chat.router,
         report.router,

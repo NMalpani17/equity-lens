@@ -1,7 +1,7 @@
 """Finnhub market-data provider (primary)."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 
@@ -9,6 +9,7 @@ from app.models.quote import Quote
 from app.services.rag.rate_limit import SlidingWindowLimiter
 
 from .base import (
+    BudgetSpentError,
     MarketDataProvider,
     ProviderUnavailableError,
     QuoteNotFoundError,
@@ -79,7 +80,7 @@ class FinnhubProvider(MarketDataProvider):
     def _send(self, path: str, params: dict[str, str]) -> httpx.Response:
         """One API call (one unit of the budget). Redirects are not followed."""
         if self._limiter is not None and not self._limiter.try_acquire():
-            raise ProviderUnavailableError("finnhub call budget for this minute spent")
+            raise BudgetSpentError("finnhub call budget for this minute spent")
         url = f"{self._base_url}{path}"
         try:
             response = httpx.get(
@@ -104,6 +105,22 @@ class FinnhubProvider(MarketDataProvider):
                 f"finnhub client error: {response.status_code}"
             )
         return response
+
+    def get_earnings_calendar(self, start: date, end: date) -> list[dict]:
+        """Scheduled earnings from ``start`` to ``end`` (inclusive), one call.
+
+        The free plan returns at most 1,500 rows and keeps the *latest* dates,
+        so a full answer means the window was truncated (see earnings.py).
+        """
+        if not self._api_key:
+            raise ProviderUnavailableError("finnhub api key not configured")
+        data = self._get_json(
+            "/calendar/earnings", {"from": start.isoformat(), "to": end.isoformat()}
+        )
+        rows = data.get("earningsCalendar") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            raise ProviderUnavailableError("finnhub earnings calendar had no rows list")
+        return rows
 
     def get_symbol_list(self, exchange: str = "US") -> list[dict]:
         """Every symbol Finnhub lists for ``exchange``, in one API call.

@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     # longer than the stale window is assumed dead.
     market_refresh_retry_minutes: int = 30
     market_refresh_stale_minutes: int = 10
+    # Earnings calendar: the next this-many days, reloaded (in the background)
+    # when a request finds it older than earnings_refresh_hours. One reload
+    # splits the range into windows under Finnhub's 1,500-row cap, spending at
+    # most earnings_refresh_max_calls calls, paced so users keep the rest of
+    # the minute's budget.
+    earnings_days: int = 60
+    earnings_refresh_hours: int = 24
+    earnings_refresh_max_calls: int = 40
+    earnings_refresh_calls_per_minute: int = 10
 
     # --- Database (Supabase Postgres) ---
     # The RAG state tables are owned by Prisma (api/prisma) and accessed here via

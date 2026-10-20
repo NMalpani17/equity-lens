@@ -20,10 +20,14 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+import psycopg
 from psycopg import Connection
 from psycopg_pool import ConnectionPool
 
+from app.config import get_settings
 from app.services.rag.repository import utcnow
+
+from .repository import shared_pool
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +221,65 @@ class BackgroundRefresher:
     def shutdown(self) -> None:
         """Stop taking jobs; a running one is abandoned (its lease goes stale)."""
         self._executor.shutdown(wait=False, cancel_futures=True)
+
+
+class FreshnessCheck:
+    """Starts a background refresh of one dataset when it's due.
+
+    The stored state is read at most once per ``check_every``, so a request
+    that asks on every call (search as you type) adds no query per call.
+    """
+
+    def __init__(
+        self,
+        dataset: str,
+        *,
+        states: Callable[[], RefreshStateRepository | None],
+        refresher: BackgroundRefresher,
+        policy: RefreshPolicy,
+        clock: Callable[[], datetime] = utcnow,
+        check_every: timedelta = timedelta(seconds=60),
+    ) -> None:
+        self._dataset = dataset
+        self._states = states
+        self._refresher = refresher
+        self._policy = policy
+        self._clock = clock
+        self._check_every = check_every
+        self._next_check: datetime | None = None
+        self._lock = threading.Lock()
+
+    def ensure_fresh(self, job: Callable[[], object]) -> None:
+        """Submit ``job`` if the dataset is due; never waits for it."""
+        now = self._clock()
+        with self._lock:
+            if self._next_check is not None and now < self._next_check:
+                return
+            self._next_check = now + self._check_every
+        states = self._states()
+        if states is None:
+            return
+        try:
+            state = states.get(self._dataset)
+        except psycopg.Error as exc:
+            logger.warning("%s state read failed: %s", self._dataset, exc)
+            return
+        if is_due(state, now, self._policy):
+            self._refresher.submit(self._dataset, job)
+
+
+def refresh_policy(max_age: timedelta) -> RefreshPolicy:
+    settings = get_settings()
+    return RefreshPolicy(
+        max_age=max_age,
+        retry_after=timedelta(minutes=settings.market_refresh_retry_minutes),
+        stale_after=timedelta(minutes=settings.market_refresh_stale_minutes),
+    )
+
+
+def shared_state_repository() -> RefreshStateRepository | None:
+    pool = shared_pool()
+    return RefreshStateRepository(pool) if pool is not None else None
 
 
 _refresher: BackgroundRefresher | None = None

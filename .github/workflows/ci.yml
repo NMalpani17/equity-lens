@@ -115,7 +115,8 @@ jobs:
         run: |
           set -o pipefail
           tests=(tests/test_rag_repository_pg.py tests/test_report_repository_pg.py
-            tests/test_market_repository_pg.py tests/test_market_symbols_pg.py)
+            tests/test_market_repository_pg.py tests/test_market_symbols_pg.py
+            tests/test_market_earnings_pg.py)
           pytest -p no:cacheprovider -rs "${tests[@]}" | tee pytest.log
           if grep -q "SKIPPED" pytest.log; then
             echo "::error::Postgres-gated tests were skipped."
