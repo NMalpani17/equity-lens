@@ -125,6 +125,13 @@ Click **Try demo**; no sign-up needed.
   when known. Refreshed once a day in the background from Finnhub's calendar,
   split into windows under its 1,500-row cap so no early date is dropped.
   [How it works](docs/architecture.md#earnings-calendar).
+
+  <p>
+    <img src="docs/images/watchlist.png" width="100%" alt="Watchlist page: an Add a company search box, then AMD (Advanced Micro Devices, Inc.) and JPM (JPMorgan Chase &amp; Co) with price, today's change in green or red, change since added, next earnings date, report status with View report, and Ask AI and I bought it buttons; below, Upcoming earnings for the next 60 days lists TSLA, MSFT, AAPL, AMD and NVDA with dates, after-close timing, EPS estimates and Holding or Watching tags, and VOO and JPM with no date">
+    <br>
+    <em>The watchlist, with upcoming earnings for holdings and watched companies.</em>
+  </p>
+
 - **Accounts and instant demo.** Supabase Auth with email and password or
   Google, password reset and account deletion. Forms validate as you go, and
   errors never reveal whether an email is registered. "Try demo" gives each

@@ -2,6 +2,12 @@ import type { ReactNode } from "react";
 import { CalendarDays, Loader2 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useUpcomingEarnings } from "@/hooks/useUpcomingEarnings";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { earningsHourLabel, type EarningsSource } from "@/lib/marketApi";
@@ -34,10 +40,35 @@ export function UpcomingEarnings({ version }: { version: number }) {
       </div>
       <Card className="overflow-hidden">
         <CardContent className="p-0">
-          <Body state={state} />
+          <TooltipProvider>
+            <Body state={state} />
+          </TooltipProvider>
         </CardContent>
       </Card>
     </section>
+  );
+}
+
+const EPS_ESTIMATE_HINT = "Analysts' expected earnings per share for the quarter.";
+
+/** "EPS estimate $1.97"; the label explains itself on hover or keyboard focus. */
+function EpsEstimate({ value }: { value: number | null }) {
+  if (value === null) return <>No EPS estimate</>;
+  return (
+    <span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            className="cursor-help rounded-sm underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            EPS estimate
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{EPS_ESTIMATE_HINT}</TooltipContent>
+      </Tooltip>{" "}
+      <span className="tabular-nums text-foreground">{formatCurrency(value)}</span>
+    </span>
   );
 }
 
@@ -86,7 +117,7 @@ function Body({ state }: { state: ReturnType<typeof useUpcomingEarnings> }) {
             return (
               <li
                 key={event.ticker}
-                className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-4 gap-y-1 px-4 py-3 text-sm sm:grid-cols-[8rem_minmax(0,1fr)_auto_auto] sm:items-center"
+                className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-4 gap-y-1 px-4 py-3 text-sm sm:grid-cols-[8rem_minmax(0,1fr)_11rem_9.5rem] sm:items-center"
               >
                 <div className="font-medium tabular-nums">
                   {formatDate(event.date)}
@@ -96,18 +127,19 @@ function Body({ state }: { state: ReturnType<typeof useUpcomingEarnings> }) {
                     </span>
                   )}
                 </div>
-                <div className="min-w-0">
-                  <span className="font-semibold">{event.ticker}</span>
+                <div
+                  data-testid="earnings-company"
+                  className="flex min-w-0 items-baseline gap-2"
+                >
+                  <span className="shrink-0 font-semibold">{event.ticker}</span>
                   {event.name && (
-                    <span className="ml-2 truncate text-muted-foreground">
+                    <span className="min-w-0 truncate text-muted-foreground">
                       {event.name}
                     </span>
                   )}
                 </div>
                 <div className="col-start-2 text-xs text-muted-foreground sm:col-start-auto sm:text-right sm:text-sm">
-                  {event.epsEstimate !== null
-                    ? `EPS est. ${formatCurrency(event.epsEstimate)}`
-                    : "No EPS estimate"}
+                  <EpsEstimate value={event.epsEstimate} />
                 </div>
                 <div className="col-start-2 sm:col-start-auto">
                   <span className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground">

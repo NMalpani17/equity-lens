@@ -130,7 +130,7 @@ describe("Upcoming earnings", () => {
     expect(msft).toHaveTextContent("Oct 28, 2026");
     expect(msft).toHaveTextContent("After close");
     expect(msft).toHaveTextContent("MSFT");
-    expect(msft).toHaveTextContent("EPS est. $3.60");
+    expect(msft).toHaveTextContent("EPS estimate $3.60");
     expect(msft).toHaveTextContent("Holding");
     expect(amd).toHaveTextContent("Nov 3, 2026");
     expect(amd).toHaveTextContent("No EPS estimate");
@@ -138,6 +138,30 @@ describe("Upcoming earnings", () => {
     expect(
       earningsSection().getByText("No date in the next 60 days: VOO, JPM"),
     ).toBeInTheDocument();
+  });
+
+  it("shows the company name right next to the ticker", async () => {
+    renderPage();
+
+    const list = await earningsList();
+    const [msft] = list.getAllByRole("listitem");
+    const company = within(msft!).getByTestId("earnings-company");
+    expect(company).toHaveTextContent("MSFTMicrosoft Corp");
+    expect(within(company).getByText("Microsoft Corp")).toHaveClass("truncate");
+  });
+
+  it("explains the EPS estimate on focus", async () => {
+    renderPage();
+
+    const list = await earningsList();
+    const label = list.getAllByText("EPS estimate")[0]!;
+    expect(label).toHaveAttribute("tabindex", "0");
+
+    fireEvent.focus(label);
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Analysts' expected earnings per share for the quarter.",
+    );
   });
 
   it("says when nothing is scheduled", async () => {

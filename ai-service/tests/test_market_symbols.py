@@ -146,7 +146,7 @@ def test_parse_keeps_stocks_etfs_and_adrs_only() -> None:
             entry("XYZ", "NO TYPE", ""),
             entry("NSRGY", "NESTLE SA-SPONS ADR", "ADR", "OOTC"),
         ]
-    )
+    ).rows
 
     assert [(r.ticker, r.type, r.exchange) for r in rows] == [
         ("MSFT", "stock", "XNAS"),
@@ -160,7 +160,7 @@ def test_parse_keeps_stocks_etfs_and_adrs_only() -> None:
 
 
 def test_parse_drops_bad_tickers_and_duplicates() -> None:
-    rows = parse_symbol_list(
+    parsed = parse_symbol_list(
         [
             entry("BRK.B", "BERKSHIRE HATHAWAY INC-CL B"),
             entry("msft", "MICROSOFT CORP"),
@@ -172,8 +172,106 @@ def test_parse_drops_bad_tickers_and_duplicates() -> None:
         ]
     )
 
-    assert [r.ticker for r in rows] == ["BRK.B", "MSFT"]
-    assert rows[1].name == "Microsoft Corp"
+    assert [r.ticker for r in parsed.rows] == ["BRK.B", "MSFT"]
+    assert parsed.rows[1].name == "Microsoft Corp"
+    # Filtered on purpose, not skipped: the count is for rows that broke.
+    assert parsed.skipped == 0
+
+
+# Real descriptions from Finnhub's list (2026-10-20) that crashed the load:
+# a hyphen standing alone or at a word's edge left an empty word.
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("CBRE GROUP INC - A", "Cbre Group Inc - A"),
+        ("MASTERCARD INC - A", "Mastercard Inc - A"),
+        ("POSCO HOLDINGS INC -SPON ADR", "Posco Holdings Inc -Spon ADR"),
+        ("BIO-RAD LABORATORIES -CL B", "Bio-Rad Laboratories -Cl B"),
+        ("LI BANG INT CORP I- A", "Li Bang Int Corp I- A"),
+        ("ABENGOA SA- B SHARES", "Abengoa SA- B Shares"),
+        ("MCRAE INDUSTRIES  -CL A", "Mcrae Industries -Cl A"),
+        ("ALM BRAND A/S - ADR", "Alm Brand A/S - ADR"),
+    ],
+)
+def test_display_name_keeps_stray_hyphens(raw: str, expected: str) -> None:
+    assert display_name(raw, "X") == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", "ZZZ"),  # empty
+        ("   ", "ZZZ"),  # spaces only
+        ("-", "ZZZ"),  # punctuation only
+        ("- / .", "ZZZ"),
+        ("A--B", "A--B"),  # a double hyphen
+        ("  X   CORP  ", "X Corp"),  # extra spaces, a one-character word
+        ("A B C", "A B C"),
+        ("ROYAL BANK OF CANADA S.A.", "Royal Bank of Canada S.A."),  # initials
+        ("MCDONALD'S CORP", "Mcdonald's Corp"),
+        ("&", "ZZZ"),  # no letter or digit
+    ],
+)
+def test_display_name_edge_cases(raw: str, expected: str) -> None:
+    assert display_name(raw, "ZZZ") == expected
+
+
+def test_parse_handles_odd_descriptions() -> None:
+    parsed = parse_symbol_list(
+        [
+            entry("CBRE", "CBRE GROUP INC - A"),
+            entry("NONAME", ""),
+            entry("DASH", "-"),
+            entry("SPACES", "   "),
+        ]
+    )
+
+    assert parsed.skipped == 0
+    by_ticker = {r.ticker: r for r in parsed.rows}
+    assert by_ticker["CBRE"].name == "Cbre Group Inc - A"
+    assert by_ticker["CBRE"].search_name == "cbre group inc a"
+    assert by_ticker["NONAME"].name == "NONAME"
+    assert by_ticker["NONAME"].search_name == "noname"
+    assert by_ticker["DASH"].name == "DASH"
+    assert by_ticker["SPACES"].name_raw == ""
+
+
+def test_a_row_that_breaks_the_parser_is_skipped_and_counted(monkeypatch) -> None:
+    from app.services.market_data import symbols
+
+    real = symbols.display_name
+
+    def flaky(raw: str, ticker: str) -> str:
+        if ticker in {"BAD1", "BAD2"}:
+            raise IndexError("string index out of range")
+        return real(raw, ticker)
+
+    monkeypatch.setattr(symbols, "display_name", flaky)
+
+    parsed = parse_symbol_list(
+        [
+            entry("MSFT", "MICROSOFT CORP"),
+            entry("BAD1", "WHATEVER"),
+            entry("AAPL", "APPLE INC"),
+            entry("BAD2", "WHATEVER"),
+        ]
+    )
+
+    assert [r.ticker for r in parsed.rows] == ["MSFT", "AAPL"]
+    assert parsed.skipped == 2
+    assert parsed.skipped_examples == ["BAD1", "BAD2"]
+
+
+def test_skipped_examples_are_capped() -> None:
+    from app.services.market_data.symbols import SKIPPED_EXAMPLES
+
+    # An unhashable "type" makes the row raise inside the parser.
+    bad = [{"symbol": f"B{i}", "type": ["odd"], "description": "X"} for i in range(9)]
+
+    parsed = parse_symbol_list(bad)
+
+    assert parsed.skipped == 9
+    assert len(parsed.skipped_examples) == SKIPPED_EXAMPLES
 
 
 # --- Refresh policy --------------------------------------------------------------
@@ -289,6 +387,24 @@ def test_refresh_replaces_the_list() -> None:
     assert make_service(states, symbols, full_list).refresh() is True
     assert len(symbols.replaced) == MIN_SYMBOLS
     assert states.failures == []
+
+
+def test_one_bad_row_never_fails_the_load_and_is_logged(caplog) -> None:
+    import logging
+
+    states, symbols = FakeStates(), FakeSymbols()
+    bad = {"symbol": "ODD", "type": ["odd"], "description": "X"}  # raises in parsing
+
+    with caplog.at_level(logging.INFO, logger="app.services.market_data.symbols"):
+        replaced = make_service(states, symbols, lambda: [*full_list(), bad]).refresh()
+
+    assert replaced is True
+    assert len(symbols.replaced) == MIN_SYMBOLS
+    assert states.failures == []
+    assert "skipped 1 rows that couldn't be parsed (e.g. ODD)" in caplog.text
+    assert (
+        f"symbol list refreshed: {MIN_SYMBOLS} symbols, 1 rows skipped" in caplog.text
+    )
 
 
 def test_refresh_does_nothing_without_the_lease() -> None:

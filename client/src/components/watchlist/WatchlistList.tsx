@@ -21,9 +21,37 @@ const PRICE_STATUS_LABEL: Record<PriceStatus, string> = {
   unavailable: "price unavailable",
 };
 
-// Company | Price | Today | Since added | Next earnings | Report | Actions
-const GRID =
-  "md:grid md:grid-cols-[minmax(0,2fr)_repeat(5,minmax(0,1fr))_auto] md:items-center md:gap-4";
+type Align = "left" | "right";
+type ColumnKey =
+  "company" | "price" | "today" | "sinceAdded" | "nextEarnings" | "report" | "actions";
+
+/**
+ * The columns, in order, with one alignment each: the header cell and every
+ * value under it use it, so they can't disagree. Numbers right, text left.
+ */
+const COLUMNS: readonly { key: ColumnKey; label: string; align: Align }[] = [
+  { key: "company", label: "Company", align: "left" },
+  { key: "price", label: "Price", align: "right" },
+  { key: "today", label: "Today", align: "right" },
+  { key: "sinceAdded", label: "Since added", align: "right" },
+  { key: "nextEarnings", label: "Next earnings", align: "left" },
+  { key: "report", label: "Report", align: "left" },
+  { key: "actions", label: "Actions", align: "right" },
+];
+
+const column = (key: ColumnKey) => COLUMNS.find((c) => c.key === key)!;
+
+/** From md up: right-aligned text (and flex content) for right columns. */
+function alignClass(align: Align): string {
+  return align === "right" ? "md:text-right md:justify-end" : "md:text-left";
+}
+
+// One grid for the whole list (column tracks defined once); the header and
+// every row are subgrids of it, so each value sits under its own header even
+// though the actions column sizes to its content.
+const LIST_GRID =
+  "md:grid md:grid-cols-[minmax(0,2fr)_repeat(5,minmax(0,1fr))_auto] md:gap-x-4";
+const ROW_GRID = "md:col-span-full md:grid md:grid-cols-subgrid md:items-center";
 
 interface WatchlistListProps {
   rows: WatchlistRow[];
@@ -45,20 +73,19 @@ export function WatchlistList({
   renderActions,
 }: WatchlistListProps) {
   return (
-    <div>
+    <div className={LIST_GRID} data-testid="watchlist-grid">
       <div
         aria-hidden="true"
-        className={`hidden border-b px-4 py-2 text-xs font-medium text-muted-foreground ${GRID}`}
+        data-testid="watchlist-header"
+        className={`hidden border-b px-4 py-2 text-xs font-medium text-muted-foreground ${ROW_GRID}`}
       >
-        <span>Company</span>
-        <span className="text-right">Price</span>
-        <span className="text-right">Today</span>
-        <span className="text-right">Since added</span>
-        <span>Next earnings</span>
-        <span>Report</span>
-        <span className="text-right">Actions</span>
+        {COLUMNS.map((c) => (
+          <span key={c.key} data-column={c.key} className={alignClass(c.align)}>
+            {c.label}
+          </span>
+        ))}
       </div>
-      <ul aria-label="Watchlist" className="divide-y">
+      <ul aria-label="Watchlist" className={`divide-y ${ROW_GRID}`}>
         {rows.map((row) => (
           <WatchlistItem
             key={row.ticker}
@@ -89,10 +116,13 @@ function WatchlistItem({
   return (
     <li
       aria-label={label === row.ticker ? row.ticker : `${label} (${row.ticker})`}
-      className="px-4 py-3"
+      className={`px-4 py-3 ${ROW_GRID}`}
     >
-      <div className={`flex flex-col gap-3 ${GRID}`}>
-        <div className="min-w-0">
+      <div className={`flex flex-col gap-3 ${ROW_GRID}`}>
+        <div
+          data-column="company"
+          className={`min-w-0 ${alignClass(column("company").align)}`}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold">{row.ticker}</h3>
             {row.inPortfolio && (
@@ -107,7 +137,7 @@ function WatchlistItem({
         </div>
 
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3 md:contents">
-          <Field label="Price" align="right">
+          <Field column="price">
             {row.price !== null ? (
               formatCurrency(row.price)
             ) : (
@@ -116,7 +146,7 @@ function WatchlistItem({
               </span>
             )}
           </Field>
-          <Field label="Today" align="right">
+          <Field column="today">
             {row.change !== null && row.changePercent !== null ? (
               <span className={changeColor(row.change)}>
                 {formatSignedCurrency(row.change)}
@@ -128,7 +158,7 @@ function WatchlistItem({
               "—"
             )}
           </Field>
-          <Field label="Since added" align="right">
+          <Field column="sinceAdded">
             {row.changeSinceAddedPercent !== null && row.changeSinceAdded !== null ? (
               <span>
                 <span className={changeColor(row.changeSinceAdded)}>
@@ -142,7 +172,7 @@ function WatchlistItem({
               "—"
             )}
           </Field>
-          <Field label="Next earnings">
+          <Field column="nextEarnings">
             {row.nextEarnings ? (
               <span>
                 {formatDate(row.nextEarnings.date)}
@@ -156,12 +186,15 @@ function WatchlistItem({
               <span className="text-muted-foreground">None scheduled</span>
             )}
           </Field>
-          <Field label="Report">
+          <Field column="report">
             <ReportCell row={row} />
           </Field>
         </dl>
 
-        <div className="flex flex-wrap items-center gap-1 md:justify-end">
+        <div
+          data-column="actions"
+          className={`flex flex-wrap items-center gap-1 ${alignClass(column("actions").align)}`}
+        >
           {extraActions}
           <Button variant="outline" size="sm" onClick={() => onBought(row)}>
             <ShoppingCart />I bought it
@@ -184,17 +217,11 @@ function WatchlistItem({
   );
 }
 
-function Field({
-  label,
-  align,
-  children,
-}: {
-  label: string;
-  align?: "right";
-  children: ReactNode;
-}) {
+/** One value, labelled on phones; from md up it's a cell under its header. */
+function Field({ column: key, children }: { column: ColumnKey; children: ReactNode }) {
+  const { label, align } = column(key);
   return (
-    <div className={align === "right" ? "md:text-right" : undefined}>
+    <div data-column={key} className={alignClass(align)}>
       <dt className="text-xs text-muted-foreground md:sr-only">{label}</dt>
       <dd className="tabular-nums">{children}</dd>
     </div>

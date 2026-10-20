@@ -459,10 +459,13 @@ from it).
 - **The list.** `/stock/symbol?exchange=US` is one API call. It answers with a
   redirect to a signed file on `static2.finnhub.io`, which is followed by hand
   only to an `https` `*.finnhub.io` host and **without** the API token; the
-  signed URL is never logged. Of about 31,000 rows, common stocks, ETFs
-  (`ETP`) and ADRs with valid tickers are kept (25,029 stocks and ETFs plus
-  ADRs, about 27,000). Names are made readable ("MICROSOFT CORP" →
-  "Microsoft Corp") and a lowercased search key is stored.
+  signed URL is never logged. Of 31,133 rows, common stocks, ETFs (`ETP`)
+  and ADRs with valid tickers are kept: 27,264 on 2026-10-20 (18,415 stocks,
+  6,614 ETFs, 2,235 ADRs). Names are made readable word by word, keeping the
+  punctuation between words ("MICROSOFT CORP" → "Microsoft Corp", "CBRE GROUP
+  INC - A" → "Cbre Group Inc - A"), and a lowercased search key is stored.
+  A row that still makes parsing raise is skipped and counted, never failing
+  the load; the refresh logs the count and a few of the tickers.
 - **Refresh, on demand.** A search that finds the list older than 24 hours
   starts a background reload and answers from the stored list meanwhile; the
   state is read at most once a minute. There is no cron. The reload swaps the
