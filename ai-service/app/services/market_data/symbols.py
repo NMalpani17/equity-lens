@@ -150,12 +150,25 @@ def normalize_search(text: str) -> str:
     return _NON_SEARCH_CHARS.sub(" ", text.lower()).strip()
 
 
+# A word to title-case: letters and digits, plus the "&", "'" and "." that
+# belong inside one ("S&P", "MCDONALD'S", "AMAZON.COM"). Everything else
+# (spaces, hyphens, slashes) is kept as is between words, so "INC - A" and
+# "-SPON ADR" can't produce an empty word.
+_WORD_RUN = re.compile(r"[A-Za-z0-9&'.]+")
+# Dotted initials stay upper-case: "S.A.", "U.S.".
+_INITIALS = re.compile(r"^(?:[A-Za-z]\.)+[A-Za-z]?\.?$")
+# At most this many skipped tickers are named in the log.
+SKIPPED_EXAMPLES = 5
+
+
 def _word(token: str, first: bool) -> str:
+    if not token:
+        return token
     if token in _SPECIAL:
         return _SPECIAL[token]
     if token in _ACRONYMS or "&" in token or any(c.isdigit() for c in token):
         return token
-    if len(token) == 1:
+    if len(token) == 1 or _INITIALS.match(token):
         return token
     lower = token.lower()
     if not first and lower in _SMALL_WORDS:
@@ -164,40 +177,75 @@ def _word(token: str, first: bool) -> str:
 
 
 def display_name(raw: str, ticker: str) -> str:
-    """A readable name from Finnhub's upper-case description, else the ticker."""
-    words = raw.split()
-    if not words:
+    """A readable name from Finnhub's upper-case description, else the ticker.
+
+    Each word is title-cased; the punctuation between words is kept as given
+    ("CBRE GROUP INC - A" -> "Cbre Group Inc - A"). A description without a
+    letter or digit is no name at all.
+    """
+    text = " ".join(raw.split())
+    if not any(c.isalnum() for c in text):
         return ticker
-    out = []
-    for index, word in enumerate(words):
-        parts = word.split("-")
-        out.append(
-            "-".join(_word(p, index == 0 and i == 0) for i, p in enumerate(parts))
-        )
-    return " ".join(out)
+    first = True
+
+    def title(match: re.Match[str]) -> str:
+        nonlocal first
+        word = _word(match.group(), first)
+        first = False
+        return word
+
+    return _WORD_RUN.sub(title, text)
 
 
-def parse_symbol_list(payload: Iterable[Any]) -> list[SymbolRow]:
-    """The rows we keep: known types and valid tickers, first row per ticker."""
+@dataclass(frozen=True)
+class ParsedSymbols:
+    rows: list[SymbolRow]
+    # Rows that broke the parser: skipped so one bad row can't fail the load.
+    # (Rows filtered on purpose, such as REITs or a duplicate, aren't counted.)
+    skipped: int
+    skipped_examples: list[str]
+
+
+def _parse_row(item: dict) -> SymbolRow | None:
+    """The row we keep for one entry, or None if it's filtered out."""
+    kind = SYMBOL_TYPES.get(item.get("type") or "")
+    ticker = str(item.get("symbol") or "").strip().upper()
+    if kind is None or not TICKER_RE.match(ticker):
+        return None
+    raw = " ".join(str(item.get("description") or "").split())
+    return SymbolRow(
+        ticker=ticker,
+        name=display_name(raw, ticker),
+        name_raw=raw,
+        search_name=normalize_search(raw) or ticker.lower(),
+        type=kind,
+        exchange=str(item.get("mic") or "") or None,
+    )
+
+
+def parse_symbol_list(payload: Iterable[Any]) -> ParsedSymbols:
+    """The rows we keep: known types and valid tickers, first row per ticker.
+
+    A row that makes parsing raise is skipped and counted, never failing the
+    whole list.
+    """
     rows: dict[str, SymbolRow] = {}
+    skipped = 0
+    examples: list[str] = []
     for item in payload:
         if not isinstance(item, dict):
             continue
-        kind = SYMBOL_TYPES.get(item.get("type") or "")
-        ticker = str(item.get("symbol") or "").strip().upper()
-        if kind is None or not TICKER_RE.match(ticker) or ticker in rows:
+        try:
+            row = _parse_row(item)
+        except Exception as exc:  # one odd row must never fail the load
+            skipped += 1
+            if len(examples) < SKIPPED_EXAMPLES:
+                examples.append(str(item.get("symbol") or "?"))
+            logger.debug("skipped symbol row %r: %s", item.get("symbol"), exc)
             continue
-        raw = " ".join(str(item.get("description") or "").split())
-        name = display_name(raw, ticker)
-        rows[ticker] = SymbolRow(
-            ticker=ticker,
-            name=name,
-            name_raw=raw,
-            search_name=normalize_search(raw) or ticker.lower(),
-            type=kind,
-            exchange=str(item.get("mic") or "") or None,
-        )
-    return list(rows.values())
+        if row is not None and row.ticker not in rows:
+            rows[row.ticker] = row
+    return ParsedSymbols(list(rows.values()), skipped, examples)
 
 
 class SymbolRepository:
@@ -351,7 +399,14 @@ class SymbolService:
         if refresh_id is None:
             return False
         try:
-            rows = parse_symbol_list(self._fetch_list())
+            parsed = parse_symbol_list(self._fetch_list())
+            rows = parsed.rows
+            if parsed.skipped:
+                logger.warning(
+                    "symbol list: skipped %d rows that couldn't be parsed (e.g. %s)",
+                    parsed.skipped,
+                    ", ".join(parsed.skipped_examples),
+                )
             floor = max(MIN_SYMBOLS, symbols.count() // 2)
             if len(rows) < floor:
                 raise ProviderUnavailableError(
@@ -365,7 +420,11 @@ class SymbolService:
             states.fail(US_SYMBOLS, refresh_id, str(exc))
             return False
         if replaced:
-            logger.info("symbol list refreshed: %d symbols", len(rows))
+            logger.info(
+                "symbol list refreshed: %d symbols, %d rows skipped",
+                len(rows),
+                parsed.skipped,
+            )
         else:
             logger.warning("symbol list refresh lost its lease; nothing written")
         return replaced

@@ -77,7 +77,7 @@ def rows(*tickers: str):
             {"symbol": t, "description": f"{t} CORP", "type": "Common Stock"}
             for t in tickers
         ]
-    )
+    ).rows
 
 
 def stored(db: Db) -> list[str]:
@@ -198,7 +198,9 @@ def searchable(db: Db) -> Db:
         for t, d, k, m in LISTED + OTC
     ]
     lease = db.states.claim(US_SYMBOLS, policy(), now=T0)
-    assert db.symbols.replace_all(parse_symbol_list(entries), refresh_id=lease, now=T0)
+    assert db.symbols.replace_all(
+        parse_symbol_list(entries).rows, refresh_id=lease, now=T0
+    )
     return db
 
 
