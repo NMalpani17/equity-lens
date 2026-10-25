@@ -4,7 +4,6 @@ import { AlertTriangle, Eye, Loader2, MessageSquare, RefreshCw, X } from "lucide
 
 import { DemoBanner } from "@/components/DemoBanner";
 import { Header } from "@/components/Header";
-import { HoldingFormDialog } from "@/components/portfolio/HoldingFormDialog";
 import { NOTICE_MS } from "@/components/portfolio/Dashboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,17 +16,16 @@ import { WatchlistList } from "./WatchlistList";
 
 /**
  * Companies the user is considering (not owned): live prices, change since
- * added, next earnings date and report status, with shortcuts to research or
- * record a purchase. Watching a stock never changes the portfolio.
+ * added, next earnings date and report status, with a shortcut to research
+ * it. Watching a stock never changes the portfolio.
  */
 export function WatchlistPage() {
   const { isDemo } = useAuth();
   const watchlist = useWatchlist();
   const { state } = watchlist;
-  const [buying, setBuying] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  // Bumped when the watchlist or holdings change, so earnings reload too.
+  // Bumped when the watchlist changes or is refreshed, so earnings reload too.
   const [version, setVersion] = useState(0);
   const changed = () => setVersion((v) => v + 1);
 
@@ -157,10 +155,6 @@ export function WatchlistPage() {
               <WatchlistList
                 rows={data.items}
                 onRemove={remove}
-                onBought={(row) => {
-                  setNotice(null);
-                  setBuying(row.ticker);
-                }}
                 renderActions={(row) => (
                   <Button asChild variant="outline" size="sm">
                     <Link
@@ -179,17 +173,6 @@ export function WatchlistPage() {
 
         <UpcomingEarnings version={version} />
       </main>
-
-      <HoldingFormDialog
-        open={buying !== null}
-        onOpenChange={(open) => !open && setBuying(null)}
-        lot={null}
-        initialTicker={buying}
-        onSaved={() => {
-          setNotice(`Added ${buying} to your portfolio.`);
-          refresh();
-        }}
-      />
     </div>
   );
 }
