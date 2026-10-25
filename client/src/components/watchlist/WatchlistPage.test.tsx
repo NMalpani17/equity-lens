@@ -11,13 +11,9 @@ vi.mock("@/lib/marketApi", async (importOriginal) => ({
   removeFromWatchlist: vi.fn(),
   getUpcomingEarnings: vi.fn(),
 }));
-vi.mock("@/lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/api")>()),
-  createHolding: vi.fn(),
-}));
 
 import { useAuth } from "@/context/auth-context";
-import { ApiError, createHolding } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import * as marketApi from "@/lib/marketApi";
 import type { UpcomingEarnings, WatchlistRow } from "@/lib/marketApi";
 import { WatchlistPage } from "./WatchlistPage";
@@ -377,33 +373,6 @@ describe("WatchlistPage", () => {
     expect(api.removeFromWatchlist).toHaveBeenCalledWith("AMD");
   });
 
-  it("opens Add holding with the ticker when you bought it", async () => {
-    vi.mocked(createHolding).mockResolvedValue({} as never);
-    renderPage();
-    await item(/JPM/);
-
-    fireEvent.click(
-      within(await item(/JPMorgan/)).getByRole("button", { name: "I bought it" }),
-    );
-
-    const dialog = await screen.findByRole("dialog", { name: "Add holding" });
-    expect(within(dialog).getByRole("combobox", { name: "Ticker" })).toHaveValue("JPM");
-    fireEvent.change(within(dialog).getByLabelText("Shares"), {
-      target: { value: "3" },
-    });
-    fireEvent.change(within(dialog).getByLabelText("Buy price (USD)"), {
-      target: { value: "300" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add holding" }));
-
-    await waitFor(() =>
-      expect(createHolding).toHaveBeenCalledWith(
-        expect.objectContaining({ ticker: "JPM", shares: 3, buyPrice: 300 }),
-      ),
-    );
-    expect(await screen.findByText("Added JPM to your portfolio.")).toBeInTheDocument();
-  });
-
   it("marks companies the user also holds", async () => {
     api.getWatchlist.mockResolvedValue({
       items: [row({ inPortfolio: true })],
@@ -411,7 +380,9 @@ describe("WatchlistPage", () => {
     });
     renderPage();
 
-    expect(within(await item(/AMD/)).getByText("In portfolio")).toBeInTheDocument();
+    const amd = within(await item(/AMD/));
+    expect(amd.getByText("In portfolio")).toBeInTheDocument();
+    expect(amd.queryByRole("button", { name: "I bought it" })).not.toBeInTheDocument();
   });
 
   it("explains an empty watchlist", async () => {

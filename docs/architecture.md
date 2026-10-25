@@ -515,8 +515,8 @@ scoped to the user.
   `demo_seeds.watchlist_seeded_at`. Claiming it is an `UPDATE` that only
   matches a null marker, so concurrent loads seed once, and demo users from
   before the watchlist get it too.
-- **Shortcuts.** Ask AI opens `/chat?ask=…`, a new chat with the question in
-  the composer, unsent. "I bought it" opens Add holding with the ticker.
+- **Ask AI** opens `/chat?ask=…`, a new chat with the question in the
+  composer, unsent.
 
 ## Earnings calendar
 

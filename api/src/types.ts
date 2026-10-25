@@ -49,7 +49,7 @@ export interface WatchlistRowDto {
   changeSinceAddedPercent: number | null;
   nextEarnings: NextEarningsDto | null;
   report: { status: "ready" | "outdated" | "none"; demoLocked: boolean };
-  /** The user also holds this ticker (after "I bought it"). */
+  /** The user also holds this ticker (shown as "In portfolio"). */
   inPortfolio: boolean;
 }
 

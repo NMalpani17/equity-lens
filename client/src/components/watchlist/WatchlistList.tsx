@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { FileText, Loader2, Lock, ShoppingCart, Trash2 } from "lucide-react";
+import { FileText, Loader2, Lock, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useDemoSignUp } from "@/hooks/useDemoSignUp";
@@ -56,8 +56,7 @@ const ROW_GRID = "md:col-span-full md:grid md:grid-cols-subgrid md:items-center"
 interface WatchlistListProps {
   rows: WatchlistRow[];
   onRemove: (row: WatchlistRow) => Promise<void>;
-  onBought: (row: WatchlistRow) => void;
-  /** Extra per-row actions (e.g. Ask AI), placed before "I bought it". */
+  /** Extra per-row actions (e.g. Ask AI), placed before Remove. */
   renderActions?: (row: WatchlistRow) => ReactNode;
 }
 
@@ -66,12 +65,7 @@ interface WatchlistListProps {
  * card with labelled values; from md up the same rows line up as columns
  * under a header (the labels become screen-reader only).
  */
-export function WatchlistList({
-  rows,
-  onRemove,
-  onBought,
-  renderActions,
-}: WatchlistListProps) {
+export function WatchlistList({ rows, onRemove, renderActions }: WatchlistListProps) {
   return (
     <div className={LIST_GRID} data-testid="watchlist-grid">
       <div
@@ -91,7 +85,6 @@ export function WatchlistList({
             key={row.ticker}
             row={row}
             onRemove={onRemove}
-            onBought={onBought}
             extraActions={renderActions?.(row)}
           />
         ))}
@@ -103,12 +96,10 @@ export function WatchlistList({
 function WatchlistItem({
   row,
   onRemove,
-  onBought,
   extraActions,
 }: {
   row: WatchlistRow;
   onRemove: (row: WatchlistRow) => Promise<void>;
-  onBought: (row: WatchlistRow) => void;
   extraActions?: ReactNode;
 }) {
   const [removing, setRemoving] = useState(false);
@@ -196,9 +187,6 @@ function WatchlistItem({
           className={`flex flex-wrap items-center gap-1 ${alignClass(column("actions").align)}`}
         >
           {extraActions}
-          <Button variant="outline" size="sm" onClick={() => onBought(row)}>
-            <ShoppingCart />I bought it
-          </Button>
           <Button
             variant="ghost"
             size="icon"

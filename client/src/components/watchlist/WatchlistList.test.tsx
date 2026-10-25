@@ -31,7 +31,7 @@ function renderList(
 ) {
   render(
     <MemoryRouter>
-      <WatchlistList rows={rows} onRemove={vi.fn()} onBought={vi.fn()} />
+      <WatchlistList rows={rows} onRemove={vi.fn()} />
     </MemoryRouter>,
   );
 }

@@ -118,8 +118,8 @@ Click **Try demo**; no sign-up needed.
   calls. [How it works](docs/architecture.md#company-search).
 - **Watchlist.** Up to 50 companies you're considering, kept apart from the
   portfolio: live price, today's change, change since added, next earnings
-  date, report status, an Ask AI shortcut, and "I bought it" to record a
-  purchase. Demo users start with AMD and JPM.
+  date, report status, an Ask AI shortcut, and an "In portfolio" badge for
+  companies you also hold. Demo users start with AMD and JPM.
 - **Earnings calendar.** Upcoming earnings for your holdings and watchlist
   over the next 60 days, with before/after-market timing and EPS estimates
   when known. Refreshed once a day in the background from Finnhub's calendar,
@@ -127,7 +127,7 @@ Click **Try demo**; no sign-up needed.
   [How it works](docs/architecture.md#earnings-calendar).
 
   <p>
-    <img src="docs/images/watchlist.png" width="100%" alt="Watchlist page: an Add a company search box, then AMD (Advanced Micro Devices, Inc.) and JPM (JPMorgan Chase &amp; Co) with price, today's change in green or red, change since added, next earnings date, report status with View report, and Ask AI and I bought it buttons; below, Upcoming earnings for the next 60 days lists TSLA, MSFT, AAPL, AMD and NVDA with dates, after-close timing, EPS estimates and Holding or Watching tags, and VOO and JPM with no date">
+    <img src="docs/images/watchlist.png" width="100%" alt="Watchlist page: an Add a company search box, then AMD (Advanced Micro Devices, Inc.) and JPM (JPMorgan Chase &amp; Co) with price, today's change in green or red, change since added, next earnings date, report status with View report, and Ask AI and Remove buttons; below, Upcoming earnings for the next 60 days lists TSLA, MSFT, AAPL, AMD and NVDA with dates, after-close timing, EPS estimates and Holding or Watching tags, and VOO and JPM with no date">
     <br>
     <em>The watchlist, with upcoming earnings for holdings and watched companies.</em>
   </p>
