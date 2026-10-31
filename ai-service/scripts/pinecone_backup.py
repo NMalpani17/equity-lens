@@ -1,15 +1,27 @@
 """Export the Pinecone index to files, and restore it from them.
 
 Usage (from ai-service/):
-    python -m scripts.pinecone_backup export --out DIR
+    python -m scripts.pinecone_backup export --out DIR [--previous MANIFEST]
+    gcloud storage ls 'gs://BUCKET/**/pinecone/manifest.json' \\
+        | python -m scripts.pinecone_backup latest    # the newest export's folder
     python -m scripts.pinecone_backup restore --from DIR --index NAME         # dry run
     python -m scripts.pinecone_backup restore --from DIR --index NAME --yes   # writes
 
 ``export`` is read-only: it lists every vector ID in every namespace, fetches
 the vectors (dense values, sparse values and metadata) and writes one gzipped
-JSONL file per namespace plus ``manifest.json`` (index configuration, counts
-and SHA-256 hashes). It fails if a fetched vector is missing or the exported
-count doesn't match the index stats.
+JSONL file per namespace plus ``manifest.json`` (index configuration, counts,
+SHA-256 hashes, the change fingerprint and the bytes read). It fails if a
+fetched vector is missing or the exported count doesn't match the index stats.
+
+Reading every vector counts against Pinecone's monthly read limit, so with
+``--previous`` (the latest export's manifest) it first compares a fingerprint
+that reads no vectors: the index stats (vector count per namespace) and the
+ingestion watermark in Postgres (job and ticker counts and timestamps, which
+every index write moves; see ``RagRepository.index_watermark``). It skips the
+export when nothing changed, unless the latest export is ``--max-age-days``
+old or ``--force`` is given, and also when another export would take this
+month's export reads past ``--budget-mb``. ``--decision`` writes the outcome
+as JSON, including where the latest valid export is.
 
 ``restore`` upserts an export into the index named by ``--index`` (required;
 there is no default, because local settings point at production). Without
@@ -23,18 +35,25 @@ import argparse
 import gzip
 import hashlib
 import json
+import re
 import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 FORMAT_VERSION = 1
 MANIFEST = "manifest.json"
 # IDs per fetch request and vectors per upsert request.
 FETCH_BATCH = 100
 UPSERT_BATCH = 100
+MB = 1_000_000
+DEFAULT_MAX_AGE_DAYS = 7
+DEFAULT_BUDGET_MB = 600
+# A backup folder's timestamp, e.g. daily/2026/10/31/20261031T070012Z/ or
+# pre-migrate/20261031T070012Z-abc1234/, directly above pinecone/manifest.json.
+_EXPORT_MANIFEST = re.compile(r"/(\d{8}T\d{6}Z)[^/]*/pinecone/manifest\.json$")
 
 
 class BackupError(Exception):
@@ -82,6 +101,14 @@ def list_ids(index: Any, namespace: str) -> list[str]:
     return ids
 
 
+@dataclass(frozen=True)
+class NamespaceExport:
+    count: int
+    # Approximate bytes read from Pinecone: the listed IDs plus each fetched
+    # vector serialized as JSON (what the export writes, before gzip).
+    bytes_read: int
+
+
 def vector_record(vector: Any) -> dict[str, Any]:
     sparse = vector.sparse_values
     return {
@@ -96,10 +123,11 @@ def vector_record(vector: Any) -> dict[str, Any]:
     }
 
 
-def export_namespace(index: Any, namespace: str, path: Path) -> int:
-    """Write every vector in ``namespace`` to ``path``; returns the count."""
+def export_namespace(index: Any, namespace: str, path: Path) -> NamespaceExport:
+    """Write every vector in ``namespace`` to ``path``."""
     ids = list_ids(index, namespace)
     written = 0
+    bytes_read = sum(len(i.encode()) for i in ids)
     with gzip.open(path, "wt", encoding="utf-8") as out:
         for batch in _batches(ids, FETCH_BATCH):
             fetched = index.fetch(ids=list(batch), namespace=namespace).vectors
@@ -110,9 +138,30 @@ def export_namespace(index: Any, namespace: str, path: Path) -> int:
                     f"fetched, e.g. {missing[:3]}"
                 )
             for vector_id in batch:
-                out.write(json.dumps(vector_record(fetched[vector_id])) + "\n")
+                line = json.dumps(vector_record(fetched[vector_id])) + "\n"
+                out.write(line)
+                bytes_read += len(line.encode())
                 written += 1
-    return written
+    return NamespaceExport(written, bytes_read)
+
+
+def make_fingerprint(
+    config: IndexConfig, counts: dict[str, int], watermark: dict[str, Any]
+) -> dict[str, Any]:
+    """What the change check compares; read without fetching any vector.
+
+    Normalized through JSON so it compares equal to one read from a manifest.
+    """
+    return json.loads(
+        json.dumps(
+            {"index": config.__dict__, "namespaces": counts, "watermark": watermark},
+            sort_keys=True,
+        )
+    )
+
+
+def _month(moment: datetime) -> str:
+    return moment.strftime("%Y-%m")
 
 
 def export_index(
@@ -120,34 +169,131 @@ def export_index(
     config: IndexConfig,
     out_dir: Path,
     *,
+    counts: dict[str, int] | None = None,
+    fingerprint: dict[str, Any] | None = None,
+    month_bytes_before: int = 0,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> dict[str, Any]:
-    """Export every namespace to ``out_dir`` and write the manifest."""
+    """Export every namespace to ``out_dir`` and write the manifest.
+
+    ``counts`` are the index stats the fingerprint was taken from (read here
+    if not given). ``month_bytes_before`` is this month's export reads so far.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    expected = _namespace_counts(index)
+    expected = _namespace_counts(index) if counts is None else counts
+    created = now()
     namespaces: dict[str, Any] = {}
     for namespace in sorted(expected):
         path = out_dir / _file_name(namespace)
-        count = export_namespace(index, namespace, path)
-        if count != expected[namespace]:
+        exported = export_namespace(index, namespace, path)
+        if exported.count != expected[namespace]:
             raise BackupError(
-                f"exported {count} vectors from {namespace!r} but the index "
-                f"stats report {expected[namespace]}"
+                f"exported {exported.count} vectors from {namespace!r} but the "
+                f"index stats report {expected[namespace]}"
             )
         namespaces[namespace] = {
             "file": path.name,
-            "count": count,
+            "count": exported.count,
             "sha256": _sha256(path),
+            "bytes_read": exported.bytes_read,
         }
+    bytes_read = sum(n["bytes_read"] for n in namespaces.values())
     manifest = {
         "format_version": FORMAT_VERSION,
-        "created_at": now().isoformat(),
+        "created_at": created.isoformat(),
         "index": config.__dict__,
         "namespaces": namespaces,
         "total_vectors": sum(n["count"] for n in namespaces.values()),
+        "fingerprint": fingerprint,
+        "bytes_read": bytes_read,
+        "month": _month(created),
+        "month_bytes_read": month_bytes_before + bytes_read,
     }
     (out_dir / MANIFEST).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return manifest
+
+
+@dataclass(frozen=True)
+class Decision:
+    export: bool
+    reason: str
+    # This month's export reads before this run (from the latest export).
+    month_bytes_before: int = 0
+    # Changed but skipped (over budget): the vector backup is stale.
+    warning: bool = False
+
+
+def _what_changed(current: dict[str, Any], previous: dict[str, Any]) -> list[str]:
+    changes = []
+    if current["index"] != previous.get("index"):
+        changes.append("index configuration changed")
+    before, after = previous.get("namespaces", {}), current["namespaces"]
+    for namespace in sorted(set(before) | set(after)):
+        if before.get(namespace) != after.get(namespace):
+            changes.append(
+                f"{namespace or '(default)'}: {before.get(namespace, 0)} -> "
+                f"{after.get(namespace, 0)} vectors"
+            )
+    if current["watermark"] != previous.get("watermark"):
+        changes.append("index writes recorded since the latest export")
+    return changes
+
+
+def decide(
+    fingerprint: dict[str, Any],
+    previous: dict[str, Any] | None,
+    *,
+    now: datetime,
+    max_age: timedelta,
+    budget_bytes: int,
+    force: bool = False,
+) -> Decision:
+    """Whether to export, given the latest export's manifest (if any)."""
+    if previous is None:
+        return Decision(True, "no earlier vector export")
+    month_before = (
+        int(previous.get("month_bytes_read") or 0)
+        if previous.get("month") == _month(now)
+        else 0
+    )
+    if force:
+        return Decision(True, "forced", month_before)
+
+    created = datetime.fromisoformat(previous["created_at"])
+    previous_fingerprint = previous.get("fingerprint")
+    if previous_fingerprint is None:
+        reasons = ["the latest export has no fingerprint"]
+    else:
+        reasons = _what_changed(fingerprint, previous_fingerprint)
+    if now - created >= max_age:
+        reasons.append(f"the latest export is {(now - created).days} days old")
+    if not reasons:
+        return Decision(
+            False, f"unchanged since the export of {previous['created_at']}"
+        )
+
+    reason = "; ".join(reasons)
+    estimate = int(previous.get("bytes_read") or 0)
+    if month_before + estimate > budget_bytes:
+        return Decision(
+            False,
+            f"{reason}, but another export (~{estimate / MB:.0f} MB) would take "
+            f"this month's export reads past {budget_bytes / MB:.0f} MB "
+            f"(used {month_before / MB:.0f} MB); keeping the latest export",
+            month_before,
+            warning=True,
+        )
+    return Decision(True, reason, month_before)
+
+
+def latest_export(listing: Iterable[str]) -> str | None:
+    """The newest export's folder (``.../pinecone/``) in a bucket listing."""
+    found = [
+        (match.group(1), url)
+        for url in (line.strip() for line in listing)
+        if (match := _EXPORT_MANIFEST.search(url))
+    ]
+    return max(found)[1].removesuffix(MANIFEST) if found else None
 
 
 def load_manifest(backup_dir: Path) -> dict[str, Any]:
@@ -252,6 +398,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
     export = commands.add_parser("export", help="export every namespace (read-only)")
     export.add_argument("--out", type=Path, required=True)
+    export.add_argument(
+        "--previous", type=Path, help="the latest export's manifest.json, if any"
+    )
+    export.add_argument("--previous-location", help="where that export is stored")
+    export.add_argument("--location", help="where this export will be stored")
+    export.add_argument(
+        "--max-age-days", type=int, default=DEFAULT_MAX_AGE_DAYS, metavar="DAYS"
+    )
+    export.add_argument("--budget-mb", type=int, default=DEFAULT_BUDGET_MB)
+    export.add_argument("--force", action="store_true", help="export even if unchanged")
+    export.add_argument("--decision", type=Path, help="write the outcome as JSON")
+
+    commands.add_parser(
+        "latest", help="print the newest export folder from a listing on stdin"
+    )
 
     restore = commands.add_parser("restore", help="upsert an export into an index")
     restore.add_argument("--from", dest="source", type=Path, required=True)
@@ -289,12 +450,102 @@ def _index_config(pc: Any, name: str) -> IndexConfig:
     )
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _index_watermark(settings: Any) -> dict[str, Any]:
+    from app.services.rag.repository import RagRepository, create_pool
+
+    if not settings.database_url:
+        raise BackupError("DATABASE_URL is not set (needed for the change check)")
+    pool = create_pool(settings.database_url, max_size=1)
+    try:
+        return RagRepository(pool).index_watermark()
+    finally:
+        pool.close()
+
+
+def _read_previous(path: Path | None) -> dict[str, Any] | None:
+    """The latest export's manifest; None (so it exports) if absent or unusable."""
+    if path is None or not path.is_file():
+        return None
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        datetime.fromisoformat(manifest["created_at"])
+    except (ValueError, KeyError, TypeError):
+        print(f"warning: ignoring unreadable {path}", file=sys.stderr)  # CLI output
+        return None
+    return manifest
+
+
 def run_export(args: argparse.Namespace, pc: Any, settings: Any) -> int:
     name = settings.pinecone_index_name
-    manifest = export_index(pc.Index(name=name), _index_config(pc, name), args.out)
-    for namespace, entry in manifest["namespaces"].items():
-        print(f"  {namespace or '(default)'}: {entry['count']} vectors")  # CLI output
-    print(f"Exported {manifest['total_vectors']} vectors from {name} to {args.out}")
+    index = pc.Index(name=name)
+    config = _index_config(pc, name)
+    # Taken before any vector is read: a write that lands during the export
+    # moves the watermark past this, so the next run exports again.
+    counts = _namespace_counts(index)
+    fingerprint = make_fingerprint(config, counts, _index_watermark(settings))
+    now = _now()
+    decision = decide(
+        fingerprint,
+        _read_previous(args.previous),
+        now=now,
+        max_age=timedelta(days=args.max_age_days),
+        budget_bytes=args.budget_mb * MB,
+        force=args.force,
+    )
+
+    if decision.export:
+        manifest = export_index(
+            index,
+            config,
+            args.out,
+            counts=counts,
+            fingerprint=fingerprint,
+            month_bytes_before=decision.month_bytes_before,
+            now=lambda: now,
+        )
+        for namespace, entry in manifest["namespaces"].items():
+            print(  # CLI output
+                f"  {namespace or '(default)'}: {entry['count']} vectors, "
+                f"{entry['bytes_read']:,} bytes read"
+            )
+        print(
+            f"Exported {manifest['total_vectors']} vectors from {name} to "
+            f"{args.out} ({decision.reason}): {manifest['bytes_read']:,} bytes "
+            f"read, {manifest['month_bytes_read']:,} this month"
+        )
+        outcome = {
+            "exported": True,
+            "latest_export": args.location,
+            "bytes_read": manifest["bytes_read"],
+            "month_bytes_read": manifest["month_bytes_read"],
+        }
+    else:
+        print(f"Skipped the vector export: {decision.reason}")  # CLI output
+        outcome = {
+            "exported": False,
+            "latest_export": args.previous_location,
+            "bytes_read": 0,
+            "month_bytes_read": decision.month_bytes_before,
+        }
+    if args.decision:
+        outcome |= {
+            "reason": decision.reason,
+            "warning": decision.warning,
+            "vectors": counts,
+            "fingerprint": fingerprint,
+        }
+        args.decision.write_text(json.dumps(outcome, indent=2), encoding="utf-8")
+    return 0
+
+
+def run_latest(listing: TextIO) -> int:
+    folder = latest_export(listing)
+    if folder:
+        print(folder)  # CLI output
     return 0
 
 
@@ -342,6 +593,8 @@ def run_restore(args: argparse.Namespace, pc: Any) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.command == "latest":
+        return run_latest(sys.stdin)
     try:
         pc, settings = _client()
         if args.command == "export":

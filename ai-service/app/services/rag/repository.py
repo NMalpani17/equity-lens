@@ -437,6 +437,79 @@ class RagRepository:
                 (status, error, now, ticker, job_id),
             )
 
+    def start_detached_job(self, ticker: str, *, trigger: str) -> str:
+        """Record a running job that ``rag_tickers`` doesn't point at.
+
+        For index writes outside the ticker lifecycle (the eval namespace), so
+        every Pinecone write still leaves timestamps in ``rag_ingestion_jobs``
+        for the backup's change check. Returns the job ID.
+        """
+        job_id = str(uuid.uuid4())
+        now = utcnow()
+        with self._pool.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO rag_ingestion_jobs
+                    (id, ticker, status, trigger, created_at, started_at)
+                VALUES (%s, %s, 'running', %s, %s, %s)
+                """,
+                (job_id, ticker, trigger, now, now),
+            )
+        return job_id
+
+    def finish_detached_job(
+        self, job_id: str, *, chunk_count: int = 0, error: str | None = None
+    ) -> None:
+        """Close a job from :meth:`start_detached_job`; ``error`` marks it failed."""
+        with self._pool.connection() as conn:
+            conn.execute(
+                """
+                UPDATE rag_ingestion_jobs
+                SET status = %s::rag_job_status, chunk_count = %s, error = %s,
+                    finished_at = %s
+                WHERE id = %s
+                """,
+                (
+                    "failed" if error else "succeeded",
+                    chunk_count,
+                    error,
+                    utcnow(),
+                    job_id,
+                ),
+            )
+
+    def index_watermark(self) -> dict[str, Any]:
+        """Counts and latest timestamps that move whenever the index is written.
+
+        Every Pinecone write runs inside an ingestion job: the claim sets
+        ``created_at`` (and ``rag_tickers.updated_at``) before it writes, and
+        completing, failing or expiring the job sets ``finished_at`` after, so
+        any write since an earlier reading changes this one. Read-only.
+        """
+        with self._pool.connection() as conn, conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            row = conn.execute(
+                """
+                SELECT j.*, t.* FROM
+                  (SELECT count(*) AS jobs,
+                          count(*) FILTER (WHERE status IN ('queued', 'running'))
+                            AS jobs_in_flight,
+                          max(created_at) AS jobs_created_at,
+                          max(started_at) AS jobs_started_at,
+                          max(finished_at) AS jobs_finished_at
+                   FROM rag_ingestion_jobs) j,
+                  (SELECT count(*) AS tickers,
+                          max(updated_at) AS tickers_updated_at,
+                          max(indexed_at) AS tickers_indexed_at
+                   FROM rag_tickers) t
+                """
+            ).fetchone()
+        assert row is not None  # aggregates always return a row
+        return {
+            key: value.isoformat() if isinstance(value, datetime) else value
+            for key, value in row.items()
+        }
+
     # --- Internals --------------------------------------------------------
 
     @staticmethod

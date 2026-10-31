@@ -229,7 +229,9 @@ Data sources: earnings call transcripts from [Equibles](https://equibles.com), l
   [How it works and how to roll back](docs/deployment.md#continuous-deployment).
 - **Backups and guardrails.** One environment, so production is protected
   directly: a daily keyless GitHub Action (and one before every migration)
-  dumps the database (`public` + `auth`) and every Pinecone vector to a
+  dumps the database (`public` + `auth`) and, when the index changed since the
+  last export (checked without reading any vector, so it stays inside
+  Pinecone's free monthly read limit), every Pinecone vector to a
   versioned Cloud Storage bucket with a 30-day retention policy, written by an
   identity that can't delete. Restores are tested in CI against a throwaway
   Postgres, every table has row level security, and committed Claude Code

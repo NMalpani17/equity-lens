@@ -357,7 +357,12 @@ invites you to sign up for your own account. To check each hop
   (such as `pg_advisory_xact_lock`, which returns `void`).
 - Safety checks: `api/tests/repoPolicy.test.ts` (Claude Code rules, RLS on
   every new table) and `ai-service/tests/test_ci_workflows.py` (backup daily
-  and before migrations; no deploy without its migration). CI's
+  and before migrations; vectors exported only on change, within the monthly
+  read budget; a failed vector export still uploads the database; no deploy
+  without its migration). `test_pinecone_backup.py` replays exported and
+  skipped days and restores each day's latest export, and
+  `test_rag_repository_pg.py` checks that every ingestion step moves the
+  watermark the change check reads. CI's
   `backup-roundtrip` job applies every migration to a throwaway Postgres 17,
   checks it matches `schema.prisma` and has RLS everywhere, and round-trips
   `backup-db.sh` / `restore-db.sh`
@@ -369,7 +374,7 @@ invites you to sign up for your own account. To check each hop
 ai-service operational scripts (run from `ai-service/`):
 `python -m scripts.seed_transcripts` (above), `python -m scripts.eval_rag`
 and `python -m scripts.eval_chat` ([evaluation.md](evaluation.md)), and
-`python -m scripts.pinecone_backup export|restore`
+`python -m scripts.pinecone_backup export|latest|restore`
 ([deployment.md](deployment.md#backups-and-restore)),
 `python -m scripts.pregenerate_reports` (demo tickers' research reports;
 [deployment.md](deployment.md#research-reports-first-deployment)) and

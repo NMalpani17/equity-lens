@@ -6,6 +6,7 @@ RAG migrations into a throwaway schema and drops it afterwards.
 """
 
 import os
+import time
 import uuid
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -231,6 +232,71 @@ def test_failed_refresh_keeps_ticker_indexed(repo) -> None:
     ticker = repo.get_ticker("AAPL")
     assert (ticker.status, ticker.last_error) == ("indexed", "boom")
     assert ticker.indexed_at is not None
+
+
+def test_detached_job_is_recorded_without_touching_the_ticker(repo) -> None:
+    index(repo, "AAPL")
+    before = repo.get_ticker("AAPL")
+
+    ok = repo.start_detached_job("AAPL", trigger="eval_plain")
+    assert repo.get_job(ok).status == "running"
+    assert repo.get_job(ok).started_at is not None
+    repo.finish_detached_job(ok, chunk_count=12)
+    failed = repo.start_detached_job("AAPL", trigger="eval_plain")
+    repo.finish_detached_job(failed, error="boom")
+
+    done, broken = repo.get_job(ok), repo.get_job(failed)
+    assert (done.status, done.trigger, done.chunk_count) == (
+        "succeeded",
+        "eval_plain",
+        12,
+    )
+    assert done.finished_at is not None
+    assert (broken.status, broken.error) == ("failed", "boom")
+    assert repo.get_ticker("AAPL") == before
+
+
+def test_index_watermark_moves_with_every_index_write(repo) -> None:
+    """The backup's change check: each step that can write vectors moves it,
+    including a re-index that leaves the chunk count unchanged."""
+    marks = [repo.index_watermark()]
+    assert marks[0]["jobs"] == 0 and marks[0]["jobs_finished_at"] is None
+
+    def step(action) -> None:
+        time.sleep(0.005)  # columns keep milliseconds
+        action()
+        marks.append(repo.index_watermark())
+        assert marks[-1] != marks[-2], f"unchanged after step {len(marks) - 1}"
+
+    claims = {}
+
+    def claim(ticker: str, **kwargs) -> None:
+        claims[ticker] = repo.claim_ingestion(
+            ticker, trigger="seed", daily_cap=None, stale_after=STALE, **kwargs
+        ).job_id
+
+    def complete(ticker: str) -> None:
+        repo.complete_job(
+            claims[ticker],
+            ticker,
+            company_name="Apple Inc",
+            chunk_count=10,
+            quarters=["FY2025Q4"],
+        )
+
+    step(lambda: claim("AAPL"))
+    step(lambda: repo.mark_job_running(claims["AAPL"]))
+    step(lambda: complete("AAPL"))
+    assert repo.index_watermark() == marks[-1]  # reading changes nothing
+
+    # Re-index with the same chunk count (same vector IDs and count).
+    step(lambda: claim("AAPL", force=True))
+    step(lambda: complete("AAPL"))
+    step(lambda: claim("MSFT"))
+    step(lambda: repo.fail_job(claims["MSFT"], "MSFT", error="x", unavailable=False))
+    job = []
+    step(lambda: job.append(repo.start_detached_job("AAPL", trigger="eval_plain")))
+    step(lambda: repo.finish_detached_job(job[0], chunk_count=10))
 
 
 def test_migration_backfills_latest_call_date() -> None:

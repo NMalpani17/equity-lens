@@ -28,14 +28,33 @@ from app.services.rag.evaluation import (
     evaluate,
     format_report,
 )
+from app.services.rag.ingestion import IngestionPipeline
+from app.services.rag.repository import RagRepository
 
 DEFAULT_QUESTIONS = Path(__file__).parent / "eval" / "questions.json"
+PLAIN_TRIGGER = "eval_plain"
 
 logger = logging.getLogger("eval_rag")
 
 
 def load_questions(path: Path) -> list[EvalQuestion]:
     return [EvalQuestion.model_validate(q) for q in json.loads(path.read_text())]
+
+
+def build_plain(repo: RagRepository, pipeline: IngestionPipeline, ticker: str) -> None:
+    """Index header-less copies of ``ticker`` into the eval namespace.
+
+    Recorded as an ingestion job (not linked from ``rag_tickers``) so the
+    backup's change check sees this Pinecone write, even when it keeps the
+    same vector IDs and count.
+    """
+    job_id = repo.start_detached_job(ticker, trigger=PLAIN_TRIGGER)
+    try:
+        result = pipeline.ingest(ticker, cache_only=True, plain_only=True)
+    except Exception as exc:
+        repo.finish_detached_job(job_id, error=str(exc) or type(exc).__name__)
+        raise
+    repo.finish_detached_job(job_id, chunk_count=result.chunk_count)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.build_plain:
             for record in rag.repo.list_tickers():
                 if record.status == "indexed":
-                    rag.pipeline.ingest(record.ticker, cache_only=True, plain_only=True)
+                    build_plain(rag.repo, rag.pipeline, record.ticker)
 
         configs = default_configs(
             settings.pinecone_namespace, settings.pinecone_plain_namespace
