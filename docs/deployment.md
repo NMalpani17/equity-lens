@@ -445,9 +445,10 @@ service account key exists anywhere.
 - **Order**: backup → migrations → ai-service → api → verify. A failed step
   stops everything after it.
 - **Backup first**: if `api/prisma/migrations/` changed, the
-  [Backup](#backups-and-restore) workflow runs first and uploads a full dump
-  (database and vectors) to `pre-migrate/`. If it fails, nothing is migrated
-  or deployed; deploys need a successful migration whenever migrations changed.
+  [Backup](#backups-and-restore) workflow runs first and uploads a full
+  database dump to `pre-migrate/` (plus the vectors if the index changed since
+  the latest export). If it fails, nothing is migrated or deployed; deploys
+  need a successful migration whenever migrations changed.
 - **Migrations**: if `api/prisma/migrations/` changed, the workflow builds the
   `migrate` target (`api-migrate:<sha>`), points the `equity-lens-migrate`
   Cloud Run job at it and runs it with `--wait` (`prisma migrate deploy`). If
@@ -567,19 +568,87 @@ can't happen again.
 | What                        | How                                                                                                  | Size today |
 | --------------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
 | Database: `public` + `auth` | `.github/scripts/backup-db.sh`: `pg_dump` 17, custom format, plus exact row counts (`db-counts.tsv`) | ~130 KB    |
-| Pinecone: every namespace   | `python -m scripts.pinecone_backup export`: dense + sparse values and metadata, gzipped JSONL        | ~31 MB     |
-| `manifest.json`             | commit, reason, run URL, row and vector counts, SHA-256 of every file                                | –          |
+| Pinecone: every namespace   | `python -m scripts.pinecone_backup export` **when the index changed** (below): gzipped JSONL         | ~31 MB     |
+| `manifest.json`             | commit, reason, run URL, row and vector counts, SHA-256 of every file, `pinecone` (below)            | –          |
 
 - **Daily** at 07:00 UTC → `gs://equity-lens-backups-0755818341/daily/YYYY/MM/DD/<timestamp>/`
 - **Before every migration**: Deploy calls the same workflow first →
   `pre-migrate/<timestamp>-<sha>/`. If the backup fails, the migration and
   every deploy that needs it are skipped.
 - **By hand**: GitHub → Actions → **Backup** → Run workflow (branch `main`) →
-  `manual/<timestamp>-<sha>/`.
+  `manual/<timestamp>-<sha>/`. Tick **force** to export the vectors even if
+  the index is unchanged (do this after writing to the production index by
+  hand, e.g. in the Pinecone console or with `restore --allow-nonempty`).
 
 The workflow fails (and GitHub emails you) if a dump isn't readable, the dump
 is missing a table, a vector can't be fetched, the exported vector count
-doesn't match the index stats, or an upload is incomplete.
+doesn't match the index stats, or an upload is incomplete. A failed vector
+export still uploads the database dump first (and drops the partial export),
+then fails the run.
+
+### Vectors: exported only when the index changed
+
+Exporting reads every vector, and reads count against Pinecone Starter's
+monthly read limit (1 GB). Exporting the whole index daily (~36 MB each time)
+used it up after ~28 days in October 2026, and Pinecone then blocked every
+read until the month reset, so transcript search in chat and reports failed.
+Because the vector export ran before the upload, those days' database dumps
+weren't uploaded either.
+
+Now each run first compares a **fingerprint** that reads no vectors with the
+one saved in the latest export's `pinecone/manifest.json`:
+
+- `describe_index_stats`: vector count per namespace, and the index's
+  dimension and metric (a response of under 1 KB);
+- the ingestion watermark in Postgres (`RagRepository.index_watermark`, a
+  read-only transaction): job and ticker counts, jobs in flight, and the
+  latest `rag_ingestion_jobs.created_at` / `started_at` / `finished_at` and
+  `rag_tickers.updated_at` / `indexed_at`.
+
+It exports when the fingerprint differs, when the latest export is 7 days old
+(`PINECONE_MAX_AGE_DAYS`), when there is no earlier export (or it predates
+fingerprints), or when forced. Otherwise it skips the export. Either way the
+backup's `manifest.json` has a `pinecone` block: whether vectors were
+exported, why, the bytes read, and `latest_export`, the folder holding the
+most recent valid vector export (this backup's own, or an earlier one).
+
+**Why a change can't be missed.** Every write to the index goes through
+`IngestionPipeline`, and only inside an ingestion job (on-demand, refresh and
+seed jobs, and `eval_rag --build-plain`, which records an `eval_plain` job).
+The claim sets `created_at` before anything is written; completing, failing
+or expiring the job sets `finished_at` after. Re-indexing a ticker with the
+same number of chunks keeps the vector count but still moves those
+timestamps. The fingerprint is taken before the export reads anything, so a
+write that finishes during an export shows up as a change the next day.
+Deletes or additions made outside the app change the counts.
+
+**What it can't see**, and what covers it: a same-count edit made outside the
+app (the Pinecone console, a manual restore into production) or a worker
+killed mid-write and never reclaimed. The 7-day export covers both, and keeps
+the latest export far inside the bucket's 90-day lifecycle. Run the workflow
+with **force** after any manual write. A job that writes nothing (a ticker
+that fails before indexing) also moves the watermark; that costs one extra
+export, never a missed one.
+
+**Monthly budget.** Each export's manifest records `bytes_read` (per
+namespace and in total: the listed IDs plus each fetched vector as JSON,
+which approximates Pinecone's meter; compare with the console's usage after
+the first export) and the month-to-date total. If another export (estimated
+as the size of the last one) would take this month's export reads past
+`PINECONE_BUDGET_MB` (600 MB, leaving the rest for searches), the run keeps
+the latest export, adds a warning to the run, and still succeeds. The vectors
+can always be rebuilt from `rag_transcripts` in the database backup
+(re-embedding costs Gemini credit, no Equibles quota).
+
+**Expected egress** at today's size (~36 MB an export):
+
+| Month                                                    | Exports             | Reads       |
+| -------------------------------------------------------- | ------------------- | ----------- |
+| Quiet: no ingestion, only the weekly export              | 4–5                 | ~150–180 MB |
+| Earnings season: 5–10 days with refreshes or new tickers | ~9–14               | ~320–500 MB |
+| Worst case: the index changes every day                  | stops at the budget | ≤ 600 MB    |
+
+Each new ticker adds roughly 2–3 MB to an export.
 
 ### Bucket and identity
 
@@ -694,9 +763,15 @@ Restore `auth` data only into the same Supabase Auth version (compare
 
 ### Restore Pinecone
 
+Restore from the most recent vector export. Days that skipped the export
+have no `pinecone/` folder; their `manifest.json` names the export to use
+(`pinecone.latest_export`), or find the newest one directly:
+
 ```bash
 cd ai-service
-gcloud storage cp --recursive gs://equity-lens-backups-0755818341/daily/.../pinecone ./pinecone-backup
+latest=$(gcloud storage ls 'gs://equity-lens-backups-0755818341/**/pinecone/manifest.json' \
+  | python -m scripts.pinecone_backup latest)            # e.g. gs://.../daily/2026/11/03/<stamp>/pinecone/
+gcloud storage cp --recursive "${latest%/}" ./pinecone-backup   # -> ./pinecone-backup/manifest.json, *.jsonl.gz
 python -m scripts.pinecone_backup restore --from ./pinecone-backup --index NAME          # dry run: prints the plan
 python -m scripts.pinecone_backup restore --from ./pinecone-backup --index NAME --yes    # writes
 ```
@@ -708,6 +783,12 @@ index with the exported dimension, metric and region only with
 `--create-index`. `--namespaces` and `--namespace-map SOURCE=TARGET` restore a
 subset or into other names (e.g. to compare before replacing). After a restore,
 rebuild `rag_tickers` from the vectors if the database was lost too.
+
+CI replays the workflow's vector steps day by day against a fake index and
+bucket (`ai-service/tests/test_pinecone_backup.py`): exported days, skipped
+days, a same-count re-index, a pre-migrate run, an over-budget day and the
+weekly export. Each day it restores the export that day's backup points at
+into an empty index and checks it matches the source exactly.
 
 ## Research reports: first deployment
 

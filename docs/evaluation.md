@@ -26,6 +26,9 @@ python -m scripts.eval_rag --json out.json # also save per-question ranks
 ```
 
 Each run makes ~40 rerank calls, so mind the 500/month Pinecone Starter quota.
+`--build-plain` records each ticker's build as an `eval_plain` ingestion job,
+so the next daily backup sees the index changed and exports the vectors
+([deployment.md](deployment.md#vectors-exported-only-when-the-index-changed)).
 
 ### Retrieval results
 
