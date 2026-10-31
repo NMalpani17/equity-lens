@@ -233,6 +233,28 @@ def test_failed_refresh_keeps_ticker_indexed(repo) -> None:
     assert ticker.indexed_at is not None
 
 
+def test_detached_job_is_recorded_without_touching_the_ticker(repo) -> None:
+    index(repo, "AAPL")
+    before = repo.get_ticker("AAPL")
+
+    ok = repo.start_detached_job("AAPL", trigger="eval_plain")
+    assert repo.get_job(ok).status == "running"
+    assert repo.get_job(ok).started_at is not None
+    repo.finish_detached_job(ok, chunk_count=12)
+    failed = repo.start_detached_job("AAPL", trigger="eval_plain")
+    repo.finish_detached_job(failed, error="boom")
+
+    done, broken = repo.get_job(ok), repo.get_job(failed)
+    assert (done.status, done.trigger, done.chunk_count) == (
+        "succeeded",
+        "eval_plain",
+        12,
+    )
+    assert done.finished_at is not None
+    assert (broken.status, broken.error) == ("failed", "boom")
+    assert repo.get_ticker("AAPL") == before
+
+
 def test_migration_backfills_latest_call_date() -> None:
     import psycopg
 

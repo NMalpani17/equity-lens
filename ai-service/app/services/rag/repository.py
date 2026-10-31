@@ -437,6 +437,47 @@ class RagRepository:
                 (status, error, now, ticker, job_id),
             )
 
+    def start_detached_job(self, ticker: str, *, trigger: str) -> str:
+        """Record a running job that ``rag_tickers`` doesn't point at.
+
+        For index writes outside the ticker lifecycle (the eval namespace), so
+        every Pinecone write still leaves timestamps in ``rag_ingestion_jobs``
+        for the backup's change check. Returns the job ID.
+        """
+        job_id = str(uuid.uuid4())
+        now = utcnow()
+        with self._pool.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO rag_ingestion_jobs
+                    (id, ticker, status, trigger, created_at, started_at)
+                VALUES (%s, %s, 'running', %s, %s, %s)
+                """,
+                (job_id, ticker, trigger, now, now),
+            )
+        return job_id
+
+    def finish_detached_job(
+        self, job_id: str, *, chunk_count: int = 0, error: str | None = None
+    ) -> None:
+        """Close a job from :meth:`start_detached_job`; ``error`` marks it failed."""
+        with self._pool.connection() as conn:
+            conn.execute(
+                """
+                UPDATE rag_ingestion_jobs
+                SET status = %s::rag_job_status, chunk_count = %s, error = %s,
+                    finished_at = %s
+                WHERE id = %s
+                """,
+                (
+                    "failed" if error else "succeeded",
+                    chunk_count,
+                    error,
+                    utcnow(),
+                    job_id,
+                ),
+            )
+
     # --- Internals --------------------------------------------------------
 
     @staticmethod

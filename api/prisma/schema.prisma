@@ -127,7 +127,8 @@ model RagIngestionJob {
   ticker     String
   status     RagJobStatus
   /// What started the job: "on_demand" (a search), "refresh" (a newer call
-  /// for an indexed ticker) or "seed" (the CLI script).
+  /// for an indexed ticker), "seed" (the CLI script) or "eval_plain" (the
+  /// eval namespace build; not linked from rag_tickers).
   trigger    String
   chunkCount Int          @default(0) @map("chunk_count")
   error      String?
