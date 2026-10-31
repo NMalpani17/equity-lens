@@ -478,6 +478,38 @@ class RagRepository:
                 ),
             )
 
+    def index_watermark(self) -> dict[str, Any]:
+        """Counts and latest timestamps that move whenever the index is written.
+
+        Every Pinecone write runs inside an ingestion job: the claim sets
+        ``created_at`` (and ``rag_tickers.updated_at``) before it writes, and
+        completing, failing or expiring the job sets ``finished_at`` after, so
+        any write since an earlier reading changes this one. Read-only.
+        """
+        with self._pool.connection() as conn, conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            row = conn.execute(
+                """
+                SELECT j.*, t.* FROM
+                  (SELECT count(*) AS jobs,
+                          count(*) FILTER (WHERE status IN ('queued', 'running'))
+                            AS jobs_in_flight,
+                          max(created_at) AS jobs_created_at,
+                          max(started_at) AS jobs_started_at,
+                          max(finished_at) AS jobs_finished_at
+                   FROM rag_ingestion_jobs) j,
+                  (SELECT count(*) AS tickers,
+                          max(updated_at) AS tickers_updated_at,
+                          max(indexed_at) AS tickers_indexed_at
+                   FROM rag_tickers) t
+                """
+            ).fetchone()
+        assert row is not None  # aggregates always return a row
+        return {
+            key: value.isoformat() if isinstance(value, datetime) else value
+            for key, value in row.items()
+        }
+
     # --- Internals --------------------------------------------------------
 
     @staticmethod
