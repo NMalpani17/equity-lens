@@ -1,8 +1,9 @@
 """The backup and deploy workflows keep their safety properties.
 
 These parse the GitHub Actions files (the repo has one environment, so CD
-writes to production): a backup runs daily and before every migration, and
-no code ships when a migration it needs didn't run.
+writes to production): a backup runs daily and before every migration, it
+reads Pinecone's vectors only when the index changed, and no code ships when
+a migration it needs didn't run.
 """
 
 from pathlib import Path
@@ -61,6 +62,45 @@ def test_backup_dumps_both_schemas_exports_vectors_and_never_deletes() -> None:
     assert "${stamp}" in script
     for forbidden in ("gcloud storage rm", "gsutil rm", "--delete", "rsync"):
         assert forbidden not in script
+
+
+def step_named(job: dict[str, Any], prefix: str) -> dict[str, Any]:
+    return next(s for s in job["steps"] if s.get("name", "").startswith(prefix))
+
+
+def test_backup_exports_vectors_only_when_changed_within_budget() -> None:
+    wf = workflow("backup.yml")
+    job = wf["jobs"]["backup"]
+    export = step_named(job, "Export Pinecone vectors")["run"]
+
+    # Compared with the newest earlier export, found by listing (never deleting).
+    assert "pinecone/manifest.json" in export
+    assert "scripts.pinecone_backup latest" in export
+    assert "--previous" in export and "--decision" in export
+    assert '--budget-mb "$PINECONE_BUDGET_MB"' in export
+    assert '--max-age-days "$PINECONE_MAX_AGE_DAYS"' in export
+    assert wf["env"]["PINECONE_BUDGET_MB"] == 600
+    assert wf["env"]["PINECONE_MAX_AGE_DAYS"] == 7
+    # A manual run can force an export.
+    force = triggers(wf)["workflow_dispatch"]["inputs"]["force"]
+    assert (force["type"], force["default"]) == ("boolean", False)
+    assert "--force" in export
+
+
+def test_a_failed_vector_export_still_uploads_the_database() -> None:
+    job = workflow("backup.yml")["jobs"]["backup"]
+    names = [s.get("name", "") for s in job["steps"]]
+    dump = step_named(job, "Dump the database")
+    export = step_named(job, "Export Pinecone vectors")
+    upload = step_named(job, "Upload to Cloud Storage")
+    fail = step_named(job, "Fail if the vector export failed")
+
+    assert "if" not in dump and "continue-on-error" not in dump
+    assert export["id"] == "vectors" and export["continue-on-error"] is True
+    assert "if" not in upload  # runs after a failed (continue-on-error) export
+    assert fail["if"] == "steps.vectors.outcome == 'failure'"
+    assert "exit 1" in fail["run"]
+    assert names.index(upload["name"]) < names.index(fail["name"])
 
 
 def test_deploy_backs_up_before_any_migration() -> None:

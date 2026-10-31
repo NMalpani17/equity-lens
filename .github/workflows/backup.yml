@@ -4,6 +4,12 @@ name: Backup
 # every Pinecone vector with its metadata. Runs daily, by hand, and from the
 # Deploy workflow right before migrations. See docs/deployment.md#backups-and-restore.
 #
+# The database is dumped every run. Vectors are exported only when the index
+# changed since the latest export (or it is a week old): reading every vector
+# daily used up Pinecone's monthly read limit. A run that skips the export
+# records where the latest export is. A failed vector export still uploads
+# the database dump, then fails the run.
+#
 # Signs in through its own Workload Identity provider, which only accepts
 # this file on main, as a service account that can read two secrets and
 # create (never delete or overwrite) objects in the backup bucket.
@@ -11,6 +17,11 @@ on:
   schedule:
     - cron: "0 7 * * *" # 07:00 UTC daily
   workflow_dispatch:
+    inputs:
+      force:
+        description: Export the vectors even if the index is unchanged
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       reason:
@@ -26,6 +37,10 @@ env:
   CLOUDSDK_CORE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
   BUCKET: ${{ vars.BACKUP_BUCKET }}
   REASON: ${{ inputs.reason || (github.event_name == 'schedule' && 'daily') || 'manual' }}
+  FORCE: ${{ inputs.force || false }}
+  # Pinecone Starter allows 1 GB of reads a month; the app's searches need the rest.
+  PINECONE_BUDGET_MB: 600
+  PINECONE_MAX_AGE_DAYS: 7
 
 jobs:
   backup:
@@ -73,12 +88,58 @@ jobs:
           [[ -n $password ]] && echo "::add-mask::${password}"
           DATABASE_URL="$url" .github/scripts/backup-db.sh "${OUT}/db"
 
-      - name: Export Pinecone vectors
+      # Reads no vectors unless the index changed (scripts/pinecone_backup.py).
+      - name: Export Pinecone vectors if the index changed
+        id: vectors
+        continue-on-error: true # the database dump is uploaded regardless
         working-directory: ai-service
         run: |
+          # The newest earlier export: its manifest holds the fingerprint to compare.
+          if listing=$(gcloud storage ls "gs://${BUCKET}/**/pinecone/manifest.json" 2>"${RUNNER_TEMP}/ls.err"); then
+            previous=$(printf '%s\n' "$listing" | python -m scripts.pinecone_backup latest)
+          elif grep -q "matched no objects" "${RUNNER_TEMP}/ls.err"; then
+            previous=""
+          else
+            cat "${RUNNER_TEMP}/ls.err" >&2
+            exit 1
+          fi
+          args=(
+            --out "${OUT}/pinecone"
+            --location "gs://${BUCKET}/${PREFIX}/pinecone/"
+            --decision "${RUNNER_TEMP}/pinecone-decision.json"
+            --budget-mb "$PINECONE_BUDGET_MB"
+            --max-age-days "$PINECONE_MAX_AGE_DAYS"
+          )
+          if [[ -n $previous ]]; then
+            gcloud storage cp "${previous}manifest.json" "${RUNNER_TEMP}/previous-manifest.json"
+            args+=(--previous "${RUNNER_TEMP}/previous-manifest.json" --previous-location "$previous")
+          fi
+          if [[ $FORCE == true ]]; then
+            args+=(--force)
+          fi
+
           key=$(gcloud secrets versions access latest --secret=pinecone-api-key)
           echo "::add-mask::${key}"
-          AI_SERVICE_PINECONE_API_KEY="$key" python -m scripts.pinecone_backup export --out "${OUT}/pinecone"
+          # The change check reads (only) the ingestion tables, in a read-only transaction.
+          url=$(gcloud secrets versions access latest --secret=direct-url)
+          echo "::add-mask::${url}"
+          password=$(python3 -c 'import sys, urllib.parse as u; print(u.unquote(u.urlsplit(sys.argv[1]).password or ""))' "$url")
+          if [[ -n $password ]]; then
+            echo "::add-mask::${password}"
+          fi
+          AI_SERVICE_PINECONE_API_KEY="$key" DATABASE_URL="$url" \
+            python -m scripts.pinecone_backup export "${args[@]}"
+
+          python3 - <<'PY'
+          import json, os
+          d = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "pinecone-decision.json")))
+          if d["warning"]:
+              print(f"::warning::Vector backup not updated: {d['reason']}")
+          PY
+
+      - name: Drop a partial vector export
+        if: steps.vectors.outcome == 'failure'
+        run: rm -rf "${OUT}/pinecone" "${RUNNER_TEMP}/pinecone-decision.json"
 
       - name: Write the manifest
         run: |
@@ -94,14 +155,27 @@ jobs:
           counts = dict(
               line.split("\t") for line in (root / "db/db-counts.tsv").read_text().splitlines()
           )
-          vectors = json.loads((root / "pinecone/manifest.json").read_text())
+          decision_path = pathlib.Path(os.environ["RUNNER_TEMP"], "pinecone-decision.json")
+          if decision_path.is_file():
+              decision = json.loads(decision_path.read_text())
+              pinecone = {
+                  key: decision[key]
+                  for key in ("exported", "reason", "warning", "latest_export", "bytes_read", "month_bytes_read")
+              }
+              vectors = decision["vectors"]
+          else:
+              pinecone = {"exported": False, "reason": "the vector export step failed; see the run"}
+              vectors = None
           manifest = {
               "created_at": datetime.now(timezone.utc).isoformat(),
               "reason": os.environ["REASON"],
               "commit": os.environ["GITHUB_SHA"],
               "run": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               "db_rows": {k: int(v) for k, v in counts.items()},
-              "vectors": {k: v["count"] for k, v in vectors["namespaces"].items()},
+              "vectors": vectors,
+              # Where to restore vectors from: this backup's export, or the
+              # latest earlier one when the index hadn't changed.
+              "pinecone": pinecone,
               "sha256": files,
           }
           pathlib.Path("manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -119,6 +193,25 @@ jobs:
           {
             echo "### Backup \`${PREFIX}\`"
             echo "- Database: $(wc -l <"${OUT}/db/db-counts.tsv") tables, $(du -h "${OUT}/db/db.dump" | cut -f1)"
-            echo "- Pinecone: $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["total_vectors"])' "${OUT}/pinecone/manifest.json") vectors"
+            python3 - "${OUT}/manifest.json" <<'PY'
+          import json, sys
+          m = json.load(open(sys.argv[1]))
+          p = m["pinecone"]
+          if p["exported"]:
+              total = sum(m["vectors"].values())
+              print(f"- Pinecone: exported {total} vectors, {p['bytes_read'] / 1e6:.1f} MB read "
+                    f"({p['month_bytes_read'] / 1e6:.0f} MB this month): {p['reason']}")
+          elif p.get("latest_export"):
+              print(f"- Pinecone: not exported ({p['reason']}); latest export `{p['latest_export']}`, "
+                    f"{p['month_bytes_read'] / 1e6:.0f} MB read this month")
+          else:
+              print(f"- Pinecone: **no vector backup** ({p['reason']})")
+          PY
             echo "- \`gs://${BUCKET}/${PREFIX}/\` (${remote_files} files)"
           } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if the vector export failed
+        if: steps.vectors.outcome == 'failure'
+        run: |
+          echo "::error::The Pinecone export failed (see its step); the database dump was uploaded."
+          exit 1
